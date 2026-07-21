@@ -1,0 +1,40 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+node_modules/
+dist/
+build/
+coverage/
+.coverage
+htmlcov/
+*.log
+.DS_Store
+.vscode/settings.json
+.idea/
+
+# Private and generated data
+storage/uploads/*
+storage/extracted/*
+storage/reports/*
+!storage/uploads/.gitkeep
+!storage/extracted/.gitkeep
+!storage/reports/.gitkeep
+sample_data/exams/*
+sample_data/tp153/*
+!sample_data/exams/.gitkeep
+!sample_data/tp153/.gitkeep
+
+# Knowledge-base generated artifacts
+knowledge_base/generated/
+knowledge_base/chroma/
+
+# Reports and office temporary files
+*.pdf
+~$*.xlsx
