@@ -14,7 +14,7 @@ Place the approved source workbooks in `knowledge_base/source/` using these exac
 10. `10_metadata.xlsx`
 11. `11_scoring_policy.xlsx`
 
-The source folder is intentionally empty in this package because the approved workbook contents were not attached in the current request. Do not replace them with invented records.
+The approved Version 1 workbooks are included in `knowledge_base/source/`. Keep the filenames unchanged so validation, ingestion, provenance, and manifest generation remain deterministic.
 
 After adding the files, run:
 ```bash

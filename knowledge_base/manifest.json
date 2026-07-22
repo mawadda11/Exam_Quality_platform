@@ -1,0 +1,62 @@
+{
+  "knowledge_base_name": "Exam Quality Knowledge Base",
+  "version": "1.0",
+  "status": "validated-file-presence-and-hashes",
+  "files": [
+    {
+      "name": "01_references.xlsx",
+      "sha256": "427131bd0a5bceb310269176e91f8adb520bbffc61b6f67c0ea02a5b15190be3",
+      "size_bytes": 5335
+    },
+    {
+      "name": "02_standards.xlsx",
+      "sha256": "281c93ace29ed62a11593bf60f861075eb807ad4c168034ce76bf6f71b03cf06",
+      "size_bytes": 5985
+    },
+    {
+      "name": "03_criteria.xlsx",
+      "sha256": "4a5eab2bbc3119fb7d7820d94039fc94daf7979069c2f209f59e9b1e56c3b233",
+      "size_bytes": 7058
+    },
+    {
+      "name": "04_requirements.xlsx",
+      "sha256": "eb6204e36db5383721706a9b7011ec1077de226930dbd694975bbdbdf41c410d",
+      "size_bytes": 9018
+    },
+    {
+      "name": "05_evidence_types.xlsx",
+      "sha256": "d324d55652b5fe821b7e58769db95035df2b85afd8447b4cad5afc54f9efe172",
+      "size_bytes": 7330
+    },
+    {
+      "name": "06_evidence_mapping.xlsx",
+      "sha256": "20a3631c59410f4d524b66d57da718d805b4692da493faae47f07a5e47c6ce4e",
+      "size_bytes": 9628
+    },
+    {
+      "name": "07_evaluation_rules.xlsx",
+      "sha256": "b09981f14d85dfa1133872af7b5f92519dd82bf4945b6704712e092601856520",
+      "size_bytes": 9170
+    },
+    {
+      "name": "08_recommendations.xlsx",
+      "sha256": "eec8df82ae1f7cb61ec97c8247003632b0bc49b61e74ec9d97a06c04b81f9d9e",
+      "size_bytes": 8488
+    },
+    {
+      "name": "09_relationships.xlsx",
+      "sha256": "bc655cfa4363dce9ba1975aaed60ac8ba98d73503d4f284092baae740aca0df3",
+      "size_bytes": 10429
+    },
+    {
+      "name": "10_metadata.xlsx",
+      "sha256": "521d7cb20c065fcf8cb96ec1fe485603690369ce0da7fae878e5acdf560ff90d",
+      "size_bytes": 8424
+    },
+    {
+      "name": "11_scoring_policy.xlsx",
+      "sha256": "22e888082a550fa7a42181e2040f77f6da4b0c4213eafd975b7177b8001e0991",
+      "size_bytes": 7063
+    }
+  ]
+}

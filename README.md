@@ -1,10 +1,10 @@
 # AI Exam Quality Platform
 
-Repository scaffold for an evidence-based Midterm and Final exam quality-analysis platform.
+Repository scaffold for an evidence-based Midterm and Final exam quality-analysis platform for Faculty Members.
 
 ## Start with Claude Code
 1. Upload this repository to GitHub.
-2. Add the 11 approved knowledge-base `.xlsx` files to `knowledge_base/source/`.
+2. Confirm the 11 approved knowledge-base `.xlsx` files are present in `knowledge_base/source/`.
 3. Open the repository in VS Code.
 4. Start Claude Code in the repository root.
 5. Paste the contents of `CLAUDE_CODE_PROMPT.md`.

@@ -38,7 +38,7 @@ After implementation:
 - Do not claim a command passed unless it was executed successfully.
 
 ## Product to build
-Create a secure web platform for faculty members, course coordinators, and quality officers to upload:
+Create a secure web platform for Faculty Members to upload:
 - one Midterm or Final exam PDF; and
 - the corresponding populated TP-153 Course Specification.
 
@@ -76,7 +76,7 @@ Unless the repository already contains a later completed stage, implement in thi
 - Add CI lint, type, test, and build checks.
 
 ### Phase 2 — Core domain and upload safety
-- Add domain enums for user type, exam type, processing state, and academic status.
+- Add domain enums for the Faculty Member user type, exam type, processing state, and academic status.
 - Implement analysis, uploaded-file, course, and exam records.
 - Implement authenticated ownership boundaries or a clearly documented local-development identity adapter.
 - Validate PDF file extension, MIME type, magic bytes, size, filename, and readability.
@@ -127,7 +127,7 @@ Unless the repository already contains a later completed stage, implement in thi
 10. Official-source wording and derived system rules remain distinguishable.
 
 ## Explicit exclusions
-Do not implement assignments, projects, labs, quizzes, Blackboard assessments, student answers, grades, distributions, difficulty estimation, Bloom taxonomy, student-performance prediction, faculty evaluation, teaching evaluation, facilities evaluation, program management evaluation, full accreditation evaluation, automatic document modification, or approval/rejection workflow.
+Do not implement Course Coordinator, Quality Officer, or Administrator interfaces in Version 1. Do not implement assignments, projects, labs, quizzes, Blackboard assessments, student answers, grades, distributions, difficulty estimation, Bloom taxonomy, student-performance prediction, faculty evaluation, teaching evaluation, facilities evaluation, program management evaluation, full accreditation evaluation, automatic document modification, or approval/rejection workflow.
 
 ## Initial task
 Inspect the current repository against the project documents. Produce:

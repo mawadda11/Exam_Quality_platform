@@ -3,12 +3,10 @@
 ## Purpose
 An AI-powered academic support platform that performs a structured, evidence-based first-level review of Midterm and Final examinations in computing courses by comparing an exam PDF with its populated TP-153 Course Specification.
 
-## Users
+## Primary User
 - Faculty Member
-- Course Coordinator
-- Quality Officer
 
-All roles use the same core analysis workflow. Version 1 has no Administrator role and no formal approval/rejection flow.
+Version 1 is intentionally scoped to Faculty Members only. It has no Coordinator, Quality Officer, Administrator, or formal approval/rejection workflow.
 
 ## Inputs
 - Midterm or Final exam PDF, digital or scanned.

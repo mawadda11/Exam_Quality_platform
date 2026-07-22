@@ -4,7 +4,7 @@
 Validate extension, declared MIME, PDF magic bytes, maximum size, parser readability, file count, and safe filename handling. Use generated storage keys and quarantine before processing.
 
 ## Authorization
-Every analysis, file, evidence item, finding, and report is scoped to its owner or permitted institutional role. Download endpoints re-check authorization.
+Every analysis, file, evidence item, finding, and report is scoped to its Faculty Member owner. Download endpoints re-check ownership authorization.
 
 ## Data protection
 Use TLS in deployed environments, encrypted managed storage where available, database encryption controls, strong secrets, and least-privilege service accounts.

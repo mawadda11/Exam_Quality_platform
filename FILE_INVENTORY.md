@@ -25,8 +25,7 @@
 - GitHub Actions CI.
 
 ## Knowledge base
-- Source folder and exact required filenames.
+- Eleven approved Excel workbooks in `knowledge_base/source/`.
+- Generated `knowledge_base/manifest.json` with file hashes.
 - Manifest template.
 - Presence/hash validation script.
-
-The actual 11 approved Excel workbooks are not included because they were not attached to this request.

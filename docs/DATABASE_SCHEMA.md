@@ -1,7 +1,7 @@
 # Database Schema
 
 ## Core tables
-- `users`: identity, role, institution, department.
+- `users`: Faculty Member identity, institution, and department. Version 1 does not require multi-role authorization.
 - `courses`: course code/name, department, program.
 - `analyses`: course/user, exam type, term, state, score, predecessor, KB version, timestamps.
 - `uploaded_files`: analysis, type, original name, storage key, MIME, size, hash.
