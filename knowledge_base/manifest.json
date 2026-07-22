@@ -20,8 +20,8 @@
     },
     {
       "name": "04_requirements.xlsx",
-      "sha256": "eb6204e36db5383721706a9b7011ec1077de226930dbd694975bbdbdf41c410d",
-      "size_bytes": 9018
+      "sha256": "568415b3589eac2168e929ed23de0d485408b0e6f749b1999353e0742bbf4904",
+      "size_bytes": 9024
     },
     {
       "name": "05_evidence_types.xlsx",
@@ -30,18 +30,18 @@
     },
     {
       "name": "06_evidence_mapping.xlsx",
-      "sha256": "20a3631c59410f4d524b66d57da718d805b4692da493faae47f07a5e47c6ce4e",
-      "size_bytes": 9628
+      "sha256": "25e37775ba0cb7c475caa511afa395fc614032adfd7352f348811b8abb1657de",
+      "size_bytes": 9646
     },
     {
       "name": "07_evaluation_rules.xlsx",
-      "sha256": "b09981f14d85dfa1133872af7b5f92519dd82bf4945b6704712e092601856520",
-      "size_bytes": 9170
+      "sha256": "60e800182cdd6f3f0b4c865c652d5f191f166ba59c4cfd3a0332d8979b4bc9ca",
+      "size_bytes": 9158
     },
     {
       "name": "08_recommendations.xlsx",
-      "sha256": "eec8df82ae1f7cb61ec97c8247003632b0bc49b61e74ec9d97a06c04b81f9d9e",
-      "size_bytes": 8488
+      "sha256": "0adcc275c5f45b451bab3eac75936b682f2e65672d9c69c1e271322d9e9316fb",
+      "size_bytes": 8495
     },
     {
       "name": "09_relationships.xlsx",
@@ -50,8 +50,8 @@
     },
     {
       "name": "10_metadata.xlsx",
-      "sha256": "521d7cb20c065fcf8cb96ec1fe485603690369ce0da7fae878e5acdf560ff90d",
-      "size_bytes": 8424
+      "sha256": "55c2d472361ceff5c34178aeb3f3d4d4078d40f42621d3f1283fca816e197166",
+      "size_bytes": 8478
     },
     {
       "name": "11_scoring_policy.xlsx",
