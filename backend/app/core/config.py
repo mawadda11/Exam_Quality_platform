@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://exam_quality:exam_quality@postgres:5432/exam_quality"
     max_upload_mb: int = Field(default=50, ge=1, le=200)
     allowed_origins: str = "http://localhost:5173"
+    upload_root: str = "../storage/uploads"
 
     @property
     def allowed_origin_list(self) -> list[str]:

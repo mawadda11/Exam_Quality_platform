@@ -3,13 +3,16 @@ from enum import StrEnum
 
 class UserType(StrEnum):
     FACULTY_MEMBER = "Faculty Member"
-    COURSE_COORDINATOR = "Course Coordinator"
-    QUALITY_OFFICER = "Quality Officer"
 
 
 class ExamType(StrEnum):
     MIDTERM = "Midterm"
     FINAL = "Final"
+
+
+class UploadedFileType(StrEnum):
+    EXAM = "exam"
+    TP153 = "tp153"
 
 
 class AcademicStatus(StrEnum):
@@ -31,3 +34,9 @@ class ProcessingStage(StrEnum):
     GENERATING_REPORT = "generating_report"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+def enum_values(enum_cls: type[StrEnum]) -> list[str]:
+    """SQLAlchemy's Enum(values_callable=...) hook: without it, SQLAlchemy stores the
+    member *name* (e.g. "MIDTERM") instead of its API-facing `.value` ("Midterm")."""
+    return [member.value for member in enum_cls]

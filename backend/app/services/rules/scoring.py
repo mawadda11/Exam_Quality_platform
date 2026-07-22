@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
+
 from app.core.domain import AcademicStatus
 
 _STATUS_VALUES: dict[AcademicStatus, Decimal] = {
