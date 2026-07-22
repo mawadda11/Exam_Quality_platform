@@ -19,9 +19,7 @@ def test_score_excludes_not_verified_and_not_applicable() -> None:
 
 
 def test_score_returns_insufficient_evidence_for_zero_denominator() -> None:
-    result = calculate_overall_score(
-        [AcademicStatus.NOT_VERIFIED, AcademicStatus.NOT_APPLICABLE]
-    )
+    result = calculate_overall_score([AcademicStatus.NOT_VERIFIED, AcademicStatus.NOT_APPLICABLE])
     assert result.score is None
     assert result.denominator == 0
     assert result.label == "Insufficient Evidence"

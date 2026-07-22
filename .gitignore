@@ -38,3 +38,5 @@ knowledge_base/chroma/
 # Reports and office temporary files
 *.pdf
 ~$*.xlsx
+
+*.tsbuildinfo
