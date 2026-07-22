@@ -1,3 +1,6 @@
+import { DevIdentityBar } from './components/DevIdentityBar'
+import { AnalysisUploadFlow } from './features/analysis-upload/AnalysisUploadFlow'
+
 export function App() {
   return (
     <main className="shell">
@@ -8,7 +11,8 @@ export function App() {
           Upload a Midterm or Final exam and its populated TP-153 to create an evidence-based,
           traceable quality analysis.
         </p>
-        <div className="notice">Repository scaffold ready for milestone-based implementation.</div>
+        <DevIdentityBar />
+        <AnalysisUploadFlow />
       </section>
     </main>
   )
