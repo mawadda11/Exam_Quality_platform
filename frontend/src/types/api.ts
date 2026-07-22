@@ -66,3 +66,10 @@ export interface ProblemDetail {
   status: number
   detail: string
 }
+
+export interface ProgressResponse {
+  analysis_id: string
+  state: ProcessingStage
+  message: string | null
+  updated_at: string
+}

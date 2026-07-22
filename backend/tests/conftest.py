@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -41,7 +42,9 @@ def db_engine(tmp_path: Path) -> Generator[Engine, None, None]:
 
 
 @pytest.fixture()
-def client(test_settings: Settings, db_engine: Engine) -> Generator[TestClient, None, None]:
+def client(
+    test_settings: Settings, db_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> Generator[TestClient, None, None]:
     session_factory = sessionmaker(bind=db_engine, expire_on_commit=False)
 
     def override_get_db() -> Generator[Session, None, None]:
@@ -54,6 +57,22 @@ def client(test_settings: Settings, db_engine: Engine) -> Generator[TestClient, 
             raise
         finally:
             session.close()
+
+    @contextmanager
+    def override_session_scope() -> Generator[Session, None, None]:
+        # Background jobs (e.g. the M3 pipeline) don't go through FastAPI's DI,
+        # so they need this same test engine wired in separately from get_db.
+        session = session_factory()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    monkeypatch.setattr("app.services.processing.runner.session_scope", override_session_scope)
 
     app.dependency_overrides[get_settings] = lambda: test_settings
     app.dependency_overrides[get_db] = override_get_db

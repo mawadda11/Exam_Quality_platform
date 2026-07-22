@@ -16,7 +16,7 @@ from app.models.uploaded_file import UploadedFile
 from app.models.user import User
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_TABLES = {"users", "courses", "analyses", "uploaded_files"}
+EXPECTED_TABLES = {"users", "courses", "analyses", "uploaded_files", "processing_events"}
 
 
 def _alembic_config(sqlite_url: str) -> Config:

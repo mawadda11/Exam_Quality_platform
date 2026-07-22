@@ -3,6 +3,7 @@ import { createAnalysis, getAnalysis } from '../../api/analyses'
 import { ApiError } from '../../api/client'
 import type { AnalysisResponse, ExamType, UploadedFileResponse } from '../../types/api'
 import { FileUploadField } from './FileUploadField'
+import { ProcessingStatus } from './ProcessingStatus'
 import { validateAnalysisDetails, type AnalysisDetailsErrors } from './validation'
 
 const EXAM_TYPES: ExamType[] = ['Midterm', 'Final']
@@ -132,10 +133,10 @@ export function AnalysisUploadFlow() {
       />
 
       {analysis.ready_for_analysis ? (
-        <p className="notice notice-success">
-          Both required documents are uploaded. Analysis processing will be available in a later
-          milestone.
-        </p>
+        <div className="notice notice-success">
+          <p>Both required documents are uploaded.</p>
+          <ProcessingStatus analysisId={analysis.id} initialState={analysis.state} />
+        </div>
       ) : (
         <p className="notice">Upload both the examination PDF and the populated TP-153 to continue.</p>
       )}

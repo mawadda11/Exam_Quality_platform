@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from contextlib import contextmanager
 
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -25,6 +26,22 @@ def _get_session_factory() -> sessionmaker[Session]:
 
 
 def get_db() -> Generator[Session, None, None]:
+    session = _get_session_factory()()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+@contextmanager
+def session_scope() -> Generator[Session, None, None]:
+    """Same lifecycle as get_db(), for code that isn't a FastAPI route (e.g. a
+    background job) and can't use Depends(get_db) - the request's session is
+    already closed by the time a background task runs, so it needs its own."""
     session = _get_session_factory()()
     try:
         yield session

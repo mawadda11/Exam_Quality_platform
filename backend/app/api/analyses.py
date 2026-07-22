@@ -3,22 +3,25 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_user, get_owned_analysis
 from app.core.config import Settings, get_settings
-from app.core.domain import UploadedFileType
+from app.core.domain import ProcessingStage, UploadedFileType
 from app.db.session import get_db
 from app.models.analysis import Analysis
 from app.models.course import Course
+from app.models.processing_event import ProcessingEvent
 from app.models.uploaded_file import UploadedFile
 from app.models.user import User
 from app.schemas.analysis import AnalysisCreateRequest, AnalysisResponse
 from app.schemas.course import CourseInput
+from app.schemas.progress import ProgressResponse
 from app.schemas.uploaded_file import UploadedFileResponse
+from app.services.processing.runner import run_analysis_pipeline
 from app.services.storage.files import UploadTooLargeError, stream_validate_and_store
 from app.services.storage.keys import resolve_storage_path
 from app.services.storage.validation import UploadValidationError
@@ -155,3 +158,48 @@ async def upload_analysis_file(
         ) from exc
 
     return UploadedFileResponse.model_validate(uploaded_file)
+
+
+@router.post(
+    "/{analysis_id}/run", response_model=AnalysisResponse, status_code=status.HTTP_202_ACCEPTED
+)
+def run_analysis(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+    background_tasks: BackgroundTasks,
+) -> AnalysisResponse:
+    if analysis.state != ProcessingStage.QUEUED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This analysis has already been started.",
+        )
+    if not analysis.ready_for_analysis:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Both the examination PDF and the populated TP-153 must be uploaded "
+                "before analysis can start."
+            ),
+        )
+
+    background_tasks.add_task(run_analysis_pipeline, analysis.id)
+    return AnalysisResponse.from_model(_load_with_relations(db, analysis.id))
+
+
+@router.get("/{analysis_id}/progress", response_model=ProgressResponse)
+def get_analysis_progress(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ProgressResponse:
+    latest_event = db.execute(
+        select(ProcessingEvent)
+        .where(ProcessingEvent.analysis_id == analysis.id)
+        .order_by(ProcessingEvent.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    return ProgressResponse(
+        analysis_id=analysis.id,
+        state=analysis.state,
+        message=latest_event.message if latest_event else None,
+        updated_at=analysis.updated_at,
+    )

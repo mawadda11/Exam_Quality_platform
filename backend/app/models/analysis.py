@@ -6,12 +6,13 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Enum, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.domain import ExamType, ProcessingStage, enum_values
+from app.core.domain import ExamType, ProcessingStage, UploadedFileType, enum_values
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.course import Course
+    from app.models.processing_event import ProcessingEvent
     from app.models.uploaded_file import UploadedFile
     from app.models.user import User
 
@@ -42,3 +43,18 @@ class Analysis(TimestampMixin, Base):
     files: Mapped[list[UploadedFile]] = relationship(
         back_populates="analysis", cascade="all, delete-orphan"
     )
+    events: Mapped[list[ProcessingEvent]] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan"
+    )
+
+    @property
+    def exam_uploaded(self) -> bool:
+        return any(f.file_type == UploadedFileType.EXAM for f in self.files)
+
+    @property
+    def tp153_uploaded(self) -> bool:
+        return any(f.file_type == UploadedFileType.TP153 for f in self.files)
+
+    @property
+    def ready_for_analysis(self) -> bool:
+        return self.exam_uploaded and self.tp153_uploaded

@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.core.domain import ExamType, ProcessingStage, UploadedFileType
+from app.core.domain import ExamType, ProcessingStage
 from app.schemas.course import CourseInput, CourseResponse
 from app.schemas.uploaded_file import UploadedFileResponse
 
@@ -38,9 +38,6 @@ class AnalysisResponse(BaseModel):
 
     @classmethod
     def from_model(cls, analysis: Analysis) -> AnalysisResponse:
-        file_types = {f.file_type for f in analysis.files}
-        exam_uploaded = UploadedFileType.EXAM in file_types
-        tp153_uploaded = UploadedFileType.TP153 in file_types
         return cls(
             id=analysis.id,
             course=CourseResponse.model_validate(analysis.course),
@@ -49,9 +46,9 @@ class AnalysisResponse(BaseModel):
             state=analysis.state,
             owner_user_id=analysis.user_id,
             uploaded_files=[UploadedFileResponse.model_validate(f) for f in analysis.files],
-            exam_uploaded=exam_uploaded,
-            tp153_uploaded=tp153_uploaded,
-            ready_for_analysis=exam_uploaded and tp153_uploaded,
+            exam_uploaded=analysis.exam_uploaded,
+            tp153_uploaded=analysis.tp153_uploaded,
+            ready_for_analysis=analysis.ready_for_analysis,
             created_at=analysis.created_at,
             updated_at=analysis.updated_at,
         )
