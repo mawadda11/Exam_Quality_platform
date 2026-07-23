@@ -1,7 +1,5 @@
 {
-  "knowledge_base_name": "Exam Quality Knowledge Base",
-  "version": "1.0",
-  "status": "validated-file-presence-and-hashes",
+  "aggregate_record_hash": "c86346f0685bc4098227b03dfb29c9e3a7697885bf623efea08bc37db89a8b38",
   "files": [
     {
       "name": "01_references.xlsx",
@@ -58,5 +56,44 @@
       "sha256": "22e888082a550fa7a42181e2040f77f6da4b0c4213eafd975b7177b8001e0991",
       "size_bytes": 7063
     }
-  ]
+  ],
+  "generation_schema_version": "1.0",
+  "knowledge_base_name": "Exam Quality Knowledge Base",
+  "provenance_category_counts": {
+    "derived requirement": 23,
+    "official criterion": 14,
+    "official reference": 3,
+    "system policy": 357,
+    "system rule": 30,
+    "template evidence": 10
+  },
+  "record_counts_by_entity_type": {
+    "Criterion": 20,
+    "EvidenceType": 25,
+    "Mapping": 71,
+    "Metadata": 53,
+    "Policy": 30,
+    "Recommendation": 35,
+    "Reference": 3,
+    "Relationship": 130,
+    "Requirement": 30,
+    "Rule": 30,
+    "Standard": 10
+  },
+  "record_counts_by_workbook": {
+    "01_references.xlsx": 3,
+    "02_standards.xlsx": 10,
+    "03_criteria.xlsx": 20,
+    "04_requirements.xlsx": 30,
+    "05_evidence_types.xlsx": 25,
+    "06_evidence_mapping.xlsx": 71,
+    "07_evaluation_rules.xlsx": 30,
+    "08_recommendations.xlsx": 35,
+    "09_relationships.xlsx": 130,
+    "10_metadata.xlsx": 53,
+    "11_scoring_policy.xlsx": 30
+  },
+  "status": "valid",
+  "total_normalized_records": 437,
+  "version": "1.0"
 }
