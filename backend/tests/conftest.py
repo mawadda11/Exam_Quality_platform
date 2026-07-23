@@ -73,6 +73,12 @@ def client(
             session.close()
 
     monkeypatch.setattr("app.services.processing.runner.session_scope", override_session_scope)
+    # get_settings() is @lru_cache'd and called directly (not via Depends) inside
+    # the background pipeline, so app.dependency_overrides doesn't reach it - it
+    # needs the same test upload_root wired in separately, or stage handlers that
+    # touch the filesystem (M4's extraction stage) would use the real default
+    # Settings() instead of this test's tmp_path-based one.
+    monkeypatch.setattr("app.services.processing.runner.get_settings", lambda: test_settings)
 
     app.dependency_overrides[get_settings] = lambda: test_settings
     app.dependency_overrides[get_db] = override_get_db

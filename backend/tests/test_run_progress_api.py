@@ -6,6 +6,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 from helpers import auth_header, valid_pdf_bytes
+from pdf_fixtures import build_synthetic_exam_pdf
 
 import app.services.processing.stages as stages
 from app.core.domain import ProcessingStage
@@ -27,21 +28,25 @@ def _create_analysis(client: TestClient, email: str) -> str:
 
 
 def _upload(
-    client: TestClient, analysis_id: str, email: str, file_type: str, filename: str
+    client: TestClient, analysis_id: str, email: str, file_type: str, filename: str, content: bytes
 ) -> None:
     response = client.post(
         f"/api/v1/analyses/{analysis_id}/files",
         headers=auth_header(email),
         data={"file_type": file_type},
-        files={"file": (filename, io.BytesIO(valid_pdf_bytes()), "application/pdf")},
+        files={"file": (filename, io.BytesIO(content), "application/pdf")},
     )
     assert response.status_code == 201
 
 
 def _make_ready_analysis(client: TestClient, email: str) -> str:
+    # A real, parseable exam PDF is required here (not the minimal fake-PDF
+    # fixture) since M4 wired real extraction into EXTRACTING_EXAM - these
+    # tests care about run/progress mechanics succeeding end-to-end, not
+    # extraction correctness itself (see test_extraction_pipeline.py).
     analysis_id = _create_analysis(client, email)
-    _upload(client, analysis_id, email, "exam", "exam.pdf")
-    _upload(client, analysis_id, email, "tp153", "tp153.pdf")
+    _upload(client, analysis_id, email, "exam", "exam.pdf", build_synthetic_exam_pdf())
+    _upload(client, analysis_id, email, "tp153", "tp153.pdf", valid_pdf_bytes())
     return analysis_id
 
 
@@ -124,7 +129,7 @@ def test_progress_before_run_shows_queued_with_no_message(client: TestClient) ->
 def test_progress_reports_failed_with_safe_message(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def boom(analysis: Analysis, session: object) -> None:
+    def boom(analysis: Analysis, session: object, settings: object) -> None:
         raise RuntimeError("sensitive internal detail")
 
     monkeypatch.setitem(stages.STAGE_HANDLERS, ProcessingStage.EXTRACTING_EXAM, boom)

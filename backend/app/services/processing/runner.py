@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.domain import ProcessingStage
 from app.db.session import session_scope
 from app.models.analysis import Analysis
@@ -30,6 +31,7 @@ def _transition(
 def run_analysis_pipeline(analysis_id: UUID) -> None:
     """Background job entry point. Opens its own DB session - the request's
     session is already closed by the time a background task runs."""
+    settings = get_settings()
     with session_scope() as session:
         analysis = session.execute(
             select(Analysis).where(Analysis.id == analysis_id)
@@ -40,7 +42,7 @@ def run_analysis_pipeline(analysis_id: UUID) -> None:
 
         try:
             for stage in WORK_STAGES:
-                STAGE_HANDLERS[stage](analysis, session)
+                STAGE_HANDLERS[stage](analysis, session, settings)
                 _transition(session, analysis, stage)
             _transition(session, analysis, ProcessingStage.COMPLETED)
         except Exception:

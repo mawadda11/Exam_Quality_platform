@@ -15,11 +15,13 @@ from app.db.session import get_db
 from app.models.analysis import Analysis
 from app.models.course import Course
 from app.models.processing_event import ProcessingEvent
+from app.models.question import Question
 from app.models.uploaded_file import UploadedFile
 from app.models.user import User
 from app.schemas.analysis import AnalysisCreateRequest, AnalysisResponse
 from app.schemas.course import CourseInput
 from app.schemas.progress import ProgressResponse
+from app.schemas.question import QuestionResponse
 from app.schemas.uploaded_file import UploadedFileResponse
 from app.services.processing.runner import run_analysis_pipeline
 from app.services.storage.files import UploadTooLargeError, stream_validate_and_store
@@ -203,3 +205,14 @@ def get_analysis_progress(
         message=latest_event.message if latest_event else None,
         updated_at=analysis.updated_at,
     )
+
+
+@router.get("/{analysis_id}/questions", response_model=list[QuestionResponse])
+def list_analysis_questions(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[QuestionResponse]:
+    questions = db.execute(
+        select(Question).where(Question.analysis_id == analysis.id).order_by(Question.sequence)
+    ).scalars()
+    return [QuestionResponse.model_validate(question) for question in questions]

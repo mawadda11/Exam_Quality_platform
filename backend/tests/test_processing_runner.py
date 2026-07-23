@@ -69,7 +69,18 @@ def _events_for(engine: Engine, analysis_id: uuid.UUID) -> list[ProcessingEvent]
         )
 
 
-def test_pipeline_runs_every_stage_to_completed(runner_engine: Engine) -> None:
+def test_pipeline_runs_every_stage_to_completed(
+    runner_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # This test exercises generic stage-machine mechanics, not extraction
+    # itself (that's test_extraction_pipeline.py) - EXTRACTING_EXAM is
+    # stubbed back to a no-op so no real exam file/upload_root is needed.
+    monkeypatch.setitem(
+        stages.STAGE_HANDLERS,
+        ProcessingStage.EXTRACTING_EXAM,
+        lambda analysis, session, settings: None,
+    )
+
     analysis_id = _create_analysis(runner_engine)
 
     runner.run_analysis_pipeline(analysis_id)
@@ -96,7 +107,7 @@ def test_pipeline_runs_every_stage_to_completed(runner_engine: Engine) -> None:
 def test_pipeline_transitions_to_failed_with_safe_message_on_exception(
     runner_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def boom(analysis: Analysis, session: Session) -> None:
+    def boom(analysis: Analysis, session: Session, settings: object) -> None:
         raise RuntimeError("sensitive internal detail: /etc/secret-config")
 
     monkeypatch.setitem(stages.STAGE_HANDLERS, ProcessingStage.EXTRACTING_EXAM, boom)

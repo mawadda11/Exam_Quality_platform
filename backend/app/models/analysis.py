@@ -12,7 +12,9 @@ from app.db.mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.course import Course
+    from app.models.evidence import Evidence
     from app.models.processing_event import ProcessingEvent
+    from app.models.question import Question
     from app.models.uploaded_file import UploadedFile
     from app.models.user import User
 
@@ -44,6 +46,12 @@ class Analysis(TimestampMixin, Base):
         back_populates="analysis", cascade="all, delete-orphan"
     )
     events: Mapped[list[ProcessingEvent]] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan"
+    )
+    questions: Mapped[list[Question]] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan"
+    )
+    evidence: Mapped[list[Evidence]] = relationship(
         back_populates="analysis", cascade="all, delete-orphan"
     )
 
