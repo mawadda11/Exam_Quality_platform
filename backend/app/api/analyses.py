@@ -13,15 +13,21 @@ from app.core.config import Settings, get_settings
 from app.core.domain import ProcessingStage, UploadedFileType
 from app.db.session import get_db
 from app.models.analysis import Analysis
+from app.models.assessment_record import AssessmentRecord
+from app.models.clo import Clo
 from app.models.course import Course
 from app.models.processing_event import ProcessingEvent
 from app.models.question import Question
+from app.models.topic import Topic
 from app.models.uploaded_file import UploadedFile
 from app.models.user import User
 from app.schemas.analysis import AnalysisCreateRequest, AnalysisResponse
+from app.schemas.assessment_record import AssessmentRecordResponse
+from app.schemas.clo import CloResponse
 from app.schemas.course import CourseInput
 from app.schemas.progress import ProgressResponse
 from app.schemas.question import QuestionResponse
+from app.schemas.topic import TopicResponse
 from app.schemas.uploaded_file import UploadedFileResponse
 from app.services.processing.runner import run_analysis_pipeline
 from app.services.storage.files import UploadTooLargeError, stream_validate_and_store
@@ -216,3 +222,45 @@ def list_analysis_questions(
         select(Question).where(Question.analysis_id == analysis.id).order_by(Question.sequence)
     ).scalars()
     return [QuestionResponse.model_validate(question) for question in questions]
+
+
+@router.get("/{analysis_id}/clos", response_model=list[CloResponse])
+def list_analysis_clos(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[CloResponse]:
+    # Raw extracted TP-153 source data only - no alignment, coverage, or
+    # academic status. That comparison against the exam is rule-engine work
+    # for a later milestone.
+    clos = db.execute(
+        select(Clo).where(Clo.analysis_id == analysis.id).order_by(Clo.page_number, Clo.created_at)
+    ).scalars()
+    return [CloResponse.model_validate(clo) for clo in clos]
+
+
+@router.get("/{analysis_id}/topics", response_model=list[TopicResponse])
+def list_analysis_topics(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[TopicResponse]:
+    # Raw extracted TP-153 source data only - see list_analysis_clos.
+    topics = db.execute(
+        select(Topic)
+        .where(Topic.analysis_id == analysis.id)
+        .order_by(Topic.page_number, Topic.created_at)
+    ).scalars()
+    return [TopicResponse.model_validate(topic) for topic in topics]
+
+
+@router.get("/{analysis_id}/assessment-records", response_model=list[AssessmentRecordResponse])
+def list_analysis_assessment_records(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[AssessmentRecordResponse]:
+    # Raw extracted TP-153 source data only - see list_analysis_clos.
+    records = db.execute(
+        select(AssessmentRecord)
+        .where(AssessmentRecord.analysis_id == analysis.id)
+        .order_by(AssessmentRecord.page_number, AssessmentRecord.created_at)
+    ).scalars()
+    return [AssessmentRecordResponse.model_validate(record) for record in records]

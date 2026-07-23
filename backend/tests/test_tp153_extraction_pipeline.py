@@ -10,7 +10,7 @@ from pdf_fixtures import build_synthetic_exam_pdf
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
-from tp153_pdf_fixtures import build_complete_tp153_pdf
+from tp153_pdf_fixtures import build_complete_tp153_pdf, build_missing_clo_section_tp153_pdf
 
 from app.core.domain import UploadedFileType
 from app.models.evidence import Evidence
@@ -54,14 +54,10 @@ def _poll_until_terminal(client: TestClient, analysis_id: str, headers: dict[str
     return result
 
 
-def test_pipeline_extracts_and_persists_questions_from_real_exam(client: TestClient) -> None:
-    email = "pipeline1@kau.edu.sa"
+def test_pipeline_extracts_and_persists_tp153_records(client: TestClient) -> None:
+    email = "tp153pipeline1@kau.edu.sa"
     analysis_id = _create_analysis(client, email)
     _upload(client, analysis_id, email, "exam", "exam.pdf", build_synthetic_exam_pdf())
-    # A real, parseable TP-153 is required here (not the minimal fake-PDF
-    # fixture) since M5 wired real extraction into EXTRACTING_TP153 - this
-    # test cares about exam extraction, not TP-153 extraction correctness
-    # (see test_tp153_extraction_pipeline.py for that).
     _upload(client, analysis_id, email, "tp153", "tp153.pdf", build_complete_tp153_pdf())
 
     headers = auth_header(email)
@@ -72,32 +68,24 @@ def test_pipeline_extracts_and_persists_questions_from_real_exam(client: TestCli
     assert progress["state"] == "completed"
     assert progress["message"] is None
 
-    questions_response = client.get(f"/api/v1/analyses/{analysis_id}/questions", headers=headers)
-    assert questions_response.status_code == 200
-    questions = questions_response.json()
-    assert len(questions) == 8
-    assert [q["number_label"] for q in questions] == [
-        "Q1",
-        "Q2",
-        "Q2(a)",
-        "Q2(b)",
-        "Q3",
-        "Q3(a)",
-        "Q3(b)",
-        "Q4",
-    ]
-    assert questions[0]["marks"] == 5.0
-    assert questions[0]["page_number"] == 1
-    assert questions[4]["page_number"] == 2  # Q3 is the first question on page 2
+    clos = client.get(f"/api/v1/analyses/{analysis_id}/clos", headers=headers).json()
+    topics = client.get(f"/api/v1/analyses/{analysis_id}/topics", headers=headers).json()
+    records = client.get(
+        f"/api/v1/analyses/{analysis_id}/assessment-records", headers=headers
+    ).json()
+
+    assert [c["code"] for c in clos] == ["CLO1", "CLO2", "CLO3"]
+    assert [t["code"] for t in topics] == ["T1", "T2", "T3"]
+    assert [r["method"] for r in records] == ["Midterm Exam", "Final Exam", "Assignments"]
+    assert records[0]["percentage"] == 20.0
 
 
-def test_pipeline_persists_evidence_with_traceable_fields(
+def test_pipeline_persists_tp153_evidence_with_traceable_fields(
     client: TestClient, db_engine: Engine
 ) -> None:
-    email = "pipeline2@kau.edu.sa"
+    email = "tp153pipeline2@kau.edu.sa"
     analysis_id = _create_analysis(client, email)
     _upload(client, analysis_id, email, "exam", "exam.pdf", build_synthetic_exam_pdf())
-    # Real, parseable TP-153 required - see comment in the previous test.
     _upload(client, analysis_id, email, "tp153", "tp153.pdf", build_complete_tp153_pdf())
 
     headers = auth_header(email)
@@ -106,38 +94,61 @@ def test_pipeline_persists_evidence_with_traceable_fields(
     assert progress["state"] == "completed"
 
     with Session(db_engine) as session:
-        # Scoped to EXAM evidence only - M5 adds TP153 evidence for the same
-        # analysis, which is covered separately in test_tp153_extraction_pipeline.py.
-        evidence_rows = (
+        tp153_evidence = (
             session.execute(
                 select(Evidence).where(
                     Evidence.analysis_id == uuid.UUID(analysis_id),
-                    Evidence.source_document == UploadedFileType.EXAM,
+                    Evidence.source_document == UploadedFileType.TP153,
                 )
             )
             .scalars()
             .all()
         )
-        assert len(evidence_rows) == 15  # 1 instructions + 8 question_text + 6 marks
+        # 3 CLOs + 3 topics + 3 assessment records = 9 TP-153 evidence rows.
+        assert len(tp153_evidence) == 9
+        assert all(e.source_document == UploadedFileType.TP153 for e in tp153_evidence)
 
-        marks_row = next(
-            e for e in evidence_rows if e.evidence_type == "marks" and e.item_reference == "Q1"
+
+def test_pipeline_missing_clo_section_persists_marker_not_invented_clo(
+    client: TestClient, db_engine: Engine
+) -> None:
+    email = "tp153pipeline3@kau.edu.sa"
+    analysis_id = _create_analysis(client, email)
+    _upload(client, analysis_id, email, "exam", "exam.pdf", build_synthetic_exam_pdf())
+    _upload(client, analysis_id, email, "tp153", "tp153.pdf", build_missing_clo_section_tp153_pdf())
+
+    headers = auth_header(email)
+    client.post(f"/api/v1/analyses/{analysis_id}/run", headers=headers)
+    progress = _poll_until_terminal(client, analysis_id, headers)
+    assert progress["state"] == "completed"
+
+    clos = client.get(f"/api/v1/analyses/{analysis_id}/clos", headers=headers).json()
+    assert clos == []  # never an invented CLO
+
+    with Session(db_engine) as session:
+        missing_marker = (
+            session.execute(
+                select(Evidence).where(
+                    Evidence.analysis_id == uuid.UUID(analysis_id),
+                    Evidence.evidence_type == "missing_section",
+                )
+            )
+            .scalars()
+            .one()
         )
-        assert marks_row.source_document == UploadedFileType.EXAM
-        assert marks_row.page_number == 1
-        assert marks_row.confidence == 1.0
-        assert marks_row.extracted_text == "[5 marks]"
+        assert missing_marker.item_reference == "clos"
+        assert missing_marker.source_document == UploadedFileType.TP153
 
 
-def test_pipeline_extraction_failure_yields_failed_state_with_safe_message(
+def test_pipeline_tp153_extraction_failure_yields_failed_state_with_safe_message(
     client: TestClient,
 ) -> None:
-    email = "pipeline3@kau.edu.sa"
+    email = "tp153pipeline4@kau.edu.sa"
     analysis_id = _create_analysis(client, email)
-    # Passes upload validation (correct magic bytes/EOF marker) but is not a
-    # structurally real PDF - pdfplumber cannot parse it, exercising the
-    # extraction-failure path without needing a special corrupt fixture.
-    _upload(client, analysis_id, email, "exam", "exam.pdf", valid_pdf_bytes())
+    _upload(client, analysis_id, email, "exam", "exam.pdf", build_synthetic_exam_pdf())
+    # A file that passes upload validation but is not a real, structurally
+    # valid PDF - isolates the TP-153 extraction failure path specifically
+    # (the exam file is real and would extract successfully on its own).
     _upload(client, analysis_id, email, "tp153", "tp153.pdf", valid_pdf_bytes())
 
     headers = auth_header(email)
@@ -147,8 +158,7 @@ def test_pipeline_extraction_failure_yields_failed_state_with_safe_message(
     assert progress["state"] == "failed"
     assert progress["message"] == SAFE_FAILURE_MESSAGE
     assert "pdfminer" not in progress["message"].lower()
-    assert "traceback" not in progress["message"].lower()
 
-    questions_response = client.get(f"/api/v1/analyses/{analysis_id}/questions", headers=headers)
-    assert questions_response.status_code == 200
-    assert questions_response.json() == []
+    clos_response = client.get(f"/api/v1/analyses/{analysis_id}/clos", headers=headers)
+    assert clos_response.status_code == 200
+    assert clos_response.json() == []

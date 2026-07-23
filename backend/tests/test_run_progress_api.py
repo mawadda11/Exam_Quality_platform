@@ -5,8 +5,9 @@ import time
 
 import pytest
 from fastapi.testclient import TestClient
-from helpers import auth_header, valid_pdf_bytes
+from helpers import auth_header
 from pdf_fixtures import build_synthetic_exam_pdf
+from tp153_pdf_fixtures import build_complete_tp153_pdf
 
 import app.services.processing.stages as stages
 from app.core.domain import ProcessingStage
@@ -40,13 +41,15 @@ def _upload(
 
 
 def _make_ready_analysis(client: TestClient, email: str) -> str:
-    # A real, parseable exam PDF is required here (not the minimal fake-PDF
-    # fixture) since M4 wired real extraction into EXTRACTING_EXAM - these
-    # tests care about run/progress mechanics succeeding end-to-end, not
-    # extraction correctness itself (see test_extraction_pipeline.py).
+    # Real, parseable exam and TP-153 PDFs are required here (not the
+    # minimal fake-PDF fixture) since M4/M5 wired real extraction into both
+    # EXTRACTING_EXAM and EXTRACTING_TP153 - these tests care about
+    # run/progress mechanics succeeding end-to-end, not extraction
+    # correctness itself (see test_extraction_pipeline.py and
+    # test_tp153_extraction_pipeline.py for that).
     analysis_id = _create_analysis(client, email)
     _upload(client, analysis_id, email, "exam", "exam.pdf", build_synthetic_exam_pdf())
-    _upload(client, analysis_id, email, "tp153", "tp153.pdf", valid_pdf_bytes())
+    _upload(client, analysis_id, email, "tp153", "tp153.pdf", build_complete_tp153_pdf())
     return analysis_id
 
 

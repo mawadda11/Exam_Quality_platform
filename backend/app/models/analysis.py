@@ -11,10 +11,13 @@ from app.db.base import Base
 from app.db.mixins import TimestampMixin
 
 if TYPE_CHECKING:
+    from app.models.assessment_record import AssessmentRecord
+    from app.models.clo import Clo
     from app.models.course import Course
     from app.models.evidence import Evidence
     from app.models.processing_event import ProcessingEvent
     from app.models.question import Question
+    from app.models.topic import Topic
     from app.models.uploaded_file import UploadedFile
     from app.models.user import User
 
@@ -52,6 +55,13 @@ class Analysis(TimestampMixin, Base):
         back_populates="analysis", cascade="all, delete-orphan"
     )
     evidence: Mapped[list[Evidence]] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan"
+    )
+    clos: Mapped[list[Clo]] = relationship(back_populates="analysis", cascade="all, delete-orphan")
+    topics: Mapped[list[Topic]] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan"
+    )
+    assessment_records: Mapped[list[AssessmentRecord]] = relationship(
         back_populates="analysis", cascade="all, delete-orphan"
     )
 

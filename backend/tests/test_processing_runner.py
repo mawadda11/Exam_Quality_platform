@@ -73,11 +73,17 @@ def test_pipeline_runs_every_stage_to_completed(
     runner_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # This test exercises generic stage-machine mechanics, not extraction
-    # itself (that's test_extraction_pipeline.py) - EXTRACTING_EXAM is
-    # stubbed back to a no-op so no real exam file/upload_root is needed.
+    # itself (that's test_extraction_pipeline.py / test_tp153_extraction_pipeline.py) -
+    # both now-real stages are stubbed back to no-ops so no real uploaded
+    # files/upload_root are needed.
     monkeypatch.setitem(
         stages.STAGE_HANDLERS,
         ProcessingStage.EXTRACTING_EXAM,
+        lambda analysis, session, settings: None,
+    )
+    monkeypatch.setitem(
+        stages.STAGE_HANDLERS,
+        ProcessingStage.EXTRACTING_TP153,
         lambda analysis, session, settings: None,
     )
 

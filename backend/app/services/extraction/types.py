@@ -54,3 +54,56 @@ class ExtractionResult:
 
 class ExamExtractor(Protocol):
     def extract(self, pdf_path: Path) -> ExtractionResult: ...
+
+
+@dataclass(frozen=True)
+class ExtractedClo:
+    code: str
+    text: str
+    program_outcome_reference: str | None
+    page_number: int
+    confidence: float
+    geometry: Geometry | None
+
+
+@dataclass(frozen=True)
+class ExtractedTopic:
+    code: str | None
+    text: str
+    expected_hours: float | None
+    page_number: int
+    confidence: float
+    geometry: Geometry | None
+
+
+@dataclass(frozen=True)
+class ExtractedAssessmentRecord:
+    method: str
+    activity: str | None
+    percentage: float | None
+    page_number: int
+    confidence: float
+    geometry: Geometry | None
+
+
+@dataclass(frozen=True)
+class Tp153MissingEvidence:
+    """One of the required TP-153 sections (clos/topics/assessment_records)
+    yielded zero records - a real fact worth recording as evidence, not an
+    error and never a reason to invent a placeholder domain row."""
+
+    section: str
+    page_number: int
+    note: str
+
+
+@dataclass(frozen=True)
+class Tp153ExtractionResult:
+    clos: list[ExtractedClo]
+    topics: list[ExtractedTopic]
+    assessment_records: list[ExtractedAssessmentRecord]
+    missing_sections: list[Tp153MissingEvidence]
+
+
+class Tp153Extractor(Protocol):
+    def extract(self, pdf_path: Path) -> Tp153ExtractionResult: ...
