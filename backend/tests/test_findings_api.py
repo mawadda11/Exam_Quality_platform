@@ -143,3 +143,27 @@ def test_findings_empty_list_when_rules_not_run_yet(client: TestClient) -> None:
     response = client.get(f"/api/v1/analyses/{analysis_id}/findings", headers=auth_header(email))
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_findings_response_includes_requirement_display_fields(
+    client: TestClient, db_engine: Engine
+) -> None:
+    # M9: FindingResponse is enriched with official requirement display
+    # metadata resolved from 04_requirements.xlsx, additive to the M6/M8
+    # fields already covered by test_findings_response_schema_fields.
+    email = "finding-display@kau.edu.sa"
+    analysis_id = _create_analysis(client, email)
+    _insert_findings(db_engine, analysis_id)
+
+    response = client.get(f"/api/v1/analyses/{analysis_id}/findings", headers=auth_header(email))
+    body = response.json()
+    numbering = next(f for f in body if f["rule_id"] == "RULE019")
+
+    assert numbering["requirement_name"] == "Consistent Numbering"
+    assert numbering["dimension"] == "Numbering and Structure"
+    assert numbering["source_type"] == "Derived Exam Requirement"
+    assert numbering["officiality"] == "Derived"
+
+    marks = next(f for f in body if f["rule_id"] == "RULE018")
+    assert marks["requirement_name"] == "Correct Total Marks"
+    assert marks["dimension"] == "Marks and Totals"

@@ -6,7 +6,7 @@ from app.models.evidence import Evidence
 from app.models.question import Question
 from app.services.rules.marks_total import evaluate_marks_and_total
 from app.services.rules.numbering import evaluate_numbering
-from app.services.rules.scoring import calculate_overall_score
+from app.services.rules.scoring import calculate_overall_score, count_statuses
 
 _ANALYSIS_ID = uuid.uuid4()
 
@@ -131,3 +131,32 @@ def test_rule006_none_result_contributes_nothing_to_a_status_list() -> None:
     assert statuses == [AcademicStatus.SATISFIED, AcademicStatus.PARTIALLY_SATISFIED]
     score = calculate_overall_score(statuses)
     assert score.denominator == 2
+
+
+# --- M9: count_statuses (SCORE023/SCORE024 reporting requirements) -------
+
+
+def test_count_statuses_counts_every_occurrence() -> None:
+    counts = count_statuses(
+        [
+            AcademicStatus.SATISFIED,
+            AcademicStatus.SATISFIED,
+            AcademicStatus.PARTIALLY_SATISFIED,
+            AcademicStatus.NOT_SATISFIED,
+            AcademicStatus.NOT_VERIFIED,
+            AcademicStatus.NOT_VERIFIED,
+            AcademicStatus.NOT_APPLICABLE,
+        ]
+    )
+    assert counts[AcademicStatus.SATISFIED] == 2
+    assert counts[AcademicStatus.PARTIALLY_SATISFIED] == 1
+    assert counts[AcademicStatus.NOT_SATISFIED] == 1
+    assert counts[AcademicStatus.NOT_VERIFIED] == 2
+    assert counts[AcademicStatus.NOT_APPLICABLE] == 1
+
+
+def test_count_statuses_zero_fills_every_member_for_an_empty_list() -> None:
+    # SCORE024 (docs/SCORING_POLICY.md): Not Verified/Not Applicable counts
+    # must be shown separately even when zero, not omitted.
+    counts = count_statuses([])
+    assert counts == {status: 0 for status in AcademicStatus}

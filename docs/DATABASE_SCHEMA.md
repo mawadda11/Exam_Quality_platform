@@ -23,3 +23,16 @@
 - Reanalysis uses `predecessor_analysis_id`.
 - File hashes support integrity and duplicate detection.
 - Page indexing convention: API uses 1-based page numbers; internal extractor offsets must be converted at the boundary.
+
+## M9 status note
+This document describes the full target schema; as of M9 the `analyses` table has no `score`,
+`predecessor`, or `kb_version` columns yet, and the `recommendations` and `reports` tables do not
+exist. This is an explicit M9 decision, not an oversight:
+- Overall score (`GET /analyses/{id}/score`) and recommendations
+  (`GET /analyses/{id}/recommendations`) are computed read-time from the analysis's current
+  `findings` rows plus the versioned KB - no migration was needed or added.
+- Persisting a score/recommendation snapshot, `predecessor_analysis_id` (reanalysis), `kb_version`,
+  and the `reports` table remain Milestone 10 scope ("Report generation and revised-exam
+  history"), where persistence and immutability-at-completion-time genuinely matter (a rendered
+  report must reflect the KB version and findings at generation time, not drift with later KB
+  edits the way a live read-time view intentionally does).

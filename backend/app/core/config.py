@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     max_upload_mb: int = Field(default=50, ge=1, le=200)
     allowed_origins: str = "http://localhost:5173"
     upload_root: str = "../storage/uploads"
+    kb_source_dir: str = "../knowledge_base/source"
 
     @property
     def allowed_origin_list(self) -> list[str]:

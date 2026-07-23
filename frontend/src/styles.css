@@ -31,3 +31,46 @@ p { line-height: 1.7; }
 .processing-status button { padding: .55rem 1.25rem; border: none; border-radius: 999px; background: #182230; color: white; font-weight: 600; cursor: pointer; }
 .processing-status button:disabled { opacity: .6; cursor: not-allowed; }
 .processing-stage { margin: 0; }
+
+.analysis-results { margin-top: 2rem; text-align: left; }
+.results-nav { display: flex; flex-wrap: wrap; gap: .5rem; border-bottom: 1px solid #dfe4ea; padding-bottom: .75rem; }
+.results-nav-button { padding: .5rem 1rem; border: 1px solid #c7cfd8; border-radius: 999px; background: white; font: inherit; font-weight: 600; font-size: .85rem; cursor: pointer; }
+.results-nav-button.results-nav-active { background: #182230; color: white; border-color: #182230; }
+.results-panel { margin-top: 1.25rem; }
+
+.score-panel { margin-top: .75rem; }
+.overall-score { font-size: 1.1rem; }
+.overall-score-insufficient { color: #6b7280; font-style: italic; }
+.score-denominator { font-size: .85rem; color: #6b7280; font-weight: 400; }
+.status-counts { list-style: none; padding: 0; margin: .75rem 0 0; display: flex; flex-wrap: wrap; gap: .75rem 1.5rem; font-size: .9rem; }
+
+.questions-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.questions-table th, .questions-table td { text-align: left; padding: .5rem .75rem; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+
+.reference-data-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.5rem; margin-top: 1.5rem; }
+.code-reference-list { list-style: none; padding: 0; margin: .5rem 0 0; display: flex; flex-direction: column; gap: .4rem; font-size: .85rem; }
+
+.finding-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 1rem; }
+.finding-card { border: 1px solid #dfe4ea; border-radius: 12px; padding: 1rem; }
+.finding-card-header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.finding-card-meta { font-size: .8rem; color: #6b7280; margin: .35rem 0; }
+.finding-card details { margin-top: .5rem; font-size: .85rem; }
+.evidence-list { margin: .5rem 0 0; padding-left: 1.1rem; }
+.evidence-empty { color: #6b7280; font-size: .85rem; font-style: italic; margin: .5rem 0 0; }
+
+.status-badge { padding: .2rem .6rem; border-radius: 999px; font-size: .75rem; font-weight: 700; white-space: nowrap; }
+.status-satisfied { background: #e5f6ec; color: #14532d; }
+.status-partial { background: #fef3c7; color: #92400e; }
+.status-not-satisfied { background: #fde2e1; color: #8f231d; }
+.status-not-verified { background: #eef3f7; color: #374151; }
+.status-not-applicable { background: #eef1f4; color: #6b7280; }
+
+.governance-tag { border: 1px solid #c7cfd8; border-radius: 999px; padding: .1rem .5rem; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
+
+.recommendation-list { list-style: none; padding: 0; margin: .75rem 0 0; display: flex; flex-direction: column; gap: .6rem; }
+.recommendation-list li { background: #f4f6f8; border-radius: 8px; padding: .6rem .75rem; }
+.recommendation-list p { margin: .25rem 0; }
+.recommendation-meta { font-size: .75rem; color: #6b7280; }
+
+.missing-evidence-panel { background: #eef3f7; border-radius: 12px; padding: 1rem; margin-bottom: 1.25rem; }
+.missing-evidence-panel h4 { margin-top: 0; }

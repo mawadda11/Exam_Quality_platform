@@ -1,7 +1,13 @@
 import { useState, type FormEvent } from 'react'
 import { createAnalysis, getAnalysis } from '../../api/analyses'
 import { ApiError } from '../../api/client'
-import type { AnalysisResponse, ExamType, UploadedFileResponse } from '../../types/api'
+import type {
+  AnalysisResponse,
+  ExamType,
+  ProcessingStage,
+  UploadedFileResponse,
+} from '../../types/api'
+import { AnalysisResults } from '../analysis-results/AnalysisResults'
 import { FileUploadField } from './FileUploadField'
 import { ProcessingStatus } from './ProcessingStatus'
 import { validateAnalysisDetails, type AnalysisDetailsErrors } from './validation'
@@ -17,6 +23,7 @@ export function AnalysisUploadFlow() {
   const [isCreating, setIsCreating] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null)
+  const [processingState, setProcessingState] = useState<ProcessingStage | null>(null)
 
   async function handleSubmit(event: FormEvent): Promise<void> {
     event.preventDefault()
@@ -135,10 +142,18 @@ export function AnalysisUploadFlow() {
       {analysis.ready_for_analysis ? (
         <div className="notice notice-success">
           <p>Both required documents are uploaded.</p>
-          <ProcessingStatus analysisId={analysis.id} initialState={analysis.state} />
+          <ProcessingStatus
+            analysisId={analysis.id}
+            initialState={analysis.state}
+            onStateChange={setProcessingState}
+          />
         </div>
       ) : (
         <p className="notice">Upload both the examination PDF and the populated TP-153 to continue.</p>
+      )}
+
+      {(processingState ?? analysis.state) === 'completed' && (
+        <AnalysisResults key={analysis.id} analysis={analysis} />
       )}
     </div>
   )

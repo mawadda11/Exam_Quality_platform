@@ -14,12 +14,14 @@ interface ProcessingStatusProps {
   analysisId: string
   initialState: ProcessingStage
   pollIntervalMs?: number
+  onStateChange?: (state: ProcessingStage) => void
 }
 
 export function ProcessingStatus({
   analysisId,
   initialState,
   pollIntervalMs = 1500,
+  onStateChange,
 }: ProcessingStatusProps) {
   const [state, setState] = useState<ProcessingStage>(initialState)
   const [message, setMessage] = useState<string | null>(null)
@@ -29,6 +31,11 @@ export function ProcessingStatus({
   const hasStarted = state !== 'queued'
   const isTerminal = TERMINAL_STAGES.includes(state)
 
+  function applyState(next: ProcessingStage): void {
+    setState(next)
+    onStateChange?.(next)
+  }
+
   useEffect(() => {
     if (!hasStarted || isTerminal) return undefined
 
@@ -37,7 +44,7 @@ export function ProcessingStatus({
       getAnalysisProgress(analysisId)
         .then((progress) => {
           if (cancelled) return
-          setState(progress.state)
+          applyState(progress.state)
           setMessage(progress.message)
         })
         .catch(() => {
@@ -49,6 +56,7 @@ export function ProcessingStatus({
       cancelled = true
       clearInterval(interval)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analysisId, hasStarted, isTerminal, pollIntervalMs])
 
   async function handleStart(): Promise<void> {
@@ -56,7 +64,7 @@ export function ProcessingStatus({
     setStartError(null)
     try {
       const response = await runAnalysis(analysisId)
-      setState(response.state)
+      applyState(response.state)
     } catch (err) {
       setStartError(err instanceof ApiError ? err.detail : 'Could not start the analysis.')
     } finally {

@@ -93,4 +93,21 @@ describe('ProcessingStatus', () => {
     expect(await screen.findByText(/server unavailable/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /start analysis/i })).toBeInTheDocument()
   })
+
+  it('calls onStateChange whenever the tracked stage changes, so a parent can react to completion', async () => {
+    vi.mocked(analysesApi.runAnalysis).mockResolvedValue(analysisResponse('validating'))
+    const onStateChange = vi.fn()
+    render(
+      <ProcessingStatus
+        analysisId="analysis-1"
+        initialState="queued"
+        onStateChange={onStateChange}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /start analysis/i }))
+
+    await screen.findByText('Validating')
+    expect(onStateChange).toHaveBeenCalledWith('validating')
+  })
 })

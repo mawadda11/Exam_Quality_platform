@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile, status
@@ -29,14 +30,24 @@ from app.schemas.course import CourseInput
 from app.schemas.finding import FindingResponse
 from app.schemas.progress import ProgressResponse
 from app.schemas.question import QuestionResponse
+from app.schemas.recommendation import RecommendationResponse
+from app.schemas.score import AnalysisScoreResponse
 from app.schemas.topic import TopicResponse
 from app.schemas.uploaded_file import UploadedFileResponse
+from app.services.knowledge_base.reference_data import (
+    get_recommendations_for,
+    get_requirement_display,
+)
 from app.services.processing.runner import run_analysis_pipeline
 from app.services.storage.files import UploadTooLargeError, stream_validate_and_store
 from app.services.storage.keys import resolve_storage_path
 from app.services.storage.validation import UploadValidationError
 
 router = APIRouter(prefix="/analyses", tags=["analyses"])
+
+
+def _kb_source_dir(settings: Settings) -> Path:
+    return Path(settings.kb_source_dir).resolve()
 
 
 def _get_or_create_course(db: Session, course_input: CourseInput) -> Course:
@@ -268,21 +279,65 @@ def list_analysis_assessment_records(
     return [AssessmentRecordResponse.model_validate(record) for record in records]
 
 
-@router.get("/{analysis_id}/findings", response_model=list[FindingResponse])
-def list_analysis_findings(
-    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
-    db: Annotated[Session, Depends(get_db)],
-) -> list[FindingResponse]:
-    # Deterministic rule outcomes only - no aggregate analysis score here
-    # (that remains Milestone 10 scope).
-    findings = (
+def _load_findings(db: Session, analysis_id: uuid.UUID) -> list[Finding]:
+    return list(
         db.execute(
             select(Finding)
-            .where(Finding.analysis_id == analysis.id)
+            .where(Finding.analysis_id == analysis_id)
             .order_by(Finding.created_at, Finding.rule_id)
             .options(selectinload(Finding.evidence_links).selectinload(FindingEvidence.evidence))
         )
         .scalars()
         .all()
     )
-    return [FindingResponse.from_model(finding) for finding in findings]
+
+
+@router.get("/{analysis_id}/findings", response_model=list[FindingResponse])
+def list_analysis_findings(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> list[FindingResponse]:
+    # Deterministic rule outcomes, enriched (M9) with each Finding's official
+    # requirement display metadata (name/dimension/officiality) resolved
+    # from 04_requirements.xlsx - no aggregate analysis score here, that's
+    # GET /score below, still computed read-time rather than persisted
+    # (Milestone 10 owns persistence/report rendering).
+    findings = _load_findings(db, analysis.id)
+    source_dir = _kb_source_dir(settings)
+    return [
+        FindingResponse.from_model(
+            finding, get_requirement_display(source_dir, finding.requirement_id)
+        )
+        for finding in findings
+    ]
+
+
+@router.get("/{analysis_id}/score", response_model=AnalysisScoreResponse)
+def get_analysis_score(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+) -> AnalysisScoreResponse:
+    # Read-time aggregation over whatever Findings currently exist (none yet
+    # -> Insufficient Evidence) - reuses the M6 scoring function unchanged.
+    # No `analyses.score` column: see docs/DATABASE_SCHEMA.md's M9 note.
+    findings = _load_findings(db, analysis.id)
+    return AnalysisScoreResponse.from_findings(analysis.id, findings)
+
+
+@router.get("/{analysis_id}/recommendations", response_model=list[RecommendationResponse])
+def list_analysis_recommendations(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> list[RecommendationResponse]:
+    # Resolved read-time from each Finding's (rule_id, status) against
+    # 08_recommendations.xlsx - never persisted. Satisfied/Not Applicable
+    # findings naturally produce zero matches (see reference_data.py).
+    findings = _load_findings(db, analysis.id)
+    source_dir = _kb_source_dir(settings)
+    return [
+        RecommendationResponse.from_finding(finding, display)
+        for finding in findings
+        for display in get_recommendations_for(source_dir, finding.rule_id, finding.status)
+    ]
