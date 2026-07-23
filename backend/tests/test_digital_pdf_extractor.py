@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from helpers import valid_pdf_bytes
 from pdf_fixtures import build_blank_pdf, build_synthetic_exam_pdf
+from rules_pdf_fixtures import build_exam_with_correct_total_pdf
 
 from app.services.extraction.digital_pdf_extractor import PdfPlumberExamExtractor
 from app.services.extraction.types import ExtractionError
@@ -126,6 +127,30 @@ def test_question_text_evidence_is_traceable_to_source(tmp_path: Path) -> None:
     assert question_evidence["Q1"].page_number == 1
     assert question_evidence["Q4"].page_number == 2
     assert question_evidence["Q1"].question_number_label == "Q1"
+
+
+def test_extracts_declared_total_as_evidence_not_a_question(tmp_path: Path) -> None:
+    pdf_path = _write(tmp_path, "exam.pdf", build_exam_with_correct_total_pdf())
+
+    result = PdfPlumberExamExtractor().extract(pdf_path)
+
+    total_evidence = [e for e in result.evidence if e.evidence_type == "declared_total"]
+    assert len(total_evidence) == 1
+    assert total_evidence[0].extracted_text == "Total Marks: 15"
+    assert total_evidence[0].item_reference == "total"
+    assert total_evidence[0].question_number_label is None
+    assert total_evidence[0].confidence == 1.0
+
+    # The "Total Marks: 15" line must never itself become a question row.
+    assert all(q.text != "Total Marks: 15" for q in result.questions)
+
+
+def test_exam_without_a_total_line_yields_no_declared_total_evidence(tmp_path: Path) -> None:
+    pdf_path = _write(tmp_path, "exam.pdf", build_synthetic_exam_pdf())
+
+    result = PdfPlumberExamExtractor().extract(pdf_path)
+
+    assert all(e.evidence_type != "declared_total" for e in result.evidence)
 
 
 def test_blank_pdf_yields_no_questions_without_error(tmp_path: Path) -> None:

@@ -16,6 +16,7 @@ from app.models.analysis import Analysis
 from app.models.assessment_record import AssessmentRecord
 from app.models.clo import Clo
 from app.models.course import Course
+from app.models.finding import Finding, FindingEvidence
 from app.models.processing_event import ProcessingEvent
 from app.models.question import Question
 from app.models.topic import Topic
@@ -25,6 +26,7 @@ from app.schemas.analysis import AnalysisCreateRequest, AnalysisResponse
 from app.schemas.assessment_record import AssessmentRecordResponse
 from app.schemas.clo import CloResponse
 from app.schemas.course import CourseInput
+from app.schemas.finding import FindingResponse
 from app.schemas.progress import ProgressResponse
 from app.schemas.question import QuestionResponse
 from app.schemas.topic import TopicResponse
@@ -264,3 +266,23 @@ def list_analysis_assessment_records(
         .order_by(AssessmentRecord.page_number, AssessmentRecord.created_at)
     ).scalars()
     return [AssessmentRecordResponse.model_validate(record) for record in records]
+
+
+@router.get("/{analysis_id}/findings", response_model=list[FindingResponse])
+def list_analysis_findings(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[FindingResponse]:
+    # Deterministic rule outcomes only - no aggregate analysis score here
+    # (that remains Milestone 10 scope).
+    findings = (
+        db.execute(
+            select(Finding)
+            .where(Finding.analysis_id == analysis.id)
+            .order_by(Finding.created_at, Finding.rule_id)
+            .options(selectinload(Finding.evidence_links).selectinload(FindingEvidence.evidence))
+        )
+        .scalars()
+        .all()
+    )
+    return [FindingResponse.from_model(finding) for finding in findings]

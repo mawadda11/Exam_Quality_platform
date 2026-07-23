@@ -3,23 +3,32 @@
 Milestone 3 wired the stage machine and job runner with no-op placeholders.
 Milestone 4 replaced run_extracting_exam with real digital-PDF extraction
 and persistence. Milestone 5 replaces run_extracting_tp153 the same way.
-Every other stage remains a placeholder for a later milestone to replace.
+Milestone 6 replaces run_applying_rules with the marks/total and numbering
+deterministic rules. Every other stage remains a placeholder for a later
+milestone to replace.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.domain import ProcessingStage, UploadedFileType
 from app.models.analysis import Analysis
+from app.models.evidence import Evidence
+from app.models.question import Question
 from app.services.extraction.digital_pdf_extractor import PdfPlumberExamExtractor
 from app.services.extraction.digital_tp153_extractor import PdfPlumberTp153Extractor
 from app.services.extraction.persistence import persist_extraction_result
 from app.services.extraction.tp153_persistence import persist_tp153_extraction_result
 from app.services.extraction.types import ExtractionError
+from app.services.rules.identifiers import MARKS_AND_TOTAL, NUMBERING
+from app.services.rules.marks_total import evaluate_marks_and_total
+from app.services.rules.numbering import evaluate_numbering
+from app.services.rules.persistence import persist_finding
 from app.services.storage.keys import resolve_storage_path
 
 
@@ -62,7 +71,30 @@ def run_retrieving_knowledge(analysis: Analysis, session: Session, settings: Set
 
 
 def run_applying_rules(analysis: Analysis, session: Session, settings: Settings) -> None:
-    """Placeholder. A future milestone implements the rule engine here."""
+    """Runs the two M6 deterministic, exam-internal rules (marks/total
+    arithmetic and numbering) over M4's extracted questions and exam
+    evidence, and persists one Finding each. KB retrieval, CLO/topic
+    alignment, assessment consistency, semantic evaluation, recommendations,
+    and report generation remain placeholders for later milestones."""
+    questions = (
+        session.execute(select(Question).where(Question.analysis_id == analysis.id)).scalars().all()
+    )
+    exam_evidence = (
+        session.execute(
+            select(Evidence).where(
+                Evidence.analysis_id == analysis.id,
+                Evidence.source_document == UploadedFileType.EXAM,
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    marks_result = evaluate_marks_and_total(questions, exam_evidence)
+    persist_finding(session, analysis.id, MARKS_AND_TOTAL, marks_result)
+
+    numbering_result = evaluate_numbering(questions, exam_evidence)
+    persist_finding(session, analysis.id, NUMBERING, numbering_result)
 
 
 def run_generating_report(analysis: Analysis, session: Session, settings: Settings) -> None:

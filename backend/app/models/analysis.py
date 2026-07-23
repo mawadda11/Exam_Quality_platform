@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from app.models.clo import Clo
     from app.models.course import Course
     from app.models.evidence import Evidence
+    from app.models.finding import Finding
     from app.models.processing_event import ProcessingEvent
     from app.models.question import Question
     from app.models.topic import Topic
@@ -62,6 +63,9 @@ class Analysis(TimestampMixin, Base):
         back_populates="analysis", cascade="all, delete-orphan"
     )
     assessment_records: Mapped[list[AssessmentRecord]] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan"
+    )
+    findings: Mapped[list[Finding]] = relationship(
         back_populates="analysis", cascade="all, delete-orphan"
     )
 

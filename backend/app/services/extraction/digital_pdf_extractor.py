@@ -9,7 +9,10 @@ Parsing is a deterministic, regex-based heuristic, not a statistical model:
 - a line matching "(<letter>)" is a child of the most recently seen
   top-level question;
 - a "[<n> marks]" bracket anywhere in a line attaches marks to that line;
-- a line starting with "Instructions:" becomes non-question evidence.
+- a line starting with "Instructions:" becomes non-question evidence;
+- a line matching "Total Marks: <n>" becomes declared-total evidence (not a
+  question) - TOTAL_MARKS_PATTERN is exported so rule code (M6) can parse the
+  same value back out of the persisted evidence text without redefining it.
 Confidence reflects whether the text match and the position (geometry) match
 agreed, not any statistical certainty.
 """
@@ -37,10 +40,16 @@ _SUBQUESTION_LINE = re.compile(r"^\(([a-z])\)\s*(.*)$")
 _INSTRUCTIONS_LINE = re.compile(r"^Instructions:\s*", re.IGNORECASE)
 _MARKS_ANYWHERE = re.compile(r"\[\s*(\d+(?:\.\d+)?)\s*marks?\s*\]", re.IGNORECASE)
 
+# Public (no leading underscore): M6's marks/total rule imports this to parse
+# the same declared-total value back out of the persisted evidence text,
+# rather than redefining an equivalent pattern that could drift out of sync.
+TOTAL_MARKS_PATTERN = re.compile(r"^Total\s+Marks\s*:\s*(\d+(?:\.\d+)?)\s*$", re.IGNORECASE)
+
 _QUESTION_SEARCH = r"Q\d+\."
 _SUBQUESTION_SEARCH = r"\([a-z]\)"
 _MARKS_SEARCH = r"\[\s*\d+(?:\.\d+)?\s*marks?\s*\]"
 _INSTRUCTIONS_SEARCH = r"Instructions:"
+_TOTAL_MARKS_SEARCH = r"Total\s+Marks\s*:\s*\d+(?:\.\d+)?"
 
 _FULL_CONFIDENCE = 1.0
 _NO_GEOMETRY_CONFIDENCE = 0.6
@@ -104,6 +113,7 @@ class PdfPlumberExamExtractor:
                 subquestion_matches = iter(page.search(_SUBQUESTION_SEARCH))
                 marks_matches = iter(page.search(_MARKS_SEARCH))
                 instructions_matches = iter(page.search(_INSTRUCTIONS_SEARCH))
+                total_marks_matches = iter(page.search(_TOTAL_MARKS_SEARCH))
 
                 for line in lines:
                     marks = _parse_marks(line)
@@ -131,6 +141,20 @@ class PdfPlumberExamExtractor:
                                 evidence_type="instructions",
                                 page_number=page_number,
                                 item_reference="instructions",
+                                extracted_text=line,
+                                confidence=_confidence_for(geometry),
+                                geometry=geometry,
+                                question_number_label=None,
+                            )
+                        )
+                        continue
+                    elif TOTAL_MARKS_PATTERN.match(line):
+                        geometry = _next_geometry(total_marks_matches)
+                        evidence.append(
+                            ExtractedEvidence(
+                                evidence_type="declared_total",
+                                page_number=page_number,
+                                item_reference="total",
                                 extracted_text=line,
                                 confidence=_confidence_for(geometry),
                                 geometry=geometry,
