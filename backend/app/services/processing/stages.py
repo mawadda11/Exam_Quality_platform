@@ -5,12 +5,20 @@ Milestone 4 replaced run_extracting_exam with real digital-PDF extraction
 and persistence. Milestone 5 replaces run_extracting_tp153 the same way.
 Milestone 6 replaces run_applying_rules with the marks/total and numbering
 deterministic rules; Milestone 8 extends the same stage with deterministic
-CLO/topic alignment and coverage rules, plus three official rules that
-always report Not Verified (or, for one, Not Applicable) because they need
-semantic judgment or an undefined threshold M8 does not attempt. KB
-retrieval, assessment-method consistency, real semantic evaluation,
-recommendations, and report generation remain placeholders for later
-milestones.
+CLO/topic alignment and coverage rules. KB retrieval, assessment-method
+consistency, real semantic evaluation, recommendations, and report
+generation remain placeholders for later milestones.
+
+M8 correction: this stage now only persists a Finding for a rule when the
+rule genuinely evaluates something. REQ002/RULE002 (CLO Relevance) and
+REQ008/RULE008 (Out-of-Scope Content) require semantic judgment this
+deterministic engine does not provide and are no longer called here at all
+- see app.services.rules.capability_manifest for how they're represented
+instead. REQ006/RULE006 (CLO Coverage Distribution) is genuinely
+deterministic only for 0 or 1 applicable CLOs; evaluate_clo_coverage_distribution
+returns None for 2+, and this stage skips persistence in that case rather
+than recording an unconditional Not Verified Finding for a judgment it
+cannot make.
 """
 
 from __future__ import annotations
@@ -39,27 +47,36 @@ from app.services.rules.clo_topic_alignment import (
 from app.services.rules.clo_topic_coverage import (
     evaluate_applicable_clo_coverage,
     evaluate_applicable_topic_coverage,
+    evaluate_clo_coverage_distribution,
 )
 from app.services.rules.identifiers import (
     APPLICABLE_CLO_COVERAGE,
     APPLICABLE_TOPIC_COVERAGE,
     CLO_COVERAGE_DISTRIBUTION,
-    CLO_RELEVANCE,
     MARKS_AND_TOTAL,
     NUMBERING,
-    OUT_OF_SCOPE_CONTENT,
     QUESTION_TO_CLO_MAPPING,
     QUESTION_TO_TOPIC_ALIGNMENT,
+    RuleIdentifier,
 )
 from app.services.rules.marks_total import evaluate_marks_and_total
 from app.services.rules.numbering import evaluate_numbering
 from app.services.rules.persistence import persist_finding
-from app.services.rules.semantic_deferred import (
-    evaluate_clo_coverage_distribution,
-    evaluate_clo_relevance,
-    evaluate_out_of_scope_content,
-)
 from app.services.storage.keys import resolve_storage_path
+
+# The RuleIdentifiers run_applying_rules actually evaluates at runtime.
+# Read by tests to confirm the capability manifest's SUPPORTED/
+# PARTIALLY_SUPPORTED entries correspond to real pipeline capabilities,
+# without needing fragile source-text inspection of this module.
+RUNTIME_RULE_IDENTIFIERS: tuple[RuleIdentifier, ...] = (
+    MARKS_AND_TOTAL,
+    NUMBERING,
+    QUESTION_TO_CLO_MAPPING,
+    APPLICABLE_CLO_COVERAGE,
+    CLO_COVERAGE_DISTRIBUTION,
+    QUESTION_TO_TOPIC_ALIGNMENT,
+    APPLICABLE_TOPIC_COVERAGE,
+)
 
 
 def run_validating(analysis: Analysis, session: Session, settings: Settings) -> None:
@@ -102,13 +119,12 @@ def run_retrieving_knowledge(analysis: Analysis, session: Session, settings: Set
 
 def run_applying_rules(analysis: Analysis, session: Session, settings: Settings) -> None:
     """Runs the M6 deterministic, exam-internal rules (marks/total
-    arithmetic and numbering), the M8 deterministic CLO/topic alignment and
-    coverage rules, and the three M8 rules that require semantic judgment
-    or an undefined threshold (always Not Verified, or Not Applicable for a
-    single applicable CLO) - nine findings total. KB retrieval,
-    assessment-method consistency, real semantic evaluation,
-    recommendations, and report generation remain placeholders for later
-    milestones."""
+    arithmetic and numbering) and the M8 deterministic CLO/topic alignment
+    and coverage rules, and persists one Finding per rule that genuinely
+    produces one - RULE006 persists no Finding at all when 2+ CLOs are
+    applicable (see module docstring). KB retrieval, assessment-method
+    consistency, real semantic evaluation, recommendations, and report
+    generation remain placeholders for later milestones."""
     questions = (
         session.execute(select(Question).where(Question.analysis_id == analysis.id)).scalars().all()
     )
@@ -160,14 +176,11 @@ def run_applying_rules(analysis: Analysis, session: Session, settings: Settings)
     topic_coverage_result = evaluate_applicable_topic_coverage(questions, combined_evidence, topics)
     persist_finding(session, analysis.id, APPLICABLE_TOPIC_COVERAGE, topic_coverage_result)
 
-    clo_relevance_result = evaluate_clo_relevance(questions, combined_evidence, clos)
-    persist_finding(session, analysis.id, CLO_RELEVANCE, clo_relevance_result)
-
-    clo_distribution_result = evaluate_clo_coverage_distribution(questions, combined_evidence, clos)
-    persist_finding(session, analysis.id, CLO_COVERAGE_DISTRIBUTION, clo_distribution_result)
-
-    out_of_scope_result = evaluate_out_of_scope_content(questions, combined_evidence, topics)
-    persist_finding(session, analysis.id, OUT_OF_SCOPE_CONTENT, out_of_scope_result)
+    # None (2+ applicable CLOs) means no genuine judgment is possible - skip
+    # persistence rather than record an unconditional Not Verified Finding.
+    clo_distribution_result = evaluate_clo_coverage_distribution(combined_evidence, clos)
+    if clo_distribution_result is not None:
+        persist_finding(session, analysis.id, CLO_COVERAGE_DISTRIBUTION, clo_distribution_result)
 
 
 def run_generating_report(analysis: Analysis, session: Session, settings: Settings) -> None:

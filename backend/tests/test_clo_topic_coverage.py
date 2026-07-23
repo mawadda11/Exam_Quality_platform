@@ -14,6 +14,7 @@ from app.models.topic import Topic
 from app.services.rules.clo_topic_coverage import (
     evaluate_applicable_clo_coverage,
     evaluate_applicable_topic_coverage,
+    evaluate_clo_coverage_distribution,
 )
 
 ANALYSIS_ID = uuid.uuid4()
@@ -206,3 +207,53 @@ def test_topic_coverage_none_covered_is_not_verified() -> None:
         [topic1, topic2],
     )
     assert result.status == AcademicStatus.NOT_VERIFIED
+
+
+# --- CLO Coverage Distribution (REQ006) - M8 correction ---------------------
+#
+# Only genuinely deterministic for 0 or 1 applicable CLOs. For 2+, no
+# concentration threshold exists in the KB, so the function returns None
+# rather than an unconditional Not Verified Finding - see
+# app.services.rules.capability_manifest for how that gap is documented.
+
+
+def test_coverage_distribution_zero_clos_is_not_verified() -> None:
+    result = evaluate_clo_coverage_distribution([], [])
+    assert result is not None
+    assert result.status == AcademicStatus.NOT_VERIFIED
+
+
+def test_coverage_distribution_single_clo_is_not_applicable() -> None:
+    clo1 = _clo("CLO1")
+    clo1_ev = _clo_evidence(clo1)
+    result = evaluate_clo_coverage_distribution([clo1_ev], [clo1])
+    assert result is not None
+    assert result.status == AcademicStatus.NOT_APPLICABLE
+    assert "one clo" in result.explanation.lower()
+    assert result.evidence_ids == [clo1_ev.id]
+
+
+def test_coverage_distribution_two_clos_returns_none() -> None:
+    clo1, clo2 = _clo("CLO1"), _clo("CLO2")
+    result = evaluate_clo_coverage_distribution(
+        [_clo_evidence(clo1), _clo_evidence(clo2)], [clo1, clo2]
+    )
+    assert result is None
+
+
+def test_coverage_distribution_many_clos_returns_none() -> None:
+    clos = [_clo(f"CLO{i}") for i in range(1, 6)]
+    evidence = [_clo_evidence(clo) for clo in clos]
+    result = evaluate_clo_coverage_distribution(evidence, clos)
+    assert result is None
+
+
+def test_coverage_distribution_never_returns_satisfied_partial_or_not_satisfied() -> None:
+    clo1 = _clo("CLO1")
+    for evidence, clos in [
+        ([], []),
+        ([_clo_evidence(clo1)], [clo1]),
+    ]:
+        result = evaluate_clo_coverage_distribution(evidence, clos)
+        assert result is not None
+        assert result.status in (AcademicStatus.NOT_APPLICABLE, AcademicStatus.NOT_VERIFIED)

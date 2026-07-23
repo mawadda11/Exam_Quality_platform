@@ -91,3 +91,43 @@ def test_calculate_overall_score_from_m6_findings_excludes_not_applicable_and_no
     assert score.score is None
     assert score.denominator == 0
     assert score.label == "Insufficient Evidence"
+
+
+# --- M8 correction: scoring/denominator safety --------------------------
+
+
+def test_removing_unconditional_not_verified_findings_does_not_change_score() -> None:
+    # REQ002/RULE002 and REQ008/RULE008 used to always contribute Not
+    # Verified before the M8 correction removed them entirely. Not Verified
+    # was already excluded from the denominator, so removing those two
+    # inputs must leave the score and denominator unchanged.
+    base_statuses = [
+        AcademicStatus.SATISFIED,
+        AcademicStatus.SATISFIED,
+        AcademicStatus.PARTIALLY_SATISFIED,
+        AcademicStatus.NOT_APPLICABLE,
+    ]
+    old_behavior_statuses = [
+        *base_statuses,
+        AcademicStatus.NOT_VERIFIED,  # formerly RULE002
+        AcademicStatus.NOT_VERIFIED,  # formerly RULE008
+    ]
+
+    old_score = calculate_overall_score(old_behavior_statuses)
+    new_score = calculate_overall_score(base_statuses)
+
+    assert old_score.score == new_score.score
+    assert old_score.denominator == new_score.denominator
+
+
+def test_rule006_none_result_contributes_nothing_to_a_status_list() -> None:
+    # Mirrors exactly what run_applying_rules does for the 2+ applicable-CLO
+    # case: skip persistence (and therefore skip contributing anything to
+    # scoring) when the evaluator returns None, rather than substituting an
+    # invented fallback status.
+    evaluator_results = [AcademicStatus.SATISFIED, None, AcademicStatus.PARTIALLY_SATISFIED]
+    statuses = [status for status in evaluator_results if status is not None]
+
+    assert statuses == [AcademicStatus.SATISFIED, AcademicStatus.PARTIALLY_SATISFIED]
+    score = calculate_overall_score(statuses)
+    assert score.denominator == 2

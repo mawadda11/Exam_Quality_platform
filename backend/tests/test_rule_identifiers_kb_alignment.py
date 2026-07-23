@@ -14,10 +14,8 @@ from app.services.rules.identifiers import (
     APPLICABLE_CLO_COVERAGE,
     APPLICABLE_TOPIC_COVERAGE,
     CLO_COVERAGE_DISTRIBUTION,
-    CLO_RELEVANCE,
     MARKS_AND_TOTAL,
     NUMBERING,
-    OUT_OF_SCOPE_CONTENT,
     QUESTION_TO_CLO_MAPPING,
     QUESTION_TO_TOPIC_ALIGNMENT,
     RuleIdentifier,
@@ -98,11 +96,9 @@ def test_marks_and_total_rule_output_statuses_include_all_five() -> None:
     ("identifier", "expected_dimension"),
     [
         (QUESTION_TO_CLO_MAPPING, "CLO Alignment"),
-        (CLO_RELEVANCE, "CLO Alignment"),
         (APPLICABLE_CLO_COVERAGE, "CLO Coverage"),
         (CLO_COVERAGE_DISTRIBUTION, "CLO Coverage"),
         (QUESTION_TO_TOPIC_ALIGNMENT, "Topic Alignment"),
-        (OUT_OF_SCOPE_CONTENT, "Topic Alignment"),
         (APPLICABLE_TOPIC_COVERAGE, "Topic Coverage"),
     ],
 )
@@ -119,11 +115,9 @@ def test_m8_requirement_id_exists_and_matches(
     "identifier",
     [
         QUESTION_TO_CLO_MAPPING,
-        CLO_RELEVANCE,
         APPLICABLE_CLO_COVERAGE,
         CLO_COVERAGE_DISTRIBUTION,
         QUESTION_TO_TOPIC_ALIGNMENT,
-        OUT_OF_SCOPE_CONTENT,
         APPLICABLE_TOPIC_COVERAGE,
     ],
 )
@@ -157,18 +151,7 @@ def test_topic_coverage_rule_output_statuses_include_not_applicable() -> None:
     assert "Not Applicable" in str(match["Output_Statuses"])
 
 
-# --- M8: the three semantic-deferred identifiers -----------------------------
-
-
-@pytest.mark.parametrize("identifier", [CLO_RELEVANCE, OUT_OF_SCOPE_CONTENT])
-def test_semantic_deferred_rules_have_no_not_applicable_condition(
-    identifier: RuleIdentifier,
-) -> None:
-    # RULE002 and RULE008 both declare Not_Applicable_Condition "None" - our
-    # evaluators must only ever produce Not Verified for them.
-    rules = _rows("07_evaluation_rules.xlsx")
-    match = next(r for r in rules if r["Rule_ID"] == identifier.rule_id)
-    assert match["Not_Applicable_Condition"] == "None"
+# --- M8 correction: RULE006's KB-literal Not Applicable condition -----------
 
 
 def test_clo_coverage_distribution_not_applicable_condition_is_single_clo() -> None:

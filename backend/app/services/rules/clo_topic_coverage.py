@@ -1,9 +1,10 @@
-"""Applicable CLO Coverage (REQ005/RULE005) and Applicable Topic Coverage
-(REQ009/RULE009). Pure functions - same shape as clo_topic_alignment.py.
+"""Applicable CLO Coverage (REQ005/RULE005), Applicable Topic Coverage
+(REQ009/RULE009), and CLO Coverage Distribution (REQ006/RULE006). Pure
+functions - same shape as clo_topic_alignment.py.
 
-Per target CLO/topic, asks "does at least one scorable question explicitly
-cite this code" (app.services.rules.references). Aggregated across all
-applicable CLOs/topics using a deterministic all/some/none split:
+REQ005/REQ009 ask "does at least one scorable question explicitly cite this
+code" (app.services.rules.references) per target CLO/topic, aggregated
+using a deterministic all/some/none split:
 - Satisfied_Condition - every applicable CLO/topic has at least one citing
   question.
 - Partially_Satisfied_Condition - at least one, but not every, applicable
@@ -18,6 +19,19 @@ applicable CLOs/topics using a deterministic all/some/none split:
 - Not_Applicable_Condition - REQ009 only ("No topic set is designated for
   the uploaded exam"); REQ005 declares "None" and so never returns this.
 - Not_Satisfied_Condition - never reachable by this heuristic; see above.
+
+REQ006 (CLO Coverage Distribution) is only genuinely deterministic for two
+of its five KB-declared statuses:
+- 0 applicable CLOs -> Not Verified (required source data unavailable).
+- exactly 1 applicable CLO -> Not Applicable (the KB's own literal
+  condition: "Only one CLO is applicable.").
+- 2+ applicable CLOs -> evaluate_clo_coverage_distribution returns None and
+  the caller must not persist a Finding. Distinguishing Satisfied from
+  Partially Satisfied here requires judging the *degree* of evidence
+  concentration, and the KB defines no numeric threshold for that
+  judgment - so, per the M8 correction, this is treated as an unsupported
+  capability (see app.services.rules.capability_manifest), not an
+  unconditional Not Verified Finding.
 """
 
 from __future__ import annotations
@@ -153,3 +167,32 @@ def evaluate_applicable_topic_coverage(
         target_noun="topic",
         no_targets_explanation="No topics were extracted from the TP-153.",
     )
+
+
+def evaluate_clo_coverage_distribution(
+    evidence: Sequence[Evidence], clos: Sequence[Clo]
+) -> RuleFindingResult | None:
+    """Returns None (never Not Verified) when 2+ CLOs are applicable - the
+    caller must skip persist_finding in that case rather than record an
+    unconditional Finding for a judgment this engine cannot make."""
+    if not clos:
+        return RuleFindingResult(
+            status=AcademicStatus.NOT_VERIFIED,
+            explanation=(
+                "No CLOs were extracted from the TP-153, so coverage distribution cannot be "
+                "assessed."
+            ),
+            confidence=0.0,
+            evidence_ids=[],
+        )
+    if len(clos) == 1:
+        clo_evidence_ids = [
+            e.id for e in evidence if e.evidence_type == "clo" and e.item_reference == clos[0].code
+        ]
+        return RuleFindingResult(
+            status=AcademicStatus.NOT_APPLICABLE,
+            explanation="Only one CLO is applicable, so coverage distribution does not apply.",
+            confidence=1.0,
+            evidence_ids=clo_evidence_ids,
+        )
+    return None

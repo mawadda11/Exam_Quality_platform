@@ -27,17 +27,12 @@ ANALYSIS_PAYLOAD = {
     "term": "2026 Spring",
 }
 
-ALL_NINE_RULE_IDS = {
-    "RULE001",
-    "RULE002",
-    "RULE005",
-    "RULE006",
-    "RULE007",
-    "RULE008",
-    "RULE009",
-    "RULE018",
-    "RULE019",
-}
+# RULE001/005/007/009/018/019 are unconditional - every completed analysis
+# produces exactly these six. RULE006 (CLO Coverage Distribution) only
+# joins them for 0 or 1 applicable CLOs; RULE002/RULE008 never appear at
+# all (see the M8 correction / capability_manifest.py).
+UNCONDITIONAL_RULE_IDS = {"RULE001", "RULE005", "RULE007", "RULE009", "RULE018", "RULE019"}
+REMOVED_RULE_IDS = {"RULE002", "RULE008"}
 
 
 def _create_analysis(client: TestClient, email: str) -> str:
@@ -89,16 +84,17 @@ def _run_to_completion_and_get_findings(
     return {f["rule_id"]: f for f in findings}
 
 
-def test_all_nine_findings_present_together_m6_and_m8(client: TestClient) -> None:
-    # M6's marks/numbering findings must keep being produced alongside M8's
-    # seven - run_applying_rules extends, never replaces.
+def test_multiple_clos_yields_six_findings_rule006_absent(client: TestClient) -> None:
+    # build_complete_tp153_pdf() has 3 CLOs - RULE006 cannot judge
+    # concentration for 2+ CLOs, so no Finding is persisted for it at all.
     findings = _run_to_completion_and_get_findings(
         client,
-        "m8-1@kau.edu.sa",
+        "m8c-1@kau.edu.sa",
         build_exam_citing_all_clos_and_topics_pdf(),
         build_complete_tp153_pdf(),
     )
-    assert set(findings) == ALL_NINE_RULE_IDS
+    assert set(findings) == UNCONDITIONAL_RULE_IDS
+    assert "RULE006" not in findings
 
 
 def test_full_citations_satisfies_all_deterministic_alignment_and_coverage_rules(
@@ -106,7 +102,7 @@ def test_full_citations_satisfies_all_deterministic_alignment_and_coverage_rules
 ) -> None:
     findings = _run_to_completion_and_get_findings(
         client,
-        "m8-2@kau.edu.sa",
+        "m8c-2@kau.edu.sa",
         build_exam_citing_all_clos_and_topics_pdf(),
         build_complete_tp153_pdf(),
     )
@@ -118,28 +114,22 @@ def test_full_citations_satisfies_all_deterministic_alignment_and_coverage_rules
         assert findings[rule_id]["requirement_id"].startswith("REQ")
         assert len(findings[rule_id]["evidence"]) > 0
 
-    # 3 CLOs are applicable here (not exactly 1), so RULE006 cannot reach
-    # its Not Applicable branch - it and the two always-deferred rules are
-    # Not Verified regardless of how many citations exist.
-    assert findings["RULE002"]["status"] == "Not Verified"
-    assert findings["RULE006"]["status"] == "Not Verified"
-    assert findings["RULE008"]["status"] == "Not Verified"
-
 
 def test_no_citations_is_not_verified_for_alignment_and_coverage(client: TestClient) -> None:
     # Absence of any citation must never be reported as Not Satisfied - only
     # Not Verified (we have no evidence either way).
     findings = _run_to_completion_and_get_findings(
         client,
-        "m8-3@kau.edu.sa",
+        "m8c-3@kau.edu.sa",
         build_exam_citing_no_clos_or_topics_pdf(),
         build_complete_tp153_pdf(),
     )
+    assert set(findings) == UNCONDITIONAL_RULE_IDS
     assert findings["RULE001"]["status"] == "Not Verified"
     assert findings["RULE007"]["status"] == "Not Verified"
     assert findings["RULE005"]["status"] == "Not Verified"
     assert findings["RULE009"]["status"] == "Not Verified"
-    for rule_id in ALL_NINE_RULE_IDS:
+    for rule_id in UNCONDITIONAL_RULE_IDS:
         assert findings[rule_id]["status"] != "Not Satisfied"
 
 
@@ -148,7 +138,7 @@ def test_some_citations_is_partially_satisfied_for_alignment_and_coverage(
 ) -> None:
     findings = _run_to_completion_and_get_findings(
         client,
-        "m8-4@kau.edu.sa",
+        "m8c-4@kau.edu.sa",
         build_exam_citing_some_clos_and_topics_pdf(),
         build_complete_tp153_pdf(),
     )
@@ -158,14 +148,14 @@ def test_some_citations_is_partially_satisfied_for_alignment_and_coverage(
     # every applicable CLO/topic is covered.
     assert findings["RULE005"]["status"] == "Partially Satisfied"
     assert findings["RULE009"]["status"] == "Partially Satisfied"
-    for rule_id in ALL_NINE_RULE_IDS:
+    for rule_id in UNCONDITIONAL_RULE_IDS:
         assert findings[rule_id]["status"] != "Not Satisfied"
 
 
 def test_hyphenated_and_bracketed_citation_variants_are_recognized(client: TestClient) -> None:
     findings = _run_to_completion_and_get_findings(
         client,
-        "m8-5@kau.edu.sa",
+        "m8c-5@kau.edu.sa",
         build_exam_citing_hyphenated_and_bracketed_variants_pdf(),
         build_complete_tp153_pdf(),
     )
@@ -175,32 +165,29 @@ def test_hyphenated_and_bracketed_citation_variants_are_recognized(client: TestC
     assert findings["RULE009"]["status"] == "Satisfied"
 
 
-def test_missing_clo_section_is_not_verified_and_excluded_from_score(client: TestClient) -> None:
+def test_zero_clos_yields_rule006_not_verified_and_excluded_from_score(client: TestClient) -> None:
     findings = _run_to_completion_and_get_findings(
         client,
-        "m8-6@kau.edu.sa",
+        "m8c-6@kau.edu.sa",
         build_exam_citing_two_topics_pdf(),
         build_missing_clo_section_tp153_pdf(),
     )
     assert findings["RULE001"]["status"] == "Not Verified"
     assert findings["RULE005"]["status"] == "Not Verified"
-    # Zero CLOs is not "exactly one CLO", so RULE006 falls to Not Verified
-    # too, same as the two always-deferred rules.
-    assert findings["RULE002"]["status"] == "Not Verified"
     assert findings["RULE006"]["status"] == "Not Verified"
-    assert findings["RULE008"]["status"] == "Not Verified"
     # Topics/assessment records are still present in this TP-153 fixture -
     # only the CLO section is missing (see tp153_pdf_fixtures.py).
     assert findings["RULE007"]["status"] == "Satisfied"
     assert findings["RULE009"]["status"] == "Satisfied"
+    assert set(findings) == UNCONDITIONAL_RULE_IDS | {"RULE006"}
 
     statuses = [AcademicStatus(f["status"]) for f in findings.values()]
     not_verified_count = sum(1 for s in statuses if s == AcademicStatus.NOT_VERIFIED)
-    assert not_verified_count == 5
+    assert not_verified_count == 3  # RULE001, RULE005, RULE006
 
     # calculate_overall_score excludes both Not Verified and Not Applicable
     # (RULE018 marks/total is Not Applicable here - this exam has no
-    # declared total line, which is unrelated to the missing CLO section).
+    # declared total line, unrelated to the missing CLO section).
     excluded = sum(
         1 for s in statuses if s in (AcademicStatus.NOT_VERIFIED, AcademicStatus.NOT_APPLICABLE)
     )
@@ -216,8 +203,25 @@ def test_single_applicable_clo_makes_coverage_distribution_not_applicable(
     # Applicable condition, exercised here through the real pipeline.
     findings = _run_to_completion_and_get_findings(
         client,
-        "m8-7@kau.edu.sa",
+        "m8c-7@kau.edu.sa",
         build_exam_citing_all_clos_and_topics_pdf(),
         build_incomplete_assessment_tp153_pdf(),
     )
     assert findings["RULE006"]["status"] == "Not Applicable"
+    assert set(findings) == UNCONDITIONAL_RULE_IDS | {"RULE006"}
+
+
+def test_removed_rules_never_appear_in_findings(client: TestClient) -> None:
+    # Covers every fixture combination used above in one pass, confirming
+    # RULE002/RULE008 are gone under every scenario, not just the common one.
+    scenarios = [
+        (build_exam_citing_all_clos_and_topics_pdf(), build_complete_tp153_pdf()),
+        (build_exam_citing_no_clos_or_topics_pdf(), build_complete_tp153_pdf()),
+        (build_exam_citing_two_topics_pdf(), build_missing_clo_section_tp153_pdf()),
+        (build_exam_citing_all_clos_and_topics_pdf(), build_incomplete_assessment_tp153_pdf()),
+    ]
+    for i, (exam_pdf, tp153_pdf) in enumerate(scenarios):
+        findings = _run_to_completion_and_get_findings(
+            client, f"m8c-removed-{i}@kau.edu.sa", exam_pdf, tp153_pdf
+        )
+        assert REMOVED_RULE_IDS.isdisjoint(findings)

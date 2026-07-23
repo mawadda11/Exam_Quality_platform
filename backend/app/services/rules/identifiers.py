@@ -38,12 +38,11 @@ QUESTION_TO_TOPIC_ALIGNMENT = RuleIdentifier(
 APPLICABLE_TOPIC_COVERAGE = RuleIdentifier(
     requirement_id="REQ009", rule_id="RULE009", rule_name="Applicable Topic Coverage"
 )
-CLO_RELEVANCE = RuleIdentifier(
-    requirement_id="REQ002", rule_id="RULE002", rule_name="CLO Relevance"
-)
 CLO_COVERAGE_DISTRIBUTION = RuleIdentifier(
     requirement_id="REQ006", rule_id="RULE006", rule_name="CLO Coverage Distribution"
 )
-OUT_OF_SCOPE_CONTENT = RuleIdentifier(
-    requirement_id="REQ008", rule_id="RULE008", rule_name="Out-of-Scope Content"
-)
+# REQ002/RULE002 (CLO Relevance) and REQ008/RULE008 (Out-of-Scope Content)
+# are deliberately not defined here - the M8 correction removed them from
+# the runtime rule engine entirely (they require semantic judgment this
+# deterministic system does not provide). They are documented as
+# unsupported in app.services.rules.capability_manifest instead.
