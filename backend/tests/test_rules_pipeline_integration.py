@@ -69,7 +69,10 @@ def _run_to_completion_and_get_findings(
 
     findings = client.get(f"/api/v1/analyses/{analysis_id}/findings", headers=headers).json()
     by_rule_id = {f["rule_id"]: f for f in findings}
-    assert set(by_rule_id) == {"RULE018", "RULE019"}
+    # M8 added four more rules to the same run_applying_rules stage - this
+    # file only cares about M6's two, so it checks presence, not exclusivity
+    # (see test_m8_pipeline_integration.py for the "all six together" check).
+    assert {"RULE018", "RULE019"} <= set(by_rule_id)
     return by_rule_id
 
 

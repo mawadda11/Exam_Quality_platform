@@ -36,20 +36,10 @@ from app.core.domain import AcademicStatus
 from app.models.evidence import Evidence
 from app.models.question import Question
 from app.services.extraction.digital_pdf_extractor import TOTAL_MARKS_PATTERN
+from app.services.rules.question_hierarchy import scorable_leaves
 from app.services.rules.types import RuleFindingResult
 
 _NOT_APPLICABLE_EXPLANATION = "No declared total marks were found in the exam."
-
-
-def _leaves(questions: Sequence[Question]) -> list[Question]:
-    parent_ids_with_children = {
-        q.parent_question_id for q in questions if q.parent_question_id is not None
-    }
-    return [
-        q
-        for q in questions
-        if q.parent_question_id is not None or q.id not in parent_ids_with_children
-    ]
 
 
 def _parse_declared_total(text: str) -> Decimal | None:
@@ -89,7 +79,7 @@ def evaluate_marks_and_total(
             evidence_ids=[declared_total_evidence.id],
         )
 
-    leaves = _leaves(questions)
+    leaves = scorable_leaves(questions)
     base_evidence_ids: list[uuid.UUID] = [declared_total_evidence.id]
     for leaf in leaves:
         text_ev = text_evidence_by_label.get(leaf.number_label)

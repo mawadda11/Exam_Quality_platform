@@ -4,8 +4,13 @@ Milestone 3 wired the stage machine and job runner with no-op placeholders.
 Milestone 4 replaced run_extracting_exam with real digital-PDF extraction
 and persistence. Milestone 5 replaces run_extracting_tp153 the same way.
 Milestone 6 replaces run_applying_rules with the marks/total and numbering
-deterministic rules. Every other stage remains a placeholder for a later
-milestone to replace.
+deterministic rules; Milestone 8 extends the same stage with deterministic
+CLO/topic alignment and coverage rules, plus three official rules that
+always report Not Verified (or, for one, Not Applicable) because they need
+semantic judgment or an undefined threshold M8 does not attempt. KB
+retrieval, assessment-method consistency, real semantic evaluation,
+recommendations, and report generation remain placeholders for later
+milestones.
 """
 
 from __future__ import annotations
@@ -18,17 +23,42 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.core.domain import ProcessingStage, UploadedFileType
 from app.models.analysis import Analysis
+from app.models.clo import Clo
 from app.models.evidence import Evidence
 from app.models.question import Question
+from app.models.topic import Topic
 from app.services.extraction.digital_pdf_extractor import PdfPlumberExamExtractor
 from app.services.extraction.digital_tp153_extractor import PdfPlumberTp153Extractor
 from app.services.extraction.persistence import persist_extraction_result
 from app.services.extraction.tp153_persistence import persist_tp153_extraction_result
 from app.services.extraction.types import ExtractionError
-from app.services.rules.identifiers import MARKS_AND_TOTAL, NUMBERING
+from app.services.rules.clo_topic_alignment import (
+    evaluate_question_to_clo_mapping,
+    evaluate_question_to_topic_alignment,
+)
+from app.services.rules.clo_topic_coverage import (
+    evaluate_applicable_clo_coverage,
+    evaluate_applicable_topic_coverage,
+)
+from app.services.rules.identifiers import (
+    APPLICABLE_CLO_COVERAGE,
+    APPLICABLE_TOPIC_COVERAGE,
+    CLO_COVERAGE_DISTRIBUTION,
+    CLO_RELEVANCE,
+    MARKS_AND_TOTAL,
+    NUMBERING,
+    OUT_OF_SCOPE_CONTENT,
+    QUESTION_TO_CLO_MAPPING,
+    QUESTION_TO_TOPIC_ALIGNMENT,
+)
 from app.services.rules.marks_total import evaluate_marks_and_total
 from app.services.rules.numbering import evaluate_numbering
 from app.services.rules.persistence import persist_finding
+from app.services.rules.semantic_deferred import (
+    evaluate_clo_coverage_distribution,
+    evaluate_clo_relevance,
+    evaluate_out_of_scope_content,
+)
 from app.services.storage.keys import resolve_storage_path
 
 
@@ -71,11 +101,14 @@ def run_retrieving_knowledge(analysis: Analysis, session: Session, settings: Set
 
 
 def run_applying_rules(analysis: Analysis, session: Session, settings: Settings) -> None:
-    """Runs the two M6 deterministic, exam-internal rules (marks/total
-    arithmetic and numbering) over M4's extracted questions and exam
-    evidence, and persists one Finding each. KB retrieval, CLO/topic
-    alignment, assessment consistency, semantic evaluation, recommendations,
-    and report generation remain placeholders for later milestones."""
+    """Runs the M6 deterministic, exam-internal rules (marks/total
+    arithmetic and numbering), the M8 deterministic CLO/topic alignment and
+    coverage rules, and the three M8 rules that require semantic judgment
+    or an undefined threshold (always Not Verified, or Not Applicable for a
+    single applicable CLO) - nine findings total. KB retrieval,
+    assessment-method consistency, real semantic evaluation,
+    recommendations, and report generation remain placeholders for later
+    milestones."""
     questions = (
         session.execute(select(Question).where(Question.analysis_id == analysis.id)).scalars().all()
     )
@@ -95,6 +128,46 @@ def run_applying_rules(analysis: Analysis, session: Session, settings: Settings)
 
     numbering_result = evaluate_numbering(questions, exam_evidence)
     persist_finding(session, analysis.id, NUMBERING, numbering_result)
+
+    tp153_evidence = (
+        session.execute(
+            select(Evidence).where(
+                Evidence.analysis_id == analysis.id,
+                Evidence.source_document == UploadedFileType.TP153,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    clos = session.execute(select(Clo).where(Clo.analysis_id == analysis.id)).scalars().all()
+    topics = session.execute(select(Topic).where(Topic.analysis_id == analysis.id)).scalars().all()
+
+    # Question text (exam evidence) and CLO/topic evidence (TP-153 evidence)
+    # are both needed - question_text rows only exist under EXAM.
+    combined_evidence = [*exam_evidence, *tp153_evidence]
+
+    clo_mapping_result = evaluate_question_to_clo_mapping(questions, combined_evidence, clos)
+    persist_finding(session, analysis.id, QUESTION_TO_CLO_MAPPING, clo_mapping_result)
+
+    clo_coverage_result = evaluate_applicable_clo_coverage(questions, combined_evidence, clos)
+    persist_finding(session, analysis.id, APPLICABLE_CLO_COVERAGE, clo_coverage_result)
+
+    topic_alignment_result = evaluate_question_to_topic_alignment(
+        questions, combined_evidence, topics
+    )
+    persist_finding(session, analysis.id, QUESTION_TO_TOPIC_ALIGNMENT, topic_alignment_result)
+
+    topic_coverage_result = evaluate_applicable_topic_coverage(questions, combined_evidence, topics)
+    persist_finding(session, analysis.id, APPLICABLE_TOPIC_COVERAGE, topic_coverage_result)
+
+    clo_relevance_result = evaluate_clo_relevance(questions, combined_evidence, clos)
+    persist_finding(session, analysis.id, CLO_RELEVANCE, clo_relevance_result)
+
+    clo_distribution_result = evaluate_clo_coverage_distribution(questions, combined_evidence, clos)
+    persist_finding(session, analysis.id, CLO_COVERAGE_DISTRIBUTION, clo_distribution_result)
+
+    out_of_scope_result = evaluate_out_of_scope_content(questions, combined_evidence, topics)
+    persist_finding(session, analysis.id, OUT_OF_SCOPE_CONTENT, out_of_scope_result)
 
 
 def run_generating_report(analysis: Analysis, session: Session, settings: Settings) -> None:
