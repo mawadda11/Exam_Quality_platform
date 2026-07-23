@@ -13,6 +13,8 @@ Repository scaffold for an evidence-based Midterm and Final exam quality-analysi
 Claude Code automatically reads `CLAUDE.md` in the repository root.
 
 ## Local development
+
+With Docker (entire stack - frontend, backend, PostgreSQL, ChromaDB):
 ```bash
 cp .env.example .env
 docker compose up --build
@@ -21,6 +23,10 @@ docker compose up --build
 - Frontend: http://localhost:5173
 - Backend API: http://localhost:8000
 - API docs: http://localhost:8000/docs
+
+Without Docker (native backend dev server): PostgreSQL must still run somewhere reachable at
+`localhost:5432` (via `docker compose up -d postgres`, or a native install) - see "Running
+PostgreSQL locally" and the backend commands in `CLAUDE.md`.
 
 ## Repository map
 - `frontend/`: React/TypeScript application.

@@ -21,6 +21,15 @@ services:
   backend:
     build: ./backend
     env_file: .env
+    # Overrides .env's native-development defaults (localhost / relative
+    # paths) back to values correct for this container: "postgres" only
+    # resolves inside the Compose network, and the app's cwd here isn't
+    # backend/. `environment:` takes precedence over `env_file:` for the
+    # same key, so this is correct regardless of what .env contains.
+    environment:
+      DATABASE_URL: postgresql+psycopg://exam_quality:exam_quality@postgres:5432/exam_quality
+      UPLOAD_ROOT: /app/storage/uploads
+      KB_SOURCE_DIR: /app/knowledge_base/source
     ports: ["8000:8000"]
     volumes:
       - ./backend:/app/backend

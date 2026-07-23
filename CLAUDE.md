@@ -110,11 +110,11 @@ A task is complete only when:
 
 ## Standard commands
 ```bash
-# Entire local stack
+# Entire local stack (requires Docker)
 cp .env.example .env
 docker compose up --build
 
-# Backend
+# Backend - lint/type/test only (no database needed; pytest uses in-memory SQLite)
 cd backend
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
@@ -123,6 +123,12 @@ ruff check .
 ruff format --check .
 mypy app
 pytest
+
+# Backend - running the live dev server natively (no Docker required for the
+# app process itself, but PostgreSQL must be reachable at localhost:5432 -
+# see "Running PostgreSQL locally" below). From backend/, with the venv active:
+alembic upgrade head                       # apply the schema - required before first run
+uvicorn app.main:app --reload --port 8000  # http://localhost:8000, docs at /docs
 
 # Frontend
 cd frontend
@@ -135,3 +141,16 @@ npm run build
 # Knowledge base
 python scripts/validate_knowledge_base.py
 ```
+
+### Running PostgreSQL locally
+The application requires PostgreSQL (never SQLite in real use; pytest's in-memory SQLite is
+test-only). `database_url`'s default (`app/core/config.py`) and `.env.example` both point at
+`localhost:5432` for native development - `docker-compose.yml` overrides this back to the
+`postgres` Compose hostname for its own containerized backend service, so editing `.env` never
+affects the Docker flow. To provision Postgres for native development, use either:
+- `docker compose up -d postgres` (Docker required; publishes 5432 to the host), or
+- a native PostgreSQL install with a role/database matching the default `DATABASE_URL`: database
+  `exam_quality`, role `exam_quality`, password `exam_quality`.
+
+Either way, run `alembic upgrade head` (from `backend/`) before the first request - the
+`analyses`/`findings`/etc. tables do not exist until migrations are applied.
