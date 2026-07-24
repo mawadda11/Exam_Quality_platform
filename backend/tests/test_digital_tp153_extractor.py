@@ -8,6 +8,7 @@ from tp153_pdf_fixtures import (
     build_complete_tp153_pdf,
     build_incomplete_assessment_tp153_pdf,
     build_missing_clo_section_tp153_pdf,
+    build_official_sample_format_tp153_pdf,
 )
 
 from app.services.extraction.digital_tp153_extractor import PdfPlumberTp153Extractor
@@ -125,6 +126,26 @@ def test_incomplete_assessment_line_keeps_method_and_activity_with_null_percenta
     # The incomplete record is not dropped, and no section is falsely
     # reported missing since at least one assessment record was found.
     assert result.missing_sections == []
+
+
+def test_extracts_only_explicit_bundled_sample_tp153_records(tmp_path: Path) -> None:
+    pdf_path = _write(tmp_path, "sample-tp153.pdf", build_official_sample_format_tp153_pdf())
+
+    result = PdfPlumberTp153Extractor().extract(pdf_path)
+
+    assert [(clo.code, clo.text) for clo in result.clos] == [
+        ("CLO1", "Explain programming concepts"),
+        ("CLO2", "Develop simple Python programs"),
+    ]
+    assert result.topics == []
+    assert [
+        (record.method, record.activity, record.percentage) for record in result.assessment_records
+    ] == [
+        ("Midterm", None, 30.0),
+        ("Final", None, 50.0),
+        ("Assignments", None, 20.0),
+    ]
+    assert [missing.section for missing in result.missing_sections] == ["topics"]
 
 
 def test_unparseable_pdf_raises_extraction_error_without_leaking_details(tmp_path: Path) -> None:

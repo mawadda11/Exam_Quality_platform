@@ -4,7 +4,7 @@ Reads only a PDF's existing text layer via pdfplumber - it never performs
 OCR. A page with no extractable text simply contributes nothing.
 
 Parsing is a deterministic, regex-based heuristic, not a statistical model,
-built around three section headers and one line pattern per section:
+built around three section headers and explicit line patterns:
 - "Course Learning Outcomes" section: lines matching "CLO<n>: <text> [PLO<n>]"
   (the bracketed program-outcome reference is optional).
 - "Course Topics" section: lines matching "T<n>: <text> - <n> hours".
@@ -12,6 +12,9 @@ built around three section headers and one line pattern per section:
   "Method: <method> | Activity: <activity> | Percentage: <n>%"; a line
   missing the "| Percentage: ...%" segment still yields a record with
   percentage=None rather than being dropped.
+- The bundled compact table format may instead provide "CLO<n> <text>" rows
+  and one "Assessment <method> <n>%, ..." row. Only those explicit values are
+  extracted; absent topic rows remain missing evidence.
 
 Confidence reflects whether the text match and the position (geometry)
 match agreed, not any statistical certainty. If, after the whole document
@@ -49,10 +52,13 @@ _ASSESSMENT_LINE_FULL = re.compile(
     r"^Method:\s*(.+?)\s*\|\s*Activity:\s*(.+?)\s*\|\s*Percentage:\s*(\d+(?:\.\d+)?)%\s*$"
 )
 _ASSESSMENT_LINE_PARTIAL = re.compile(r"^Method:\s*(.+?)\s*\|\s*Activity:\s*(.+?)\s*$")
+_COMPACT_CLO_LINE = re.compile(r"^CLO(\d+)\s+(.+?)(?:\s+\[(PLO\d+)\])?\s*$")
+_COMPACT_ASSESSMENT_LINE = re.compile(r"^Assessment\s+(.+?)\s*$", re.IGNORECASE)
+_COMPACT_ASSESSMENT_ITEM = re.compile(r"^(.+?)\s+(\d+(?:\.\d+)?)%\s*$")
 
-_CLO_SEARCH = r"CLO\d+:"
+_CLO_SEARCH = r"CLO\d+"
 _TOPIC_SEARCH = r"T\d+:"
-_ASSESSMENT_SEARCH = r"Method:"
+_ASSESSMENT_SEARCH = r"(?:Method:|Assessment)"
 
 _FULL_CONFIDENCE = 1.0
 _NO_GEOMETRY_CONFIDENCE = 0.6
@@ -120,6 +126,40 @@ class PdfPlumberTp153Extractor:
                         continue
                     if _ASSESSMENT_SECTION_HEADER.match(line):
                         current_section = "assessment_records"
+                        continue
+
+                    compact_clo_match = _COMPACT_CLO_LINE.match(line)
+                    if compact_clo_match:
+                        geometry = _next_geometry(clo_matches)
+                        clos.append(
+                            ExtractedClo(
+                                code=f"CLO{compact_clo_match.group(1)}",
+                                text=compact_clo_match.group(2).strip(),
+                                program_outcome_reference=compact_clo_match.group(3),
+                                page_number=page_number,
+                                confidence=_confidence_for(geometry),
+                                geometry=geometry,
+                            )
+                        )
+                        continue
+
+                    compact_assessment_match = _COMPACT_ASSESSMENT_LINE.match(line)
+                    if compact_assessment_match:
+                        geometry = _next_geometry(assessment_matches)
+                        for item in compact_assessment_match.group(1).split(","):
+                            item_match = _COMPACT_ASSESSMENT_ITEM.match(item.strip())
+                            if item_match is None:
+                                continue
+                            assessment_records.append(
+                                ExtractedAssessmentRecord(
+                                    method=item_match.group(1).strip(),
+                                    activity=None,
+                                    percentage=float(item_match.group(2)),
+                                    page_number=page_number,
+                                    confidence=_confidence_for(geometry),
+                                    geometry=geometry,
+                                )
+                            )
                         continue
 
                     if current_section == "clos" and (clo_match := _CLO_LINE.match(line)):

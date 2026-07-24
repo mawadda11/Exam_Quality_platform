@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from helpers import auth_header
-from pdf_fixtures import build_synthetic_exam_pdf
+from pdf_fixtures import build_official_sample_format_exam_pdf, build_synthetic_exam_pdf
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
-from tp153_pdf_fixtures import build_complete_tp153_pdf
+from tp153_pdf_fixtures import build_complete_tp153_pdf, build_official_sample_format_tp153_pdf
 
 from app.core.domain import UploadedFileType
 from app.models.evidence import Evidence
@@ -93,6 +93,63 @@ def test_pipeline_extracts_and_persists_questions_from_real_exam(client: TestCli
     assert questions[0]["marks"] == 5.0
     assert questions[0]["page_number"] == 1
     assert questions[4]["page_number"] == 2  # Q3 is the first question on page 2
+
+
+def test_bundled_sample_format_persists_only_explicit_entities_and_not_verified_gaps(
+    client: TestClient,
+) -> None:
+    email = "official-sample-format@kau.edu.sa"
+    analysis_id = _create_analysis(client, email)
+    _upload(
+        client,
+        analysis_id,
+        email,
+        "exam",
+        "sample-midterm.pdf",
+        build_official_sample_format_exam_pdf(),
+    )
+    _upload(
+        client,
+        analysis_id,
+        email,
+        "tp153",
+        "sample-tp153.pdf",
+        build_official_sample_format_tp153_pdf(),
+    )
+
+    headers = auth_header(email)
+    run_response = client.post(f"/api/v1/analyses/{analysis_id}/run", headers=headers)
+    assert run_response.status_code == 202
+    assert _poll_until_terminal(client, analysis_id, headers)["state"] == "completed"
+
+    questions = client.get(f"/api/v1/analyses/{analysis_id}/questions", headers=headers).json()
+    clos = client.get(f"/api/v1/analyses/{analysis_id}/clos", headers=headers).json()
+    topics = client.get(f"/api/v1/analyses/{analysis_id}/topics", headers=headers).json()
+    assessments = client.get(
+        f"/api/v1/analyses/{analysis_id}/assessment-records", headers=headers
+    ).json()
+    findings = client.get(f"/api/v1/analyses/{analysis_id}/findings", headers=headers).json()
+
+    assert [(q["number_label"], q["marks"]) for q in questions] == [
+        ("Q1", 10.0),
+        ("Q2", 10.0),
+        ("Q3", 10.0),
+    ]
+    assert [clo["code"] for clo in clos] == ["CLO1", "CLO2"]
+    assert topics == []
+    assert [
+        (record["method"], record["activity"], record["percentage"]) for record in assessments
+    ] == [
+        ("Midterm", None, 30.0),
+        ("Final", None, 50.0),
+        ("Assignments", None, 20.0),
+    ]
+
+    findings_by_rule = {finding["rule_id"]: finding for finding in findings}
+    assert findings_by_rule["RULE018"]["status"] == "Satisfied"
+    assert "30" in findings_by_rule["RULE018"]["explanation"]
+    assert findings_by_rule["RULE001"]["status"] == "Not Verified"
+    assert findings_by_rule["RULE007"]["status"] == "Not Verified"
 
 
 def test_pipeline_persists_evidence_with_traceable_fields(

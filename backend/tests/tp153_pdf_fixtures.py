@@ -42,6 +42,25 @@ def build_complete_tp153_pdf() -> bytes:
     return bytes(pdf.output())
 
 
+def build_official_sample_format_tp153_pdf() -> bytes:
+    """Matches the bundled compact CS101 table's explicit evidence exactly.
+
+    It intentionally contains no topic row; the extractor must preserve that
+    absence rather than derive a topic from the course name or CLO wording.
+    """
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=12)
+    _line(pdf, "Sample TP-153 (Populated)")
+    _line(pdf, "Field Value")
+    _line(pdf, "Course Code CS101")
+    _line(pdf, "Course Name Introduction to Programming")
+    _line(pdf, "CLO1 Explain programming concepts")
+    _line(pdf, "CLO2 Develop simple Python programs")
+    _line(pdf, "Assessment Midterm 30%, Final 50%, Assignments 20%")
+    return bytes(pdf.output())
+
+
 def build_missing_clo_section_tp153_pdf() -> bytes:
     """A TP-153 with the entire Course Learning Outcomes section omitted -
     topics and assessment methods are present and complete. The extractor

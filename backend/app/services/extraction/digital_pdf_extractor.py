@@ -10,6 +10,8 @@ see app.services.extraction.line_classification for the actual rules (shared
 between the digital and OCR paths, so a scanned exam and a digital exam are
 classified identically):
 - a line matching "Q<n>." starts a new top-level question;
+- the bundled "Q<n> (<marks>):" form also starts a top-level question and
+  carries its explicit marks;
 - a line matching "(<letter>)" is a child of the most recently seen
   top-level question;
 - a "[<n> marks]" bracket anywhere in a line attaches marks to that line;
@@ -58,9 +60,9 @@ from app.services.extraction.types import (
     Geometry,
 )
 
-_QUESTION_SEARCH = r"Q\d+\."
+_QUESTION_SEARCH = r"Q\d+(?:\.|\s+\(\d+(?:\.\d+)?\)\s*:)"
 _SUBQUESTION_SEARCH = r"\([a-z]\)"
-_MARKS_SEARCH = r"\[\s*\d+(?:\.\d+)?\s*marks?\s*\]"
+_MARKS_SEARCH = r"(?:\[\s*\d+(?:\.\d+)?\s*marks?\s*\]|Q\d+\s+\(\d+(?:\.\d+)?\)\s*:)"
 _INSTRUCTIONS_SEARCH = r"Instructions:"
 _TOTAL_MARKS_SEARCH = r"Total\s+Marks\s*:\s*\d+(?:\.\d+)?"
 

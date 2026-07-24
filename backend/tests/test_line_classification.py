@@ -25,6 +25,19 @@ def test_question_line_with_inline_marks_extracts_value_and_matched_text() -> No
     assert result.marks.matched_text == "[5 marks]"
 
 
+def test_bundled_sample_question_format_extracts_number_and_prefix_marks() -> None:
+    result = classify_line(
+        "Q1 (10): Define an algorithm and explain two characteristics.",
+        current_parent_label=None,
+    )
+
+    assert result.kind is LineKind.QUESTION
+    assert result.number_label == "Q1"
+    assert result.marks is not None
+    assert result.marks.value == 10.0
+    assert result.marks.matched_text == "(10)"
+
+
 def test_subquestion_line_builds_label_from_current_parent() -> None:
     result = classify_line("(a) Identify the primary key. [3 marks]", current_parent_label="Q2")
 

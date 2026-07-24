@@ -4,7 +4,11 @@ from pathlib import Path
 
 import pytest
 from helpers import corrupted_pdf_bytes
-from pdf_fixtures import build_blank_pdf, build_synthetic_exam_pdf
+from pdf_fixtures import (
+    build_blank_pdf,
+    build_official_sample_format_exam_pdf,
+    build_synthetic_exam_pdf,
+)
 from rules_pdf_fixtures import build_exam_with_correct_total_pdf
 
 from app.services.extraction.digital_pdf_extractor import PdfPlumberExamExtractor
@@ -143,6 +147,19 @@ def test_extracts_declared_total_as_evidence_not_a_question(tmp_path: Path) -> N
 
     # The "Total Marks: 15" line must never itself become a question row.
     assert all(q.text != "Total Marks: 15" for q in result.questions)
+
+
+def test_extracts_bundled_sample_question_numbers_marks_and_total(tmp_path: Path) -> None:
+    pdf_path = _write(tmp_path, "sample-midterm.pdf", build_official_sample_format_exam_pdf())
+
+    result = PdfPlumberExamExtractor().extract(pdf_path)
+
+    assert [question.number_label for question in result.questions] == ["Q1", "Q2", "Q3"]
+    assert [question.marks for question in result.questions] == [10.0, 10.0, 10.0]
+    assert sum(question.marks or 0.0 for question in result.questions) == 30.0
+    totals = [e for e in result.evidence if e.evidence_type == "declared_total"]
+    assert len(totals) == 1
+    assert totals[0].extracted_text == "Total Marks: 30"
 
 
 def test_exam_without_a_total_line_yields_no_declared_total_evidence(tmp_path: Path) -> None:

@@ -48,6 +48,20 @@ def build_synthetic_exam_pdf() -> bytes:
     return bytes(pdf.output())
 
 
+def build_official_sample_format_exam_pdf() -> bytes:
+    """Matches the bundled CS101 sample's explicit question/marks grammar."""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=12)
+    _line(pdf, "CS101 Midterm Examination (Sample)")
+    _line(pdf, "Course: Introduction to Programming")
+    _line(pdf, "Total Marks: 30")
+    _line(pdf, "Q1 (10): Define an algorithm and explain two characteristics.")
+    _line(pdf, "Q2 (10): Write a Python function to calculate the factorial of n.")
+    _line(pdf, "Q3 (10): Compare lists and tuples with two examples.")
+    return bytes(pdf.output())
+
+
 def build_blank_pdf() -> bytes:
     """A structurally valid, parseable PDF with no question content - used
     to test the zero-questions-found path without triggering a parse error."""

@@ -16,10 +16,11 @@ import re
 from dataclasses import dataclass
 from enum import Enum, auto
 
-QUESTION_LINE = re.compile(r"^Q(\d+)\.\s*(.*)$")
+QUESTION_LINE = re.compile(r"^Q(\d+)(?:\.\s*|\s+\(\d+(?:\.\d+)?\)\s*:\s*)(.*)$")
 SUBQUESTION_LINE = re.compile(r"^\(([a-z])\)\s*(.*)$")
 INSTRUCTIONS_LINE = re.compile(r"^Instructions:\s*", re.IGNORECASE)
 MARKS_ANYWHERE = re.compile(r"\[\s*(\d+(?:\.\d+)?)\s*marks?\s*\]", re.IGNORECASE)
+QUESTION_PREFIX_MARKS = re.compile(r"^Q\d+\s+(?P<matched>\((?P<value>\d+(?:\.\d+)?)\))\s*:")
 
 # Public: M6's marks/total rule imports this to parse the same declared-total
 # value back out of persisted evidence text, rather than redefining an
@@ -51,9 +52,16 @@ class ClassifiedLine:
 
 def parse_marks(line: str) -> Marks | None:
     match = MARKS_ANYWHERE.search(line)
-    if match is None:
-        return None
-    return Marks(value=float(match.group(1)), matched_text=match.group())
+    if match is not None:
+        return Marks(value=float(match.group(1)), matched_text=match.group())
+
+    prefix_match = QUESTION_PREFIX_MARKS.match(line)
+    if prefix_match is not None:
+        return Marks(
+            value=float(prefix_match.group("value")),
+            matched_text=prefix_match.group("matched"),
+        )
+    return None
 
 
 def classify_line(line: str, current_parent_label: str | None) -> ClassifiedLine:
