@@ -17,7 +17,7 @@ class Course(TimestampMixin, Base):
     __tablename__ = "courses"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    code: Mapped[str] = mapped_column(String(50), unique=True)
     name: Mapped[str] = mapped_column(String(300))
     department: Mapped[str | None] = mapped_column(String(200), default=None)
     program: Mapped[str | None] = mapped_column(String(200), default=None)

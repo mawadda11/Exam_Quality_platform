@@ -1,19 +1,16 @@
-"""Capability coverage manifest: a small, source-controlled, versioned
-record of which official KB rules the combined deterministic and approved
-semantic rule engine evaluates at runtime, and why partial branches do not
-produce Findings.
+"""Capability coverage manifest for every exam-facing Version 1 KB rule.
 
 This exists to keep AcademicStatus.NOT_VERIFIED evidence-conditioned (per
 the M8 correction): a missing evaluation *capability* must never be
 represented as a Finding, unconditional or otherwise. Rules the engine
 cannot genuinely judge are documented here instead - not persisted per
 analysis, not exposed via a new API endpoint, just an importable Python
-structure other code (and, later, M10's denominator/excluded-count
-reporting) can read.
+structure that keeps implemented, retained, partial, and explicitly
+deferred scope reviewable against the controlled KB.
 
-Only rules the runtime system actually evaluates are listed here. The
-semantic/RAG continuation adds its explicitly approved RULE002/RULE004/
-RULE008 scope; other illustrative future gaps remain test-only entries.
+System/governance rules (RULE010 and RULE023-RULE030) are enforced by
+construction and documented in docs/V1_TRACEABILITY_MATRIX.md. They are not
+exam-facing evaluator capabilities and therefore do not appear here.
 """
 
 from __future__ import annotations
@@ -34,9 +31,17 @@ class CapabilityEntry:
     rule_id: str
     requirement_name: str
     support_status: SupportStatus
+    # Most current KB rows use the same Requirement_Name and Rule_Name.
+    # RULE013 and RULE022 do not, so preserve both official values rather
+    # than forcing one field to misrepresent one of the source workbooks.
+    rule_name: str | None = None
     implemented_milestone: str | None = None
     reason: str | None = None
     planned_milestone_or_dependency: str | None = None
+
+    @property
+    def effective_rule_name(self) -> str:
+        return self.rule_name or self.requirement_name
 
     def __post_init__(self) -> None:
         if self.support_status is not SupportStatus.SUPPORTED and not (
@@ -127,5 +132,131 @@ CAPABILITY_MANIFEST: tuple[CapabilityEntry, ...] = (
         requirement_name="Out-of-Scope Content",
         support_status=SupportStatus.SUPPORTED,
         implemented_milestone="Semantic AI/RAG",
+    ),
+    CapabilityEntry(
+        requirement_id="REQ003",
+        rule_id="RULE003",
+        requirement_name="Assessment Method Consistency",
+        support_status=SupportStatus.UNSUPPORTED,
+        reason=(
+            "Retained for Version 1, but no runtime evaluator currently compares explicit exam "
+            "metadata with TP-153 assessment-method and assessment-activity evidence. Until that "
+            "conservative comparison is implemented, no Finding is released."
+        ),
+        planned_milestone_or_dependency="V1 retained-rule implementation",
+    ),
+    CapabilityEntry(
+        requirement_id="REQ011",
+        rule_id="RULE011",
+        requirement_name="Clear Task Statement",
+        support_status=SupportStatus.UNSUPPORTED,
+        reason=(
+            "Retained for governed semantic implementation in Version 1. The current runtime has "
+            "no evaluator for the KB's clear-action and expected-response conditions."
+        ),
+        planned_milestone_or_dependency="V1 retained-rule implementation",
+    ),
+    CapabilityEntry(
+        requirement_id="REQ012",
+        rule_id="RULE012",
+        requirement_name="Unambiguous Wording",
+        support_status=SupportStatus.UNSUPPORTED,
+        reason=(
+            "Retained for governed semantic implementation in Version 1. The current runtime has "
+            "no evaluator for material ambiguity, contradiction, or missing conditions."
+        ),
+        planned_milestone_or_dependency="V1 retained-rule implementation",
+    ),
+    CapabilityEntry(
+        requirement_id="REQ013",
+        rule_id="RULE013",
+        requirement_name="Complete Information",
+        rule_name="Complete Question Information",
+        support_status=SupportStatus.UNSUPPORTED,
+        reason=(
+            "Retained for governed semantic implementation in Version 1. Structured question and "
+            "question-specific instruction evidence must be available before evaluation."
+        ),
+        planned_milestone_or_dependency="V1 retained-rule implementation",
+    ),
+    CapabilityEntry(
+        requirement_id="REQ014",
+        rule_id="RULE014",
+        requirement_name="Referenced Material Availability",
+        support_status=SupportStatus.UNSUPPORTED,
+        reason=(
+            "Retained for deterministic structural implementation in Version 1. The runtime does "
+            "not yet extract and associate referenced figures, tables, code, or attachments."
+        ),
+        planned_milestone_or_dependency="V1 structured extraction and retained-rule implementation",
+    ),
+    CapabilityEntry(
+        requirement_id="REQ015",
+        rule_id="RULE015",
+        requirement_name="Supporting Material Legibility",
+        support_status=SupportStatus.UNSUPPORTED,
+        reason=(
+            "Explicitly deferred from Version 1 findings: the KB defines no approved visual "
+            "quality, OCR-confidence, resolution, contrast, size, or usability threshold, and "
+            "the project has no governed vision evaluator. Assets may be extracted as evidence, "
+            "but their legibility must not be invented."
+        ),
+    ),
+    CapabilityEntry(
+        requirement_id="REQ016",
+        rule_id="RULE016",
+        requirement_name="Supporting Material Association",
+        support_status=SupportStatus.UNSUPPORTED,
+        reason=(
+            "Retained for conservative Version 1 implementation using exact labels, explicit "
+            "references, page geometry, and unique associations. The runtime does not yet persist "
+            "that structured layout evidence; ambiguous proximity must remain Not Verified."
+        ),
+        planned_milestone_or_dependency="V1 structured extraction and retained-rule implementation",
+    ),
+    CapabilityEntry(
+        requirement_id="REQ017",
+        rule_id="RULE017",
+        requirement_name="Visible Marks",
+        support_status=SupportStatus.UNSUPPORTED,
+        reason=(
+            "Explicitly deferred from Version 1 findings: applicability depends on an undefined "
+            "institutional visible-marks policy, and the KB does not resolve the overlap between "
+            "one incomplete allocation and one missing valid allocation."
+        ),
+    ),
+    CapabilityEntry(
+        requirement_id="REQ020",
+        rule_id="RULE020",
+        requirement_name="Exam Identification",
+        support_status=SupportStatus.UNSUPPORTED,
+        reason=(
+            "Explicitly deferred from Version 1 findings: the KB requires a configurable "
+            "institutional field set but does not define which fields are required or which are "
+            "essential. Exam metadata may be extracted without inventing that policy."
+        ),
+    ),
+    CapabilityEntry(
+        requirement_id="REQ021",
+        rule_id="RULE021",
+        requirement_name="Complete Instructions",
+        support_status=SupportStatus.UNSUPPORTED,
+        reason=(
+            "Retained for conservative governed semantic implementation in Version 1. The current "
+            "runtime does not evaluate general and question-specific instruction evidence."
+        ),
+        planned_milestone_or_dependency="V1 retained-rule implementation",
+    ),
+    CapabilityEntry(
+        requirement_id="REQ022",
+        rule_id="RULE022",
+        requirement_name="Resolvable References",
+        rule_name="Resolvable Cross-References",
+        support_status=SupportStatus.UNSUPPORTED,
+        reason=(
+            "Retained for deterministic layout implementation in Version 1. The runtime does not "
+            "yet extract explicit relative references and uniquely identifiable layout targets."
+        ),
+        planned_milestone_or_dependency="V1 structured extraction and retained-rule implementation",
     ),
 )

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from alembic.config import Config
-from sqlalchemy import create_engine, event, inspect
+from sqlalchemy import Table, UniqueConstraint, create_engine, event, inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -31,6 +31,27 @@ def _alembic_config(sqlite_url: str) -> Config:
     cfg = Config(str(BACKEND_ROOT / "alembic.ini"))
     cfg.set_main_option("sqlalchemy.url", sqlite_url)
     return cfg
+
+
+@pytest.mark.parametrize(
+    ("table", "column_name"),
+    [
+        (User.__table__, "email"),
+        (Course.__table__, "code"),
+    ],
+)
+def test_model_metadata_matches_migration_unique_constraints(
+    table: Table, column_name: str
+) -> None:
+    assert any(
+        isinstance(constraint, UniqueConstraint)
+        and tuple(column.name for column in constraint.columns) == (column_name,)
+        for constraint in table.constraints
+    )
+    assert not any(
+        index.unique and tuple(column.name for column in index.columns) == (column_name,)
+        for index in table.indexes
+    )
 
 
 def test_migration_upgrade_creates_expected_tables(tmp_path: Path) -> None:

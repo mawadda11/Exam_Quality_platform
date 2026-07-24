@@ -1,7 +1,9 @@
-"""Validates app.services.rules.capability_manifest: the source-controlled
-record of which official KB rules the runtime rule engine actually
-evaluates, introduced by the M8 correction so a missing evaluation
-capability is never represented as an unconditional Not Verified Finding.
+"""Validates the complete exam-facing Version 1 capability scope.
+
+Implemented entries must match the real runtime. Retained and explicitly
+deferred gaps must remain documented as unsupported until their approved
+dependencies are implemented; a missing capability is never represented as
+an unconditional Not Verified Finding.
 """
 
 from __future__ import annotations
@@ -58,7 +60,7 @@ def test_every_manifest_rule_id_exists_in_kb_and_matches_requirement() -> None:
     for entry in CAPABILITY_MANIFEST:
         assert entry.rule_id in by_id, f"{entry.rule_id} not found in KB"
         assert by_id[entry.rule_id]["Requirement_ID"] == entry.requirement_id
-        assert by_id[entry.rule_id]["Rule_Name"] == entry.requirement_name
+        assert by_id[entry.rule_id]["Rule_Name"] == entry.effective_rule_name
 
 
 # --- Uniqueness ---------------------------------------------------------------
@@ -161,22 +163,45 @@ def test_rule006_is_partially_supported_with_both_branches_documented() -> None:
     assert "two or more" in lowered
 
 
-# --- planned_milestone_or_dependency: optional, never invented ---------------
+# --- Approved retained and deferred Version 1 scope --------------------------
 
 
-def test_planned_milestone_or_dependency_is_none_unless_explicitly_set() -> None:
-    # No production entry currently names a planned milestone/dependency -
-    # nothing in the repository's actual documentation (docs/IMPLEMENTATION_ROADMAP.md
-    # or elsewhere) formally establishes a future milestone for REQ002/REQ008's
-    # semantic-evaluation gap, so this field must not be populated by inference.
-    for entry in CAPABILITY_MANIFEST:
-        assert entry.planned_milestone_or_dependency is None
+def test_only_approved_retained_rules_name_a_v1_implementation_dependency() -> None:
+    planned = {
+        entry.rule_id
+        for entry in CAPABILITY_MANIFEST
+        if entry.planned_milestone_or_dependency is not None
+    }
+    assert planned == {
+        "RULE003",
+        "RULE011",
+        "RULE012",
+        "RULE013",
+        "RULE014",
+        "RULE016",
+        "RULE021",
+        "RULE022",
+    }
 
 
-# --- Manifest population matches the implemented runtime scope exactly -------
+def test_criteria_blocked_rules_remain_explicitly_deferred() -> None:
+    by_rule_id = {entry.rule_id: entry for entry in CAPABILITY_MANIFEST}
+    assert {
+        rule_id
+        for rule_id in ("RULE015", "RULE017", "RULE020")
+        if by_rule_id[rule_id].support_status is SupportStatus.UNSUPPORTED
+        and by_rule_id[rule_id].planned_milestone_or_dependency is None
+    } == {"RULE015", "RULE017", "RULE020"}
+
+    assert "threshold" in (by_rule_id["RULE015"].reason or "").lower()
+    assert "institutional" in (by_rule_id["RULE017"].reason or "").lower()
+    assert "institutional" in (by_rule_id["RULE020"].reason or "").lower()
 
 
-def test_manifest_contains_exactly_the_ten_runtime_entries() -> None:
+# --- Manifest population covers every exam-facing KB rule -------------------
+
+
+def test_manifest_contains_every_exam_facing_rule_with_frozen_status() -> None:
     by_status: dict[SupportStatus, set[str]] = {status: set() for status in SupportStatus}
     for entry in CAPABILITY_MANIFEST:
         by_status[entry.support_status].add(entry.rule_id)
@@ -193,64 +218,25 @@ def test_manifest_contains_exactly_the_ten_runtime_entries() -> None:
         "RULE019",
     }
     assert by_status[SupportStatus.PARTIALLY_SUPPORTED] == {"RULE006"}
-    assert by_status[SupportStatus.UNSUPPORTED] == set()
-    assert len(CAPABILITY_MANIFEST) == 10
+    assert by_status[SupportStatus.UNSUPPORTED] == {
+        "RULE003",
+        "RULE011",
+        "RULE012",
+        "RULE013",
+        "RULE014",
+        "RULE015",
+        "RULE016",
+        "RULE017",
+        "RULE020",
+        "RULE021",
+        "RULE022",
+    }
+    assert len(CAPABILITY_MANIFEST) == 21
 
-
-# --- Schema flexibility for future (not-yet-implemented) gap categories -----
-# Test-only instances, per the approved plan - never added to
-# CAPABILITY_MANIFEST itself, and none of these represent an M9 decision.
-
-
-def test_schema_can_represent_a_language_quality_gap() -> None:
-    entry = CapabilityEntry(
-        requirement_id="REQ011",
-        rule_id="RULE011",
-        requirement_name="Clear Task Statement",
-        support_status=SupportStatus.UNSUPPORTED,
-        reason="Requires judging wording clarity - a Language Rule with no deterministic proxy.",
-    )
-    assert entry.support_status is SupportStatus.UNSUPPORTED
-
-
-def test_schema_can_represent_an_ocr_vision_gap() -> None:
-    # planned_milestone_or_dependency is left None: no repository
-    # documentation formally schedules OCR/vision support, so none is
-    # invented here either - the schema must accept that state cleanly.
-    entry = CapabilityEntry(
-        requirement_id="REQ015",
-        rule_id="RULE015",
-        requirement_name="Supporting Material Legibility",
-        support_status=SupportStatus.UNSUPPORTED,
-        reason="Requires visual/OCR analysis, which this system does not perform.",
-    )
-    assert entry.planned_milestone_or_dependency is None
-
-
-def test_schema_can_represent_an_institutional_configuration_gap() -> None:
-    entry = CapabilityEntry(
-        requirement_id="REQ020",
-        rule_id="RULE020",
-        requirement_name="Exam Identification",
-        support_status=SupportStatus.UNSUPPORTED,
-        reason=(
-            "Requires an institutional policy of which metadata fields are required, which "
-            "does not exist as a system concept."
-        ),
-    )
-    assert entry.reason is not None
-
-
-def test_schema_can_represent_a_meta_rule_that_does_not_belong_in_findings() -> None:
-    entry = CapabilityEntry(
-        requirement_id="REQ010",
-        rule_id="RULE010",
-        requirement_name="Finding Traceability",
-        support_status=SupportStatus.UNSUPPORTED,
-        reason=(
-            "Validates other Findings' structure rather than exam content; already satisfied "
-            "by construction (every Finding carries evidence links) and enforced by tests, "
-            "not appropriate as a per-analysis Finding."
-        ),
-    )
-    assert entry.support_status is SupportStatus.UNSUPPORTED
+    requirements = _rows("04_requirements.xlsx")
+    exam_facing_requirement_ids = {
+        str(row["Requirement_ID"])
+        for row in requirements
+        if row["Source_Type"] == "Derived Exam Requirement"
+    }
+    assert {entry.requirement_id for entry in CAPABILITY_MANIFEST} == exam_facing_requirement_ids
