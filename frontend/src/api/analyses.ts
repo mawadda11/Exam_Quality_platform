@@ -63,8 +63,41 @@ export function listAssessmentRecords(analysisId: string): Promise<AssessmentRec
   return apiGet<AssessmentRecordResponse[]>(`/analyses/${analysisId}/assessment-records`)
 }
 
-export function listFindings(analysisId: string): Promise<FindingResponse[]> {
-  return apiGet<FindingResponse[]>(`/analyses/${analysisId}/findings`)
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string'
+}
+
+function isFindingResponse(value: unknown): value is FindingResponse {
+  if (typeof value !== 'object' || value === null) return false
+  const finding = value as Record<string, unknown>
+  return (
+    typeof finding.id === 'string' &&
+    typeof finding.analysis_id === 'string' &&
+    typeof finding.requirement_id === 'string' &&
+    typeof finding.rule_id === 'string' &&
+    isNullableString(finding.recommendation_id) &&
+    typeof finding.status === 'string' &&
+    typeof finding.explanation === 'string' &&
+    typeof finding.confidence === 'number' &&
+    typeof finding.evaluator_type === 'string' &&
+    isNullableString(finding.ai_provider) &&
+    isNullableString(finding.ai_model) &&
+    isNullableString(finding.prompt_template_version) &&
+    isNullableString(finding.kb_version) &&
+    Array.isArray(finding.evidence)
+  )
+}
+
+export function parseFindingResponses(value: unknown): FindingResponse[] {
+  if (!Array.isArray(value) || !value.every(isFindingResponse)) {
+    throw new Error('The server returned a malformed findings response.')
+  }
+  return value
+}
+
+export async function listFindings(analysisId: string): Promise<FindingResponse[]> {
+  const response = await apiGet<unknown>(`/analyses/${analysisId}/findings`)
+  return parseFindingResponses(response)
 }
 
 export function getAnalysisScore(analysisId: string): Promise<AnalysisScoreResponse> {

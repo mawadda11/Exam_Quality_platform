@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import uuid
+from dataclasses import replace
 from pathlib import Path
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -14,8 +17,9 @@ from app.models.course import Course
 from app.models.evidence import Evidence
 from app.models.finding import Finding, FindingEvidence
 from app.models.user import User
-from app.services.rules.identifiers import MARKS_AND_TOTAL, NUMBERING
-from app.services.rules.persistence import persist_finding
+from app.services.rules.identifiers import CLO_RELEVANCE, MARKS_AND_TOTAL, NUMBERING
+from app.services.rules.persistence import persist_finding, persist_semantic_finding
+from app.services.rules.semantic_evaluators import SemanticRuleEvaluation
 from app.services.rules.types import RuleFindingResult
 
 
@@ -25,9 +29,9 @@ def _make_engine(tmp_path: Path) -> Engine:
     return engine
 
 
-def _create_analysis(session: Session) -> Analysis:
-    user = User(email="rules-persist@kau.edu.sa", display_name="Rules Persist Test")
-    course = Course(code="RULES-100", name="Rules Persistence Test Course")
+def _create_analysis(session: Session, suffix: str = "one") -> Analysis:
+    user = User(email=f"rules-persist-{suffix}@kau.edu.sa", display_name="Rules Persist Test")
+    course = Course(code=f"RULES-{suffix}", name="Rules Persistence Test Course")
     session.add_all([user, course])
     session.flush()
     analysis = Analysis(user_id=user.id, course_id=course.id, exam_type=ExamType.FINAL, term="Test")
@@ -184,4 +188,72 @@ def test_deleting_analysis_cascades_to_findings_and_finding_evidence(tmp_path: P
     with Session(engine) as session:
         assert session.execute(select(Finding)).scalars().all() == []
         assert session.execute(select(FindingEvidence)).scalars().all() == []
+    engine.dispose()
+
+
+def _semantic_evaluation(evidence_id) -> SemanticRuleEvaluation:
+    return SemanticRuleEvaluation(
+        identifier=CLO_RELEVANCE,
+        status=AcademicStatus.PARTIALLY_SATISFIED,
+        confidence=0.78,
+        evidence_ids=[evidence_id],
+        explanation="The question provides only indirect evidence for the mapped CLO.",
+        recommendation_id="REC002",
+        evaluator_type="semantic_ai",
+        provider="fake",
+        model="fake-semantic-v1",
+        prompt_template_version="semantic-rule002-v1",
+        kb_version="1.0.0",
+    )
+
+
+def test_semantic_finding_persists_provenance_and_is_idempotent(tmp_path: Path) -> None:
+    engine = _make_engine(tmp_path)
+    with Session(engine) as session:
+        analysis = _create_analysis(session)
+        evidence = _make_evidence(session, analysis.id, "Q1")
+        evaluation = _semantic_evaluation(evidence.id)
+
+        first = persist_semantic_finding(session, analysis.id, evaluation)
+        second = persist_semantic_finding(session, analysis.id, evaluation)
+        session.commit()
+
+        assert first.id == second.id
+        finding = session.get(Finding, first.id)
+        assert finding is not None
+        assert finding.evaluator_type == "semantic_ai"
+        assert finding.recommendation_id == "REC002"
+        assert finding.ai_provider == "fake"
+        assert finding.ai_model == "fake-semantic-v1"
+        assert finding.prompt_template_version == "semantic-rule002-v1"
+        assert finding.kb_version == "1.0.0"
+        links = session.execute(
+            select(FindingEvidence).where(FindingEvidence.finding_id == finding.id)
+        ).scalars()
+        assert [link.evidence_id for link in links] == [evidence.id]
+    engine.dispose()
+
+
+def test_semantic_finding_requires_traceable_evidence(tmp_path: Path) -> None:
+    engine = _make_engine(tmp_path)
+    with Session(engine) as session:
+        analysis = _create_analysis(session)
+        evaluation = replace(_semantic_evaluation(uuid.uuid4()), evidence_ids=[])
+        with pytest.raises(ValueError, match="at least one"):
+            persist_semantic_finding(session, analysis.id, evaluation)
+    engine.dispose()
+
+
+def test_semantic_finding_rejects_cross_analysis_evidence(tmp_path: Path) -> None:
+    engine = _make_engine(tmp_path)
+    with Session(engine) as session:
+        analysis = _create_analysis(session, "owner")
+        other = _create_analysis(session, "other")
+        evidence = _make_evidence(session, other.id, "Q1")
+        with pytest.raises(ValueError, match="same analysis"):
+            persist_semantic_finding(
+                session,
+                analysis.id,
+                _semantic_evaluation(evidence.id),
+            )
     engine.dispose()

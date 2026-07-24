@@ -34,6 +34,11 @@ class FindingResponse(BaseModel):
     explanation: str
     confidence: float
     evaluator_type: str
+    recommendation_id: str | None
+    ai_provider: str | None
+    ai_model: str | None
+    prompt_template_version: str | None
+    kb_version: str | None
     created_at: datetime
     evidence: list[FindingEvidenceRefResponse]
     # M9 additions (additive-only - see docs/API_SPECIFICATION.md): sourced
@@ -60,6 +65,11 @@ class FindingResponse(BaseModel):
             explanation=finding.explanation,
             confidence=finding.confidence,
             evaluator_type=finding.evaluator_type,
+            recommendation_id=finding.recommendation_id,
+            ai_provider=finding.ai_provider,
+            ai_model=finding.ai_model,
+            prompt_template_version=finding.prompt_template_version,
+            kb_version=finding.kb_version,
             created_at=finding.created_at,
             evidence=[
                 FindingEvidenceRefResponse.model_validate(link.evidence)

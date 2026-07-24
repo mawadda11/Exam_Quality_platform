@@ -25,7 +25,14 @@ def _create_analysis(client: TestClient, email: str) -> str:
 
 
 def _insert_finding(
-    db_engine: Engine, analysis_id: str, requirement_id: str, rule_id: str, status: AcademicStatus
+    db_engine: Engine,
+    analysis_id: str,
+    requirement_id: str,
+    rule_id: str,
+    status: AcademicStatus,
+    *,
+    recommendation_id: str | None = None,
+    evaluator_type: str = "deterministic_rule",
 ) -> str:
     with Session(db_engine) as session:
         finding = Finding(
@@ -35,7 +42,8 @@ def _insert_finding(
             status=status,
             explanation="test finding",
             confidence=1.0,
-            evaluator_type="deterministic_rule",
+            evaluator_type=evaluator_type,
+            recommendation_id=recommendation_id,
         )
         session.add(finding)
         session.commit()
@@ -143,3 +151,43 @@ def test_multiple_findings_each_traceable_to_their_own_recommendation(
     assert len(body) == 2
     assert by_finding[first_id]["recommendation_id"] == "REC001"
     assert by_finding[second_id]["recommendation_id"] == "REC019"
+
+
+def test_semantic_recommendation_text_is_resolved_from_controlled_kb_reference(
+    client: TestClient,
+    db_engine: Engine,
+) -> None:
+    email = "rec-semantic@kau.edu.sa"
+    analysis_id = _create_analysis(client, email)
+    finding_id = _insert_finding(
+        db_engine,
+        analysis_id,
+        "REQ002",
+        "RULE002",
+        AcademicStatus.PARTIALLY_SATISFIED,
+        recommendation_id="REC002",
+        evaluator_type="semantic_ai",
+    )
+
+    response = client.get(
+        f"/api/v1/analyses/{analysis_id}/recommendations",
+        headers=auth_header(email),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body == [
+        {
+            "finding_id": finding_id,
+            "requirement_id": "REQ002",
+            "rule_id": "RULE002",
+            "status": "Partially Satisfied",
+            "recommendation_id": "REC002",
+            "title": "Strengthen CLO Relevance",
+            "text": (
+                "Revise the question so the expected answer provides clearer "
+                "evidence for the mapped CLO."
+            ),
+            "target_user": "Faculty",
+            "recommendation_type": "Corrective",
+        }
+    ]

@@ -1,18 +1,14 @@
-"""Vector-store adapter: a provider-neutral interface (docs/ARCHITECTURE.md's
-"ChromaDB: replaceable vector retrieval implementation" and "External
-providers hidden behind interfaces for testing and replacement") over the
-already-provisioned ChromaDB service.
+"""Provider-neutral, KB-version-isolated semantic retrieval.
 
-This is genuine similarity-based retrieval, not the exact-ID lookups
-KnowledgeBaseRepository/reference_data.py already do - it exists to let a
-semantic evaluator pull in KB context it doesn't already know the exact ID
-of (e.g. "what official criteria/standards ground this dimension"), reusable
-by any future semantic rule, not just the three this milestone implements.
+Exact-ID governance lookups remain in ``reference_data.py``. This module is
+only for similarity retrieval of reviewed KB text. Every record preserves
+its official source identity, record hash, KB version, and aggregate KB hash.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -23,102 +19,162 @@ _COLLECTION_NAME = "knowledge_base"
 
 @dataclass(frozen=True)
 class EmbeddableRecord:
-    """One unit of retrieval-relevant KB text, ready to embed. Built from a
-    NormalizedRecord (app.services.knowledge_base.embedding_text) - kept as
-    its own dataclass here rather than reusing NormalizedRecord directly, so
-    this module's public contract doesn't couple to the KB ingestion
-    pipeline's internal representation."""
-
+    record_id: str
     official_id: str
     text: str
     entity_type: str
     dimension: str | None
+    requirement_id: str | None
+    rule_id: str | None
     provenance_category: str
     kb_version: str
+    kb_hash: str
+    source_workbook: str
+    source_row_number: int
+    record_hash: str
 
 
 @dataclass(frozen=True)
 class RetrievedRecord:
+    record_id: str
     official_id: str
     text: str
     entity_type: str
+    dimension: str | None
+    requirement_id: str | None
+    rule_id: str | None
     provenance_category: str
     kb_version: str
+    kb_hash: str
+    source_workbook: str
+    source_row_number: int
+    record_hash: str
 
 
 class VectorStore(Protocol):
-    def upsert(self, records: Sequence[EmbeddableRecord]) -> None:
-        """Replaces any existing embedding for each record's official_id."""
+    def replace_version(self, records: Sequence[EmbeddableRecord], *, kb_version: str) -> None:
+        """Atomically from the caller's perspective replaces one KB version.
+
+        Implementations delete records for ``kb_version`` before upserting
+        the supplied snapshot, preventing stale rows from surviving a rebuild.
+        """
         ...
 
     def query(
         self,
         text: str,
         *,
+        kb_version: str,
         entity_type: str | None = None,
         dimension: str | None = None,
+        requirement_id: str | None = None,
+        rule_id: str | None = None,
         n_results: int = 5,
     ) -> list[RetrievedRecord]:
-        """Similarity search, optionally filtered by entity_type/dimension
-        (RAG_AND_AI_DESIGN.md's "Filter by entity type and dimension").
-        Returns fewer than n_results (possibly zero) if the collection has
-        fewer matches or is empty - never an error, since "nothing relevant
-        was found" is a normal, expected retrieval outcome (the caller's
-        precondition/confidence logic decides what that means for the
-        evaluation, not this layer)."""
+        """Similarity search constrained to one explicit KB version."""
         ...
 
 
-def _build_where(entity_type: str | None, dimension: str | None) -> dict[str, object] | None:
-    clauses: list[dict[str, object]] = []
+def _build_where(
+    *,
+    kb_version: str,
+    entity_type: str | None,
+    dimension: str | None,
+    requirement_id: str | None,
+    rule_id: str | None,
+) -> dict[str, object]:
+    clauses: list[dict[str, object]] = [{"kb_version": kb_version}]
     if entity_type is not None:
         clauses.append({"entity_type": entity_type})
     if dimension is not None:
         clauses.append({"dimension": dimension})
-    if not clauses:
-        return None
+    if requirement_id is not None:
+        clauses.append({"requirement_id": requirement_id})
+    if rule_id is not None:
+        clauses.append({"rule_id": rule_id})
     if len(clauses) == 1:
         return clauses[0]
     return {"$and": clauses}
 
 
+def _metadata(record: EmbeddableRecord) -> dict[str, str | int]:
+    return {
+        "official_id": record.official_id,
+        "entity_type": record.entity_type,
+        "dimension": record.dimension or "",
+        "requirement_id": record.requirement_id or "",
+        "rule_id": record.rule_id or "",
+        "provenance_category": record.provenance_category,
+        "kb_version": record.kb_version,
+        "kb_hash": record.kb_hash,
+        "source_workbook": record.source_workbook,
+        "source_row_number": record.source_row_number,
+        "record_hash": record.record_hash,
+    }
+
+
+def _from_result(
+    record_id: str, document: str | None, metadata: Mapping[str, object]
+) -> RetrievedRecord:
+    source_row_number = metadata.get("source_row_number", 0)
+    return RetrievedRecord(
+        record_id=record_id,
+        official_id=str(metadata.get("official_id", "")),
+        text=document or "",
+        entity_type=str(metadata.get("entity_type", "")),
+        dimension=str(metadata.get("dimension", "")) or None,
+        requirement_id=str(metadata.get("requirement_id", "")) or None,
+        rule_id=str(metadata.get("rule_id", "")) or None,
+        provenance_category=str(metadata.get("provenance_category", "")),
+        kb_version=str(metadata.get("kb_version", "")),
+        kb_hash=str(metadata.get("kb_hash", "")),
+        source_workbook=str(metadata.get("source_workbook", "")),
+        source_row_number=(
+            source_row_number if isinstance(source_row_number, int) else int(str(source_row_number))
+        ),
+        record_hash=str(metadata.get("record_hash", "")),
+    )
+
+
 class ChromaVectorStore:
-    """Talks to the docker-compose-provisioned ChromaDB service over HTTP.
-    Uses Chroma's bundled default local embedding function (an ONNX model,
-    not a hosted API) - embedding never sends analysis or KB content to a
-    third party, only the ChromaDB service already running for this
-    deployment."""
+    """HTTP-backed Chroma implementation using its bundled local embeddings."""
 
     def __init__(self, *, host: str, port: int) -> None:
         self._client = chromadb.HttpClient(host=host, port=port)
         self._collection = self._client.get_or_create_collection(_COLLECTION_NAME)
 
-    def upsert(self, records: Sequence[EmbeddableRecord]) -> None:
+    def replace_version(self, records: Sequence[EmbeddableRecord], *, kb_version: str) -> None:
+        self._collection.delete(where={"kb_version": kb_version})
         if not records:
             return
         self._collection.upsert(
-            ids=[r.official_id for r in records],
-            documents=[r.text for r in records],
-            metadatas=[
-                {
-                    "entity_type": r.entity_type,
-                    "dimension": r.dimension or "",
-                    "provenance_category": r.provenance_category,
-                    "kb_version": r.kb_version,
-                }
-                for r in records
-            ],
+            ids=[record.record_id for record in records],
+            documents=[record.text for record in records],
+            metadatas=[_metadata(record) for record in records],
         )
 
     def query(
         self,
         text: str,
         *,
+        kb_version: str,
         entity_type: str | None = None,
         dimension: str | None = None,
+        requirement_id: str | None = None,
+        rule_id: str | None = None,
         n_results: int = 5,
     ) -> list[RetrievedRecord]:
-        where = _build_where(entity_type, dimension)
+        if n_results < 1:
+            raise ValueError("n_results must be at least 1.")
+        if self._collection.count() == 0:
+            return []
+        where = _build_where(
+            kb_version=kb_version,
+            entity_type=entity_type,
+            dimension=dimension,
+            requirement_id=requirement_id,
+            rule_id=rule_id,
+        )
         results = self._collection.query(
             query_texts=[text],
             n_results=n_results,
@@ -127,14 +183,60 @@ class ChromaVectorStore:
         ids = results["ids"][0]
         documents = results["documents"][0] if results["documents"] else []
         metadatas = results["metadatas"][0] if results["metadatas"] else []
-
         return [
-            RetrievedRecord(
-                official_id=id_,
-                text=doc or "",
-                entity_type=str(meta.get("entity_type", "")),
-                provenance_category=str(meta.get("provenance_category", "")),
-                kb_version=str(meta.get("kb_version", "")),
-            )
-            for id_, doc, meta in zip(ids, documents, metadatas, strict=True)
+            _from_result(record_id, document, dict(metadata or {}))
+            for record_id, document, metadata in zip(ids, documents, metadatas, strict=True)
+        ]
+
+
+_TOKEN = re.compile(r"[a-z0-9]+", re.IGNORECASE)
+
+
+class InMemoryVectorStore:
+    """Deterministic retrieval test double; never performs external I/O."""
+
+    def __init__(self) -> None:
+        self._records: dict[str, EmbeddableRecord] = {}
+
+    def replace_version(self, records: Sequence[EmbeddableRecord], *, kb_version: str) -> None:
+        self._records = {
+            record_id: record
+            for record_id, record in self._records.items()
+            if record.kb_version != kb_version
+        }
+        self._records.update({record.record_id: record for record in records})
+
+    def query(
+        self,
+        text: str,
+        *,
+        kb_version: str,
+        entity_type: str | None = None,
+        dimension: str | None = None,
+        requirement_id: str | None = None,
+        rule_id: str | None = None,
+        n_results: int = 5,
+    ) -> list[RetrievedRecord]:
+        if n_results < 1:
+            raise ValueError("n_results must be at least 1.")
+        query_tokens = set(_TOKEN.findall(text.casefold()))
+        ranked: list[tuple[int, EmbeddableRecord]] = []
+        for record in self._records.values():
+            if record.kb_version != kb_version:
+                continue
+            if entity_type is not None and record.entity_type != entity_type:
+                continue
+            if dimension is not None and record.dimension != dimension:
+                continue
+            if requirement_id is not None and record.requirement_id != requirement_id:
+                continue
+            if rule_id is not None and record.rule_id != rule_id:
+                continue
+            score = len(query_tokens & set(_TOKEN.findall(record.text.casefold())))
+            if score > 0:
+                ranked.append((score, record))
+        ranked.sort(key=lambda item: (-item[0], item[1].record_id))
+        return [
+            _from_result(record.record_id, record.text, _metadata(record))
+            for _, record in ranked[:n_results]
         ]

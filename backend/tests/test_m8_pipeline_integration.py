@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import io
 import time
+from pathlib import Path
 
+import pytest
 from clo_topic_pdf_fixtures import (
     build_exam_citing_all_clos_and_topics_pdf,
     build_exam_citing_hyphenated_and_bracketed_variants_pdf,
@@ -18,8 +20,15 @@ from tp153_pdf_fixtures import (
     build_missing_clo_section_tp153_pdf,
 )
 
+import app.services.processing.stages as stages
 from app.core.domain import AcademicStatus
+from app.services.ai.fake_provider import FakeAiProvider
+from app.services.knowledge_base.runtime import SemanticRuntime, load_kb_snapshot
+from app.services.knowledge_base.vector_store import InMemoryVectorStore
 from app.services.rules.scoring import calculate_overall_score
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+KB_SOURCE = REPO_ROOT / "knowledge_base" / "source"
 
 ANALYSIS_PAYLOAD = {
     "course": {"code": "CPIT-450", "name": "Software Engineering"},
@@ -27,12 +36,12 @@ ANALYSIS_PAYLOAD = {
     "term": "2026 Spring",
 }
 
-# RULE001/005/007/009/018/019 are unconditional - every completed analysis
-# produces exactly these six. RULE006 (CLO Coverage Distribution) only
-# joins them for 0 or 1 applicable CLOs; RULE002/RULE008 never appear at
-# all (see the M8 correction / capability_manifest.py).
-UNCONDITIONAL_RULE_IDS = {"RULE001", "RULE005", "RULE007", "RULE009", "RULE018", "RULE019"}
-REMOVED_RULE_IDS = {"RULE002", "RULE008"}
+# The deterministic M8 rules and the three approved semantic rules are
+# unconditional runtime evaluations. RULE006 remains intentionally partial
+# and only joins them for zero or one applicable CLO.
+DETERMINISTIC_RULE_IDS = {"RULE001", "RULE005", "RULE007", "RULE009", "RULE018", "RULE019"}
+SEMANTIC_RULE_IDS = {"RULE002", "RULE004", "RULE008"}
+UNCONDITIONAL_RULE_IDS = DETERMINISTIC_RULE_IDS | SEMANTIC_RULE_IDS
 
 
 def _create_analysis(client: TestClient, email: str) -> str:
@@ -84,7 +93,9 @@ def _run_to_completion_and_get_findings(
     return {f["rule_id"]: f for f in findings}
 
 
-def test_multiple_clos_yields_six_findings_rule006_absent(client: TestClient) -> None:
+def test_multiple_clos_yields_runtime_findings_but_rule006_remains_absent(
+    client: TestClient,
+) -> None:
     # build_complete_tp153_pdf() has 3 CLOs - RULE006 cannot judge
     # concentration for 2+ CLOs, so no Finding is persisted for it at all.
     findings = _run_to_completion_and_get_findings(
@@ -113,6 +124,10 @@ def test_full_citations_satisfies_all_deterministic_alignment_and_coverage_rules
     for rule_id in ("RULE001", "RULE005", "RULE007", "RULE009"):
         assert findings[rule_id]["requirement_id"].startswith("REQ")
         assert len(findings[rule_id]["evidence"]) > 0
+    for rule_id in SEMANTIC_RULE_IDS:
+        assert findings[rule_id]["status"] == "Not Verified"
+        assert findings[rule_id]["prompt_template_version"]
+        assert findings[rule_id]["kb_version"]
 
 
 def test_no_citations_is_not_verified_for_alignment_and_coverage(client: TestClient) -> None:
@@ -129,7 +144,7 @@ def test_no_citations_is_not_verified_for_alignment_and_coverage(client: TestCli
     assert findings["RULE007"]["status"] == "Not Verified"
     assert findings["RULE005"]["status"] == "Not Verified"
     assert findings["RULE009"]["status"] == "Not Verified"
-    for rule_id in UNCONDITIONAL_RULE_IDS:
+    for rule_id in DETERMINISTIC_RULE_IDS:
         assert findings[rule_id]["status"] != "Not Satisfied"
 
 
@@ -148,7 +163,7 @@ def test_some_citations_is_partially_satisfied_for_alignment_and_coverage(
     # every applicable CLO/topic is covered.
     assert findings["RULE005"]["status"] == "Partially Satisfied"
     assert findings["RULE009"]["status"] == "Partially Satisfied"
-    for rule_id in UNCONDITIONAL_RULE_IDS:
+    for rule_id in DETERMINISTIC_RULE_IDS:
         assert findings[rule_id]["status"] != "Not Satisfied"
 
 
@@ -183,7 +198,7 @@ def test_zero_clos_yields_rule006_not_verified_and_excluded_from_score(client: T
 
     statuses = [AcademicStatus(f["status"]) for f in findings.values()]
     not_verified_count = sum(1 for s in statuses if s == AcademicStatus.NOT_VERIFIED)
-    assert not_verified_count == 3  # RULE001, RULE005, RULE006
+    assert not_verified_count == 6  # RULE001/005/006 plus all three semantic rules
 
     # calculate_overall_score excludes both Not Verified and Not Applicable
     # (RULE018 marks/total is Not Applicable here - this exam has no
@@ -211,9 +226,9 @@ def test_single_applicable_clo_makes_coverage_distribution_not_applicable(
     assert set(findings) == UNCONDITIONAL_RULE_IDS | {"RULE006"}
 
 
-def test_removed_rules_never_appear_in_findings(client: TestClient) -> None:
-    # Covers every fixture combination used above in one pass, confirming
-    # RULE002/RULE008 are gone under every scenario, not just the common one.
+def test_exactly_the_three_approved_semantic_rules_appear(client: TestClient) -> None:
+    # Covers every fixture combination used above and guards against both
+    # accidentally omitting an approved evaluator and expanding semantic scope.
     scenarios = [
         (build_exam_citing_all_clos_and_topics_pdf(), build_complete_tp153_pdf()),
         (build_exam_citing_no_clos_or_topics_pdf(), build_complete_tp153_pdf()),
@@ -224,4 +239,57 @@ def test_removed_rules_never_appear_in_findings(client: TestClient) -> None:
         findings = _run_to_completion_and_get_findings(
             client, f"m8c-removed-{i}@kau.edu.sa", exam_pdf, tp153_pdf
         )
-        assert REMOVED_RULE_IDS.isdisjoint(findings)
+        semantic_findings = {
+            rule_id
+            for rule_id, finding in findings.items()
+            if finding["evaluator_type"] in {"semantic_ai", "semantic_precondition"}
+        }
+        assert semantic_findings == SEMANTIC_RULE_IDS
+
+
+def test_invalid_semantic_output_fails_pipeline_and_rolls_back_all_findings(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = load_kb_snapshot(KB_SOURCE)
+    runtime = SemanticRuntime(
+        provider=FakeAiProvider(responses=["{bad", "{still-bad"]),
+        vector_store=InMemoryVectorStore(),
+        snapshot=snapshot,
+    )
+    monkeypatch.setattr(stages, "get_semantic_runtime", lambda settings: runtime)
+
+    email = "semantic-failure@kau.edu.sa"
+    analysis_id = _create_analysis(client, email)
+    _upload(
+        client,
+        analysis_id,
+        email,
+        "exam",
+        "exam.pdf",
+        build_exam_citing_all_clos_and_topics_pdf(),
+    )
+    _upload(
+        client,
+        analysis_id,
+        email,
+        "tp153",
+        "tp153.pdf",
+        build_complete_tp153_pdf(),
+    )
+    headers = auth_header(email)
+
+    response = client.post(f"/api/v1/analyses/{analysis_id}/run", headers=headers)
+    assert response.status_code == 202
+    progress = _poll_until_terminal(client, analysis_id, headers)
+
+    assert progress["state"] == "failed"
+    assert progress["message"] == (
+        "Processing failed due to an internal error. Please try again later."
+    )
+    findings = client.get(
+        f"/api/v1/analyses/{analysis_id}/findings",
+        headers=headers,
+    )
+    assert findings.status_code == 200
+    assert findings.json() == []

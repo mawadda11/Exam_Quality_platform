@@ -10,15 +10,29 @@ interface FindingCardProps {
 }
 
 export function FindingCard({ finding, lookups, recommendations = [] }: FindingCardProps) {
+  const isAiAssisted = finding.evaluator_type === 'semantic_ai'
+
   return (
     <li className="finding-card">
       <div className="finding-card-header">
         <strong>{finding.requirement_name}</strong>
-        <StatusBadge status={finding.status} />
+        <div className="finding-card-badges">
+          {isAiAssisted && <span className="ai-assisted-tag">AI-Assisted</span>}
+          <StatusBadge status={finding.status} />
+        </div>
       </div>
       <p className="finding-card-meta">
         {finding.dimension} · <GovernanceTag sourceType={finding.source_type} />
       </p>
+      {isAiAssisted && (
+        <p className="finding-ai-meta">
+          Confidence: {Math.round(finding.confidence * 100)}%
+          {finding.ai_provider && ` · Provider: ${finding.ai_provider}`}
+          {finding.ai_model && ` · Model: ${finding.ai_model}`}
+          {finding.prompt_template_version && ` · Prompt: ${finding.prompt_template_version}`}
+          {finding.kb_version && ` · KB: ${finding.kb_version}`}
+        </p>
+      )}
       <p>{finding.explanation}</p>
       <details>
         <summary>Evidence ({finding.evidence.length})</summary>

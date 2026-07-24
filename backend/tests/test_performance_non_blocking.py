@@ -68,13 +68,13 @@ def _make_ready_analysis(client: TestClient, email: str) -> str:
 def test_run_response_reflects_pre_scheduling_state_not_the_pipelines_outcome(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Proves POST /run's response body is computed from the analysis row
-    as it stood *before* the background task's effects - i.e. the request
-    handler schedules and returns; it does not run the pipeline inline.
+    """Proves POST /run returns the handler's atomic VALIDATING claim,
+    before the background task's later effects - i.e. the request handler
+    schedules and returns; it does not run the pipeline inline.
     A fake pipeline that immediately marks the analysis COMPLETED is used
     precisely so that if the handler ever regressed into awaiting the
     pipeline before building its response, this test would see "completed"
-    instead of "queued" and fail."""
+    instead of "validating" and fail."""
     calls: list[uuid.UUID] = []
 
     def fake_pipeline(analysis_id: uuid.UUID) -> None:
@@ -91,5 +91,5 @@ def test_run_response_reflects_pre_scheduling_state_not_the_pipelines_outcome(
     response = client.post(f"/api/v1/analyses/{analysis_id}/run", headers=headers)
 
     assert response.status_code == 202
-    assert response.json()["state"] == "queued"
+    assert response.json()["state"] == "validating"
     assert calls == [uuid.UUID(analysis_id)]

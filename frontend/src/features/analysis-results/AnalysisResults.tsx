@@ -139,9 +139,18 @@ export function AnalysisResults({ analysis, onReanalysisCreated }: AnalysisResul
   }
 
   const { data } = state
+  const hasAiAssistedFindings = data.findings.some(
+    (finding) => finding.evaluator_type === 'semantic_ai',
+  )
 
   return (
     <div className="analysis-results">
+      {hasAiAssistedFindings && (
+        <p className="notice ai-advisory-notice">
+          This AI evaluation is advisory and intended to support faculty review. Final academic
+          responsibility remains with the instructor.
+        </p>
+      )}
       <nav className="results-nav" aria-label="Results sections">
         {SECTIONS.map((entry) => (
           <button

@@ -25,6 +25,12 @@ from typing import Any, Protocol
 
 
 class AiProvider(Protocol):
+    @property
+    def provider_name(self) -> str: ...
+
+    @property
+    def model_name(self) -> str: ...
+
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> str:
         """Returns a JSON string intended to conform to `schema`. Providers
         may use whatever native mechanism improves the odds of that being

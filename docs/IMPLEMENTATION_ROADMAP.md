@@ -18,18 +18,15 @@
   Tesseract, via `backend/app/services/extraction/ocr.py`) for any page with no extractable
   digital text. A cloud OCR vendor was deliberately not used - `docs/SECURITY_AND_PRIVACY.md`
   requires an undocumented privacy-policy decision before sending files to an external provider,
-  and none exists. Item 8's semantic-evaluator half remains deferred - see below.
-- Item 8's semantic-evaluator half is intentionally deferred, not forgotten: no semantic-AI
-  capability has been built yet. Deterministic rules that would require one are marked
-  `unsupported` in `backend/app/services/rules/capability_manifest.py` and produce no Finding,
-  rather than being skipped without a trace. This also depends on item 6's runtime KB retrieval
-  (below), which remains unbuilt.
-- Item 6's runtime KB retrieval (similarity-based retrieval feeding semantic evaluators) also
-  remains unimplemented - `run_retrieving_knowledge` is still a no-op placeholder. Only offline KB
-  validation/normalization/versioning has been built. M9's read-time KB reference lookups
-  (`backend/app/services/knowledge_base/reference_data.py`) are a separate, narrower, exact-ID
-  lookup for display purposes only, not this retrieval capability.
-- Item 9 (this milestone) covers the Results UI and evidence drill-down for already-persisted
-  Findings/Questions/CLOs/Topics, plus read-time (not persisted) overall-score display and KB
-  recommendation lookup. Persistence of a score/recommendation snapshot, PDF report rendering, and
-  reanalysis history remain item 10.
+  and none exists.
+- Item 6 is delivered: the controlled KB is validated, normalized, hashed, projected into reviewed
+  embedding text, and indexed behind a provider-neutral vector-store interface. Chroma is the
+  deployed adapter; a deterministic in-memory adapter supports tests and safe native development.
+- Item 8 is delivered for the explicitly approved semantic scope: `RULE002`, `RULE004`, and
+  `RULE008`. Outputs are strict, versioned, evidence-linked, deterministically validated, and
+  provenance-persisted. `RULE006` is unchanged: its zero/one-CLO deterministic branches remain
+  supported and its undefined two-or-more-CLO branch produces no finding.
+- Items 9 and 10 are delivered: results/evidence/recommendations UI, score display, PDF report
+  generation/download, and linked reanalysis history are implemented.
+- Item 11 remains the final roadmap area. Existing security, performance, deployment-readiness,
+  and observability work should continue under that scope.

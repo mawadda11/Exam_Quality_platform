@@ -3,27 +3,23 @@
 Milestone 3 wired the stage machine and job runner with no-op placeholders.
 Milestone 4 replaced run_extracting_exam with real digital-PDF extraction
 and persistence. Milestone 5 replaces run_extracting_tp153 the same way.
-Milestone 6 replaces run_applying_rules with the marks/total and numbering
-deterministic rules; Milestone 8 extends the same stage with deterministic
-CLO/topic alignment and coverage rules. KB retrieval, assessment-method
-consistency, real semantic evaluation, recommendations, and report
-generation remain placeholders for later milestones.
+Milestone 6 replaced run_applying_rules with marks/total and numbering
+rules; Milestone 8 added deterministic CLO/topic alignment and coverage.
+The semantic/RAG continuation completes versioned KB indexing and adds the
+approved RULE002/RULE004/RULE008 semantic evaluators to that same stage.
 
-M8 correction: this stage now only persists a Finding for a rule when the
-rule genuinely evaluates something. REQ002/RULE002 (CLO Relevance) and
-REQ008/RULE008 (Out-of-Scope Content) require semantic judgment this
-deterministic engine does not provide and are no longer called here at all
-- see app.services.rules.capability_manifest for how they're represented
-instead. REQ006/RULE006 (CLO Coverage Distribution) is genuinely
+The M8 correction remains intact for deterministic evaluation:
+REQ006/RULE006 (CLO Coverage Distribution) is genuinely
 deterministic only for 0 or 1 applicable CLOs; evaluate_clo_coverage_distribution
 returns None for 2+, and this stage skips persistence in that case rather
-than recording an unconditional Not Verified Finding for a judgment it
-cannot make.
+than inventing a judgment. The approved semantic continuation is limited to
+RULE002, RULE004, and RULE008; it does not release a RULE006 evaluator.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -40,6 +36,7 @@ from app.services.extraction.digital_tp153_extractor import PdfPlumberTp153Extra
 from app.services.extraction.persistence import persist_extraction_result
 from app.services.extraction.tp153_persistence import persist_tp153_extraction_result
 from app.services.extraction.types import ExtractionError
+from app.services.knowledge_base.runtime import get_semantic_runtime
 from app.services.rules.clo_topic_alignment import (
     evaluate_question_to_clo_mapping,
     evaluate_question_to_topic_alignment,
@@ -53,15 +50,19 @@ from app.services.rules.identifiers import (
     APPLICABLE_CLO_COVERAGE,
     APPLICABLE_TOPIC_COVERAGE,
     CLO_COVERAGE_DISTRIBUTION,
+    CLO_RELEVANCE,
     MARKS_AND_TOTAL,
     NUMBERING,
+    OUT_OF_SCOPE_CONTENT,
+    QUESTION_FORMAT_SUITABILITY,
     QUESTION_TO_CLO_MAPPING,
     QUESTION_TO_TOPIC_ALIGNMENT,
     RuleIdentifier,
 )
 from app.services.rules.marks_total import evaluate_marks_and_total
 from app.services.rules.numbering import evaluate_numbering
-from app.services.rules.persistence import persist_finding
+from app.services.rules.persistence import persist_finding, persist_semantic_finding
+from app.services.rules.semantic_evaluators import evaluate_approved_semantic_rules
 from app.services.storage.keys import resolve_storage_path
 
 # The RuleIdentifiers run_applying_rules actually evaluates at runtime.
@@ -76,11 +77,20 @@ RUNTIME_RULE_IDENTIFIERS: tuple[RuleIdentifier, ...] = (
     CLO_COVERAGE_DISTRIBUTION,
     QUESTION_TO_TOPIC_ALIGNMENT,
     APPLICABLE_TOPIC_COVERAGE,
+    CLO_RELEVANCE,
+    QUESTION_FORMAT_SUITABILITY,
+    OUT_OF_SCOPE_CONTENT,
 )
 
 
 def run_validating(analysis: Analysis, session: Session, settings: Settings) -> None:
-    """Placeholder. A future milestone may add deeper content validation here."""
+    """Confirms both already-upload-validated source artifacts still exist."""
+    for file_type in (UploadedFileType.EXAM, UploadedFileType.TP153):
+        uploaded = next((item for item in analysis.files if item.file_type == file_type), None)
+        if uploaded is None:
+            raise ExtractionError(f"No {file_type.value} file is associated with this analysis.")
+        if not resolve_storage_path(settings.upload_root, uploaded.storage_key).is_file():
+            raise ExtractionError(f"The stored {file_type.value} file is unavailable.")
 
 
 def run_extracting_exam(analysis: Analysis, session: Session, settings: Settings) -> None:
@@ -110,21 +120,52 @@ def run_extracting_tp153(analysis: Analysis, session: Session, settings: Setting
 
 
 def run_building_evidence(analysis: Analysis, session: Session, settings: Settings) -> None:
-    """Placeholder. A future milestone persists extracted evidence records here."""
+    """Adds a traceable absence record when no exam question text was extracted."""
+    existing = session.execute(
+        select(Evidence)
+        .where(
+            Evidence.analysis_id == analysis.id,
+            Evidence.evidence_type == "question_text",
+        )
+        .limit(1)
+    ).scalar_one_or_none()
+    if existing is not None:
+        return
+    missing = session.execute(
+        select(Evidence).where(
+            Evidence.analysis_id == analysis.id,
+            Evidence.evidence_type == "missing_semantic_input",
+            Evidence.item_reference == "questions",
+        )
+    ).scalar_one_or_none()
+    if missing is None:
+        session.add(
+            Evidence(
+                analysis_id=analysis.id,
+                source_document=UploadedFileType.EXAM,
+                evidence_type="missing_semantic_input",
+                page_number=1,
+                item_reference="questions",
+                extracted_text="No readable question text was extracted from the exam.",
+                geometry=None,
+                confidence=0.0,
+            )
+        )
+        session.flush()
 
 
 def run_retrieving_knowledge(analysis: Analysis, session: Session, settings: Settings) -> None:
-    """Placeholder. A future milestone implements knowledge-base retrieval here."""
+    """Validates, normalizes, and version-safely indexes the controlled KB."""
+    get_semantic_runtime(settings).ensure_index()
 
 
 def run_applying_rules(analysis: Analysis, session: Session, settings: Settings) -> None:
     """Runs the M6 deterministic, exam-internal rules (marks/total
     arithmetic and numbering) and the M8 deterministic CLO/topic alignment
-    and coverage rules, and persists one Finding per rule that genuinely
-    produces one - RULE006 persists no Finding at all when 2+ CLOs are
-    applicable (see module docstring). KB retrieval, assessment-method
-    consistency, real semantic evaluation, recommendations, and report
-    generation remain placeholders for later milestones."""
+    and coverage rules, followed by the three approved semantic evaluators.
+    It persists one Finding per rule that genuinely produces one - RULE006
+    persists no Finding at all when 2+ CLOs are applicable (see module
+    docstring). Report generation remains outside this rule stage."""
     questions = (
         session.execute(select(Question).where(Question.analysis_id == analysis.id)).scalars().all()
     )
@@ -181,6 +222,18 @@ def run_applying_rules(analysis: Analysis, session: Session, settings: Settings)
     clo_distribution_result = evaluate_clo_coverage_distribution(combined_evidence, clos)
     if clo_distribution_result is not None:
         persist_finding(session, analysis.id, CLO_COVERAGE_DISTRIBUTION, clo_distribution_result)
+
+    runtime = get_semantic_runtime(settings)
+    runtime.ensure_index()
+    semantic_results = evaluate_approved_semantic_rules(
+        analysis,
+        session,
+        runtime,
+        Path(settings.kb_source_dir).resolve(),
+        validation_retries=settings.ai_validation_retries,
+    )
+    for result in semantic_results:
+        persist_semantic_finding(session, analysis.id, result)
 
 
 def run_generating_report(analysis: Analysis, session: Session, settings: Settings) -> None:

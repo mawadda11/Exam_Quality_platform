@@ -14,7 +14,8 @@ services:
       retries: 10
 
   chromadb:
-    image: chromadb/chroma:0.5.23
+    # Must match backend/pyproject.toml's exact chromadb client pin.
+    image: chromadb/chroma:1.5.9
     ports: ["8001:8000"]
     volumes: [chroma_data:/chroma/chroma]
 
@@ -30,6 +31,9 @@ services:
     # same key, so this is correct regardless of what .env contains.
     environment:
       DATABASE_URL: postgresql+psycopg://exam_quality:exam_quality@postgres:5432/exam_quality
+      VECTOR_STORE_PROVIDER: chroma
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: 8000
       UPLOAD_ROOT: /app/storage/uploads
       REPORT_ROOT: /app/storage/reports
       KB_SOURCE_DIR: /app/knowledge_base/source

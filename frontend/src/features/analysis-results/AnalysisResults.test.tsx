@@ -54,10 +54,15 @@ const FINDING: FindingResponse = {
   analysis_id: 'analysis-1',
   requirement_id: 'REQ018',
   rule_id: 'RULE018',
+  recommendation_id: null,
   status: 'Satisfied',
   explanation: 'The calculated total equals the declared total.',
   confidence: 1,
   evaluator_type: 'deterministic_rule',
+  ai_provider: null,
+  ai_model: null,
+  prompt_template_version: null,
+  kb_version: null,
   created_at: '2026-01-01T00:00:00Z',
   evidence: [],
   requirement_name: 'Correct Total Marks',
@@ -116,6 +121,35 @@ describe('AnalysisResults', () => {
 
     expect(screen.getByRole('button', { name: /generate report/i })).toBeInTheDocument()
     expect(screen.getByText(/no reports have been generated yet/i)).toBeInTheDocument()
+  })
+
+  it('labels semantic findings and displays the faculty advisory notice', async () => {
+    mockSuccessfulLoad()
+    vi.mocked(analysesApi.listFindings).mockResolvedValue([
+      {
+        ...FINDING,
+        requirement_id: 'REQ002',
+        rule_id: 'RULE002',
+        requirement_name: 'CLO Relevance',
+        evaluator_type: 'semantic_ai',
+        confidence: 0.84,
+        ai_provider: 'fake',
+        ai_model: 'fake-semantic-v1',
+        prompt_template_version: 'semantic-rule002-v1',
+        kb_version: '1.0.0',
+      },
+    ])
+    render(<AnalysisResults analysis={ANALYSIS} />)
+
+    expect(
+      await screen.findByText(/this ai evaluation is advisory/i),
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Findings & Recommendations' }))
+    expect(screen.getByText('AI-Assisted')).toBeInTheDocument()
+    expect(screen.getByText(/confidence: 84%/i)).toBeInTheDocument()
+    expect(screen.getByText(/provider: fake/i)).toBeInTheDocument()
+    expect(screen.getByText(/prompt: semantic-rule002-v1/i)).toBeInTheDocument()
+    expect(screen.getByText(/kb: 1.0.0/i)).toBeInTheDocument()
   })
 
   it('shows an error message instead of a partial or broken view when a fetch fails', async () => {

@@ -120,6 +120,11 @@ def test_findings_response_schema_fields(client: TestClient, db_engine: Engine) 
     assert numbering["explanation"] == "Question numbering is unique and consistent."
     assert numbering["confidence"] == 1.0
     assert numbering["evaluator_type"] == "deterministic_rule"
+    assert numbering["recommendation_id"] is None
+    assert numbering["ai_provider"] is None
+    assert numbering["ai_model"] is None
+    assert numbering["prompt_template_version"] is None
+    assert numbering["kb_version"] is None
     assert "id" in numbering
     assert "created_at" in numbering
     # No aggregate analysis score field anywhere in a finding row.

@@ -19,6 +19,13 @@ logger = logging.getLogger(__name__)
 # fixed, generic message. Full details go to the server-side log only.
 SAFE_FAILURE_MESSAGE = "Processing failed due to an internal error. Please try again later."
 
+STAGE_SUCCESS_MESSAGES: dict[ProcessingStage, str] = {
+    ProcessingStage.RETRIEVING_KNOWLEDGE: (
+        "The versioned knowledge base is ready for semantic retrieval."
+    ),
+    ProcessingStage.APPLYING_RULES: ("Deterministic and approved semantic rules were applied."),
+}
+
 
 def _transition(
     session: Session, analysis: Analysis, stage: ProcessingStage, message: str | None = None
@@ -39,12 +46,29 @@ def run_analysis_pipeline(analysis_id: UUID) -> None:
         if analysis is None:
             logger.error("Analysis %s not found when starting the pipeline.", analysis_id)
             return
+        if analysis.state not in (ProcessingStage.QUEUED, ProcessingStage.VALIDATING):
+            logger.warning(
+                "Analysis %s is already in state %s; duplicate pipeline execution ignored.",
+                analysis_id,
+                analysis.state.value,
+            )
+            return
 
         try:
             for stage in WORK_STAGES:
                 STAGE_HANDLERS[stage](analysis, session, settings)
-                _transition(session, analysis, stage)
+                _transition(
+                    session,
+                    analysis,
+                    stage,
+                    message=STAGE_SUCCESS_MESSAGES.get(stage),
+                )
             _transition(session, analysis, ProcessingStage.COMPLETED)
         except Exception:
             logger.exception("Processing failed for analysis %s", analysis_id)
+            # Discard any uncommitted rows from the failed stage before
+            # recording the safe failure transition; never commit partial
+            # semantic output merely because failure handling itself commits.
+            session.rollback()
+            session.refresh(analysis)
             _transition(session, analysis, ProcessingStage.FAILED, message=SAFE_FAILURE_MESSAGE)

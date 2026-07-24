@@ -44,6 +44,34 @@ def test_migration_upgrade_creates_expected_tables(tmp_path: Path) -> None:
     assert EXPECTED_TABLES <= tables
 
 
+def test_semantic_provenance_columns_and_duplicate_guard_are_migrated(
+    tmp_path: Path,
+) -> None:
+    sqlite_url = f"sqlite:///{tmp_path / 'semantic_provenance.db'}"
+    command.upgrade(_alembic_config(sqlite_url), "head")
+
+    engine = create_engine(sqlite_url)
+    inspector = inspect(engine)
+    columns = {column["name"] for column in inspector.get_columns("findings")}
+    constraints = {
+        constraint["name"]: tuple(constraint["column_names"])
+        for constraint in inspector.get_unique_constraints("findings")
+    }
+    engine.dispose()
+
+    assert {
+        "recommendation_id",
+        "ai_provider",
+        "ai_model",
+        "prompt_template_version",
+        "kb_version",
+    } <= columns
+    assert constraints["uq_findings_analysis_id_rule_id"] == (
+        "analysis_id",
+        "rule_id",
+    )
+
+
 def test_migration_enforces_dual_file_unique_constraint(tmp_path: Path) -> None:
     sqlite_url = f"sqlite:///{tmp_path / 'migration_constraint.db'}"
     command.upgrade(_alembic_config(sqlite_url), "head")

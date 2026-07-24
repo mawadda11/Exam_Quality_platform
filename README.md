@@ -1,6 +1,8 @@
 # AI Exam Quality Platform
 
-Repository scaffold for an evidence-based Midterm and Final exam quality-analysis platform for Faculty Members.
+Evidence-based Midterm and Final exam quality-analysis platform for Faculty Members. Deterministic
+rules and three advisory semantic evaluators produce traceable findings; the faculty member retains
+final academic responsibility.
 
 ## Start with Claude Code
 1. Upload this repository to GitHub.
@@ -28,6 +30,13 @@ Without Docker (native backend dev server): PostgreSQL must still run somewhere 
 `localhost:5432` (via `docker compose up -d postgres`, or a native install) - see "Running
 PostgreSQL locally" and the backend commands in `CLAUDE.md`.
 
+Native development uses the deterministic in-memory vector store and fake AI provider by default,
+so tests and local runs never make external AI calls. Docker Compose selects ChromaDB at
+`chromadb:8000`; its host-published native-development endpoint is `localhost:8001`. To perform an
+optional manual Anthropic run, set `AI_PROVIDER=anthropic`, an approved exact `AI_MODEL`, and
+`AI_API_KEY`. Do this only where the privacy policy permits sending the minimized evidence context.
+See [RAG and AI Design](docs/RAG_AND_AI_DESIGN.md) for the provider, validation, and failure policy.
+
 ## Repository map
 - `frontend/`: React/TypeScript application.
 - `backend/`: FastAPI application and tests.
@@ -37,4 +46,5 @@ PostgreSQL locally" and the backend commands in `CLAUDE.md`.
 - `infrastructure/`: deployment-related configuration.
 
 ## Important
-This scaffold is not a completed production system. It establishes the approved contracts, safe structure, starter services, and implementation instructions. Do not add real exam files or secrets to Git.
+This remains a development system, not a production accreditation or approval platform. Do not add
+real exam files or secrets to Git.

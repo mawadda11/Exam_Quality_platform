@@ -26,9 +26,10 @@ export function ProcessingStatus({
   const [state, setState] = useState<ProcessingStage>(initialState)
   const [message, setMessage] = useState<string | null>(null)
   const [isStarting, setIsStarting] = useState(false)
+  const [startRequested, setStartRequested] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
 
-  const hasStarted = state !== 'queued'
+  const hasStarted = state !== 'queued' || startRequested
   const isTerminal = TERMINAL_STAGES.includes(state)
 
   function applyState(next: ProcessingStage): void {
@@ -64,8 +65,10 @@ export function ProcessingStatus({
     setStartError(null)
     try {
       const response = await runAnalysis(analysisId)
+      setStartRequested(true)
       applyState(response.state)
     } catch (err) {
+      setStartRequested(false)
       setStartError(err instanceof ApiError ? err.detail : 'Could not start the analysis.')
     } finally {
       setIsStarting(false)

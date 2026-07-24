@@ -3,10 +3,11 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -38,7 +39,7 @@ from app.schemas.score import AnalysisScoreResponse
 from app.schemas.topic import TopicResponse
 from app.schemas.uploaded_file import UploadedFileResponse
 from app.services.knowledge_base.reference_data import (
-    get_recommendations_for,
+    get_controlled_recommendations,
     get_requirement_display,
 )
 from app.services.processing.runner import run_analysis_pipeline
@@ -209,6 +210,28 @@ def run_analysis(
             ),
         )
 
+    claim = cast(
+        CursorResult[Any],
+        db.execute(
+            update(Analysis)
+            .where(
+                Analysis.id == analysis.id,
+                Analysis.state == ProcessingStage.QUEUED,
+            )
+            .values(state=ProcessingStage.VALIDATING)
+            .execution_options(synchronize_session=False)
+        ),
+    )
+    if claim.rowcount != 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This analysis has already been started.",
+        )
+    # The background task opens a separate session and must see the atomic
+    # claim before it starts. A second commit by get_db's normal lifecycle is
+    # harmless; this explicit one closes the scheduling race.
+    db.commit()
+    db.expire_all()
     background_tasks.add_task(run_analysis_pipeline, analysis.id)
     return AnalysisResponse.from_model(_load_with_relations(db, analysis.id))
 
@@ -409,7 +432,12 @@ def list_analysis_recommendations(
     return [
         RecommendationResponse.from_finding(finding, display)
         for finding in findings
-        for display in get_recommendations_for(source_dir, finding.rule_id, finding.status)
+        for display in get_controlled_recommendations(
+            source_dir,
+            finding.rule_id,
+            finding.status,
+            finding.recommendation_id,
+        )
     ]
 
 

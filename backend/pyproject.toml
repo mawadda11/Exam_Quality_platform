@@ -18,6 +18,9 @@ dependencies = [
   "pdfplumber>=0.11,<1",
   "fpdf2>=2.8,<3",
   "pytesseract>=0.3,<1",
+  # Runtime KB lookups and semantic indexing read the controlled .xlsx
+  # sources; this cannot remain dev-only now that API/pipeline code imports it.
+  "openpyxl>=3.1,<4",
   # Exact-pinned (unlike the ranges above): Chroma's client/server wire
   # protocol has changed across versions, and docker-compose.yml's chromadb
   # image is pinned to this exact same version to match.
@@ -32,7 +35,6 @@ dev = [
   "pytest>=8.3,<9",
   "pytest-cov>=6,<7",
   "ruff>=0.8,<1",
-  "openpyxl>=3.1,<4",
   "types-openpyxl>=3.1,<4",
 ]
 

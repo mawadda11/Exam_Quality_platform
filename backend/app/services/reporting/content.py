@@ -1,7 +1,7 @@
 """Pure report-content assembly: turns an analysis's already-persisted,
 immutable Findings into a single frozen ReportContent snapshot, ready for
 PDF rendering. Reuses the exact M9 read-time logic (calculate_overall_score,
-count_statuses, get_requirement_display, get_recommendations_for) rather
+count_statuses, get_requirement_display, controlled KB recommendations) rather
 than recomputing scoring or KB lookups a second way - this module only
 adds the "freeze it into one structure, once, for this generation" step
 M10 needs on top of what M9 already built.
@@ -22,7 +22,7 @@ from app.models.finding import Finding
 from app.services.knowledge_base.manifest import KB_VERSION
 from app.services.knowledge_base.reference_data import (
     RecommendationDisplay,
-    get_recommendations_for,
+    get_controlled_recommendations,
     get_requirement_display,
 )
 from app.services.rules.scoring import calculate_overall_score, count_statuses
@@ -79,7 +79,12 @@ class ReportContent:
 
 def _build_finding_entry(finding: Finding, source_dir: Path) -> ReportFindingEntry:
     display = get_requirement_display(source_dir, finding.requirement_id)
-    recommendations = get_recommendations_for(source_dir, finding.rule_id, finding.status)
+    recommendations = get_controlled_recommendations(
+        source_dir,
+        finding.rule_id,
+        finding.status,
+        finding.recommendation_id,
+    )
     evidence = tuple(
         EvidenceCitation(
             source_document=link.evidence.source_document,

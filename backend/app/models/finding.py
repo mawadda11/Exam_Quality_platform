@@ -23,6 +23,9 @@ class Finding(Base):
     app.services.rules.identifiers, never provisional strings."""
 
     __tablename__ = "findings"
+    __table_args__ = (
+        UniqueConstraint("analysis_id", "rule_id", name="uq_findings_analysis_id_rule_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     analysis_id: Mapped[uuid.UUID] = mapped_column(
@@ -36,6 +39,11 @@ class Finding(Base):
     explanation: Mapped[str] = mapped_column(Text)
     confidence: Mapped[float] = mapped_column(Float)
     evaluator_type: Mapped[str] = mapped_column(String(50))
+    recommendation_id: Mapped[str | None] = mapped_column(String(50), default=None)
+    ai_provider: Mapped[str | None] = mapped_column(String(100), default=None)
+    ai_model: Mapped[str | None] = mapped_column(String(200), default=None)
+    prompt_template_version: Mapped[str | None] = mapped_column(String(100), default=None)
+    kb_version: Mapped[str | None] = mapped_column(String(50), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     analysis: Mapped[Analysis] = relationship(back_populates="findings")

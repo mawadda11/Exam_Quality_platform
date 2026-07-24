@@ -1,6 +1,7 @@
 """Capability coverage manifest: a small, source-controlled, versioned
-record of which official KB rules this system's deterministic rule engine
-actually evaluates at runtime, and why the rest don't produce Findings.
+record of which official KB rules the combined deterministic and approved
+semantic rule engine evaluates at runtime, and why partial branches do not
+produce Findings.
 
 This exists to keep AcademicStatus.NOT_VERIFIED evidence-conditioned (per
 the M8 correction): a missing evaluation *capability* must never be
@@ -10,11 +11,9 @@ analysis, not exposed via a new API endpoint, just an importable Python
 structure other code (and, later, M10's denominator/excluded-count
 reporting) can read.
 
-Only rules the runtime system has actually touched (M6 and M8) are listed
-here. Do not add illustrative or future (e.g. M9) entries to
-CAPABILITY_MANIFEST - the schema's ability to represent other categories of
-gap (language-quality, OCR/vision, institutional-configuration, meta-rules)
-is proven with test-only CapabilityEntry instances, not production rows.
+Only rules the runtime system actually evaluates are listed here. The
+semantic/RAG continuation adds its explicitly approved RULE002/RULE004/
+RULE008 scope; other illustrative future gaps remain test-only entries.
 """
 
 from __future__ import annotations
@@ -112,25 +111,21 @@ CAPABILITY_MANIFEST: tuple[CapabilityEntry, ...] = (
         requirement_id="REQ002",
         rule_id="RULE002",
         requirement_name="CLO Relevance",
-        support_status=SupportStatus.UNSUPPORTED,
-        reason=(
-            "Requires judging whether an existing question-to-CLO mapping's content is "
-            "genuinely relevant (a KB-classified Semantic Rule). Citation presence - the only "
-            "deterministic signal available - answers a different question ('was a mapping "
-            "declared') than this one ('is the mapping good'). No Finding is produced rather "
-            "than inventing a relevance heuristic."
-        ),
+        support_status=SupportStatus.SUPPORTED,
+        implemented_milestone="Semantic AI/RAG",
+    ),
+    CapabilityEntry(
+        requirement_id="REQ004",
+        rule_id="RULE004",
+        requirement_name="Question Format Suitability",
+        support_status=SupportStatus.SUPPORTED,
+        implemented_milestone="Semantic AI/RAG",
     ),
     CapabilityEntry(
         requirement_id="REQ008",
         rule_id="RULE008",
         requirement_name="Out-of-Scope Content",
-        support_status=SupportStatus.UNSUPPORTED,
-        reason=(
-            "Requires judging whether question content substantively falls outside "
-            "documented topics (a KB-classified Semantic Rule). Absence of a topic citation "
-            "does not deterministically prove content is out of scope. No Finding is produced "
-            "rather than inventing a scope-boundary heuristic."
-        ),
+        support_status=SupportStatus.SUPPORTED,
+        implemented_milestone="Semantic AI/RAG",
     ),
 )

@@ -55,6 +55,20 @@ describe('ProcessingStatus', () => {
     expect(analysesApi.runAnalysis).toHaveBeenCalledWith('analysis-1')
   })
 
+  it('keeps polling when the start response is still queued', async () => {
+    vi.mocked(analysesApi.runAnalysis).mockResolvedValue(analysisResponse('queued'))
+    vi.mocked(analysesApi.getAnalysisProgress).mockResolvedValue(
+      progressResponse('completed'),
+    )
+    render(<ProcessingStatus analysisId="analysis-1" initialState="queued" pollIntervalMs={10} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /start analysis/i }))
+
+    expect(await screen.findByText('Completed')).toBeInTheDocument()
+    expect(analysesApi.getAnalysisProgress).toHaveBeenCalledWith('analysis-1')
+    expect(screen.queryByRole('button', { name: /start analysis/i })).not.toBeInTheDocument()
+  })
+
   it('polls progress and stops once a terminal stage is reached', async () => {
     vi.mocked(analysesApi.getAnalysisProgress)
       .mockResolvedValueOnce(progressResponse('extracting_exam'))

@@ -74,18 +74,14 @@ def test_pipeline_runs_every_stage_to_completed(
 ) -> None:
     # This test exercises generic stage-machine mechanics, not extraction
     # itself (that's test_extraction_pipeline.py / test_tp153_extraction_pipeline.py) -
-    # both now-real stages are stubbed back to no-ops so no real uploaded
-    # files/upload_root are needed.
-    monkeypatch.setitem(
-        stages.STAGE_HANDLERS,
-        ProcessingStage.EXTRACTING_EXAM,
-        lambda analysis, session, settings: None,
-    )
-    monkeypatch.setitem(
-        stages.STAGE_HANDLERS,
-        ProcessingStage.EXTRACTING_TP153,
-        lambda analysis, session, settings: None,
-    )
+    # all real stage handlers are stubbed back to no-ops so no uploaded files,
+    # extracted evidence, KB runtime, or reports are needed.
+    for stage in stages.WORK_STAGES:
+        monkeypatch.setitem(
+            stages.STAGE_HANDLERS,
+            stage,
+            lambda analysis, session, settings: None,
+        )
 
     analysis_id = _create_analysis(runner_engine)
 
@@ -107,7 +103,9 @@ def test_pipeline_runs_every_stage_to_completed(
         ProcessingStage.GENERATING_REPORT,
         ProcessingStage.COMPLETED,
     ]
-    assert all(e.message is None for e in events)
+    assert {
+        event.stage: event.message for event in events if event.message is not None
+    } == runner.STAGE_SUCCESS_MESSAGES
 
 
 def test_pipeline_transitions_to_failed_with_safe_message_on_exception(
@@ -116,6 +114,11 @@ def test_pipeline_transitions_to_failed_with_safe_message_on_exception(
     def boom(analysis: Analysis, session: Session, settings: object) -> None:
         raise RuntimeError("sensitive internal detail: /etc/secret-config")
 
+    monkeypatch.setitem(
+        stages.STAGE_HANDLERS,
+        ProcessingStage.VALIDATING,
+        lambda analysis, session, settings: None,
+    )
     monkeypatch.setitem(stages.STAGE_HANDLERS, ProcessingStage.EXTRACTING_EXAM, boom)
 
     analysis_id = _create_analysis(runner_engine)

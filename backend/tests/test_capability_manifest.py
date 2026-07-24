@@ -79,7 +79,6 @@ def test_no_duplicate_rule_ids() -> None:
 
 def test_unsupported_entries_have_a_non_empty_reason() -> None:
     unsupported = [e for e in CAPABILITY_MANIFEST if e.support_status is SupportStatus.UNSUPPORTED]
-    assert unsupported, "expected at least one unsupported entry"
     for entry in unsupported:
         assert entry.reason is not None and entry.reason.strip()
 
@@ -144,10 +143,12 @@ def test_unsupported_entries_are_not_in_runtime_rule_identifiers() -> None:
     assert unsupported_ids.isdisjoint(actual_runtime_ids)
 
 
-def test_rule002_and_rule008_are_unsupported() -> None:
+def test_approved_semantic_rules_are_supported() -> None:
     by_rule_id = {e.rule_id: e for e in CAPABILITY_MANIFEST}
-    assert by_rule_id["RULE002"].support_status is SupportStatus.UNSUPPORTED
-    assert by_rule_id["RULE008"].support_status is SupportStatus.UNSUPPORTED
+    for rule_id in ("RULE002", "RULE004", "RULE008"):
+        entry = by_rule_id[rule_id]
+        assert entry.support_status is SupportStatus.SUPPORTED
+        assert entry.implemented_milestone == "Semantic AI/RAG"
 
 
 def test_rule006_is_partially_supported_with_both_branches_documented() -> None:
@@ -172,25 +173,28 @@ def test_planned_milestone_or_dependency_is_none_unless_explicitly_set() -> None
         assert entry.planned_milestone_or_dependency is None
 
 
-# --- Manifest population matches the approved M8-correction scope exactly ----
+# --- Manifest population matches the implemented runtime scope exactly -------
 
 
-def test_manifest_contains_exactly_the_approved_nine_entries() -> None:
+def test_manifest_contains_exactly_the_ten_runtime_entries() -> None:
     by_status: dict[SupportStatus, set[str]] = {status: set() for status in SupportStatus}
     for entry in CAPABILITY_MANIFEST:
         by_status[entry.support_status].add(entry.rule_id)
 
     assert by_status[SupportStatus.SUPPORTED] == {
         "RULE001",
+        "RULE002",
+        "RULE004",
         "RULE005",
         "RULE007",
+        "RULE008",
         "RULE009",
         "RULE018",
         "RULE019",
     }
     assert by_status[SupportStatus.PARTIALLY_SUPPORTED] == {"RULE006"}
-    assert by_status[SupportStatus.UNSUPPORTED] == {"RULE002", "RULE008"}
-    assert len(CAPABILITY_MANIFEST) == 9
+    assert by_status[SupportStatus.UNSUPPORTED] == set()
+    assert len(CAPABILITY_MANIFEST) == 10
 
 
 # --- Schema flexibility for future (not-yet-implemented) gap categories -----

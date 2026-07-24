@@ -166,10 +166,15 @@ export interface FindingResponse {
   analysis_id: string
   requirement_id: string
   rule_id: string
+  recommendation_id: string | null
   status: AcademicStatus
   explanation: string
   confidence: number
   evaluator_type: string
+  ai_provider: string | null
+  ai_model: string | null
+  prompt_template_version: string | null
+  kb_version: string | null
   created_at: string
   evidence: FindingEvidenceRef[]
   requirement_name: string

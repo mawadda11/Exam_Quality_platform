@@ -14,8 +14,11 @@ from app.services.rules.identifiers import (
     APPLICABLE_CLO_COVERAGE,
     APPLICABLE_TOPIC_COVERAGE,
     CLO_COVERAGE_DISTRIBUTION,
+    CLO_RELEVANCE,
     MARKS_AND_TOTAL,
     NUMBERING,
+    OUT_OF_SCOPE_CONTENT,
+    QUESTION_FORMAT_SUITABILITY,
     QUESTION_TO_CLO_MAPPING,
     QUESTION_TO_TOPIC_ALIGNMENT,
     RuleIdentifier,
@@ -156,8 +159,34 @@ def test_topic_coverage_rule_output_statuses_include_not_applicable() -> None:
 
 def test_clo_coverage_distribution_not_applicable_condition_is_single_clo() -> None:
     # The one KB-defined, reachable-without-invented-logic Not_Applicable
-    # condition among the three semantic-deferred rules.
+    # condition used by the intentionally partial deterministic RULE006.
     rules = _rows("07_evaluation_rules.xlsx")
     match = next(r for r in rules if r["Rule_ID"] == CLO_COVERAGE_DISTRIBUTION.rule_id)
     assert match["Not_Applicable_Condition"] == "Only one CLO is applicable."
     assert "Not Applicable" in str(match["Output_Statuses"])
+
+
+@pytest.mark.parametrize(
+    ("identifier", "expected_dimension"),
+    [
+        (CLO_RELEVANCE, "CLO Alignment"),
+        (QUESTION_FORMAT_SUITABILITY, "Assessment Alignment"),
+        (OUT_OF_SCOPE_CONTENT, "Topic Alignment"),
+    ],
+)
+def test_semantic_identifier_exists_and_matches_controlled_kb(
+    identifier: RuleIdentifier,
+    expected_dimension: str,
+) -> None:
+    requirements = _rows("04_requirements.xlsx")
+    requirement = next(
+        row for row in requirements if row["Requirement_ID"] == identifier.requirement_id
+    )
+    assert requirement["Dimension"] == expected_dimension
+    assert requirement["Requirement_Name"] == identifier.rule_name
+
+    rules = _rows("07_evaluation_rules.xlsx")
+    rule = next(row for row in rules if row["Rule_ID"] == identifier.rule_id)
+    assert rule["Requirement_ID"] == identifier.requirement_id
+    assert rule["Rule_Name"] == identifier.rule_name
+    assert rule["Rule_Type"] == "Semantic Rule"

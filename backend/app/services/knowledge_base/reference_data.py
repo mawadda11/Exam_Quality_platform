@@ -1,14 +1,11 @@
-"""Read-only, exact-ID KB reference lookups for M9 Results UI display.
+"""Read-only, exact-ID KB governance and display lookups.
 
-This is deliberately NOT "KB retrieval" in the RAG_AND_AI_DESIGN.md sense -
-app.services.processing.stages.run_retrieving_knowledge remains an
-intentional no-op placeholder for that (similarity/embedding-based
-retrieval feeding semantic evaluators, still a later milestone). This
-module does something narrower and fully deterministic: given a
-requirement_id or rule_id a Finding already carries, look up that exact
-row's official display text (04_requirements.xlsx) or matching
-recommendation row (08_recommendations.xlsx). No ranking, no embeddings,
-no invented thresholds - an exact-match join only, cached in-process since
+This is deliberately separate from similarity retrieval in
+``RAG_AND_AI_DESIGN.md``. Given a requirement_id or rule_id a Finding
+already carries, it looks up that exact row's official display text
+(04_requirements.xlsx) or matching recommendation row
+(08_recommendations.xlsx). No ranking, no embeddings, no invented
+thresholds - an exact-match join only, cached in-process since
 the KB source files are read-only-mounted (docs/ARCHITECTURE.md) and change
 only with a new reviewed KB version.
 """
@@ -156,3 +153,40 @@ def get_recommendations_for(
     so no single row can produce a duplicate."""
     rows = _recommendation_index(source_dir).get(rule_id, ())
     return tuple(row.display for row in rows if _trigger_matches(row.trigger_status, status))
+
+
+def get_recommendation_by_id(
+    source_dir: Path, recommendation_id: str
+) -> RecommendationDisplay | None:
+    """Exact-ID recommendation lookup; never accepts model-generated text."""
+    for rows in _recommendation_index(source_dir).values():
+        for row in rows:
+            if row.display.recommendation_id == recommendation_id:
+                return row.display
+    return None
+
+
+def get_controlled_recommendations(
+    source_dir: Path,
+    rule_id: str,
+    status: AcademicStatus,
+    recommendation_id: str | None,
+) -> tuple[RecommendationDisplay, ...]:
+    """Uses a validated stored semantic reference when present.
+
+    Deterministic/legacy findings have no stored reference and retain the
+    existing exact ``(rule_id, status)`` lookup behavior.
+    """
+    if recommendation_id is None:
+        return get_recommendations_for(source_dir, rule_id, status)
+    recommendation = get_recommendation_by_id(source_dir, recommendation_id)
+    if recommendation is None or recommendation.rule_id != rule_id:
+        raise RuntimeError(f"Stored recommendation {recommendation_id!r} is invalid for {rule_id}.")
+    eligible = {
+        item.recommendation_id for item in get_recommendations_for(source_dir, rule_id, status)
+    }
+    if recommendation_id not in eligible:
+        raise RuntimeError(
+            f"Stored recommendation {recommendation_id!r} does not apply to {status.value}."
+        )
+    return (recommendation,)

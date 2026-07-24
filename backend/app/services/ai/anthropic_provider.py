@@ -38,6 +38,14 @@ class AnthropicAiProvider:
         self._client = anthropic.Anthropic(api_key=api_key)
         self._model = model
 
+    @property
+    def provider_name(self) -> str:
+        return "anthropic"
+
+    @property
+    def model_name(self) -> str:
+        return self._model
+
     def generate_structured(self, *, system: str, prompt: str, schema: dict[str, Any]) -> str:
         response = self._client.messages.create(
             model=self._model,

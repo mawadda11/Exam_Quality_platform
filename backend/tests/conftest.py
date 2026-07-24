@@ -38,6 +38,10 @@ def test_settings(upload_root: Path, report_root: Path) -> Settings:
         upload_root=str(upload_root),
         report_root=str(report_root),
         max_upload_mb=1,
+        vector_store_provider="memory",
+        ai_provider="fake",
+        ai_model="fake-semantic-v1",
+        ai_api_key="",
     )
 
 

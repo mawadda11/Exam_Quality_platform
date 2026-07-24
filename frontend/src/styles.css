@@ -53,7 +53,9 @@ p { line-height: 1.7; }
 .finding-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 1rem; }
 .finding-card { border: 1px solid #dfe4ea; border-radius: 12px; padding: 1rem; }
 .finding-card-header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.finding-card-badges { display: flex; align-items: center; gap: .4rem; }
 .finding-card-meta { font-size: .8rem; color: #6b7280; margin: .35rem 0; }
+.finding-ai-meta { font-size: .78rem; color: #4b5563; margin: .35rem 0; }
 .finding-card details { margin-top: .5rem; font-size: .85rem; }
 .evidence-list { margin: .5rem 0 0; padding-left: 1.1rem; }
 .evidence-empty { color: #6b7280; font-size: .85rem; font-style: italic; margin: .5rem 0 0; }
@@ -66,6 +68,8 @@ p { line-height: 1.7; }
 .status-not-applicable { background: #eef1f4; color: #6b7280; }
 
 .governance-tag { border: 1px solid #c7cfd8; border-radius: 999px; padding: .1rem .5rem; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
+.ai-assisted-tag { background: #e0e7ff; color: #3730a3; border-radius: 999px; padding: .2rem .6rem; font-size: .72rem; font-weight: 700; white-space: nowrap; }
+.ai-advisory-notice { border-left: 4px solid #6366f1; }
 
 .recommendation-list { list-style: none; padding: 0; margin: .75rem 0 0; display: flex; flex-direction: column; gap: .6rem; }
 .recommendation-list li { background: #f4f6f8; border-radius: 8px; padding: .6rem .75rem; }

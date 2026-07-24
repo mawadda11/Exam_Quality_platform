@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createAnalysis, getAnalysis, uploadAnalysisFile } from './analyses'
-import type { AnalysisResponse, UploadedFileResponse } from '../types/api'
+import {
+  createAnalysis,
+  getAnalysis,
+  listFindings,
+  parseFindingResponses,
+  uploadAnalysisFile,
+} from './analyses'
+import type { AnalysisResponse, FindingResponse, UploadedFileResponse } from '../types/api'
 
 function mockResponse(body: unknown, status = 200): Response {
   return {
@@ -92,5 +98,41 @@ describe('uploadAnalysisFile', () => {
     const form = init.body as FormData
     expect(form.get('file_type')).toBe('exam')
     expect((form.get('file') as File).name).toBe('exam.pdf')
+  })
+})
+
+const SEMANTIC_FINDING: FindingResponse = {
+  id: 'finding-1',
+  analysis_id: 'analysis-1',
+  requirement_id: 'REQ002',
+  rule_id: 'RULE002',
+  recommendation_id: null,
+  status: 'Satisfied',
+  explanation: 'The question is relevant to the mapped CLO.',
+  confidence: 0.84,
+  evaluator_type: 'semantic_ai',
+  ai_provider: 'fake',
+  ai_model: 'fake-semantic-v1',
+  prompt_template_version: 'semantic-rule002-v1',
+  kb_version: '1.0.0',
+  created_at: '2026-01-01T00:00:00Z',
+  evidence: [],
+  requirement_name: 'CLO Relevance',
+  dimension: 'CLO Alignment',
+  source_type: 'Derived Exam Requirement',
+  officiality: 'Derived',
+}
+
+describe('listFindings', () => {
+  it('accepts the expanded semantic provenance payload', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse([SEMANTIC_FINDING])))
+    const result = await listFindings('analysis-1')
+    expect(result).toEqual([SEMANTIC_FINDING])
+  })
+
+  it('rejects a malformed finding response at the API boundary', () => {
+    const malformed = { ...SEMANTIC_FINDING }
+    delete (malformed as Partial<FindingResponse>).prompt_template_version
+    expect(() => parseFindingResponses([malformed])).toThrow(/malformed findings response/i)
   })
 })
