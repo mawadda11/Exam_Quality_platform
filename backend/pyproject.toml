@@ -18,6 +18,11 @@ dependencies = [
   "pdfplumber>=0.11,<1",
   "fpdf2>=2.8,<3",
   "pytesseract>=0.3,<1",
+  # Exact-pinned (unlike the ranges above): Chroma's client/server wire
+  # protocol has changed across versions, and docker-compose.yml's chromadb
+  # image is pinned to this exact same version to match.
+  "chromadb==1.5.9",
+  "anthropic>=0.68,<1",
 ]
 
 [project.optional-dependencies]

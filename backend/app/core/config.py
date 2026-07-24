@@ -23,6 +23,15 @@ class Settings(BaseSettings):
     upload_root: str = "../storage/uploads"
     kb_source_dir: str = "../knowledge_base/source"
     report_root: str = "../storage/reports"
+    # "localhost"/8001: the host-published port for running natively (matches
+    # database_url's native-friendly-default convention above).
+    # docker-compose.yml overrides these to the "chromadb" Compose hostname
+    # and its in-network port 8000.
+    chroma_host: str = "localhost"
+    chroma_port: int = 8001
+    ai_provider: str = "anthropic"
+    ai_model: str = "claude-sonnet-5"
+    ai_api_key: str = ""
 
     @property
     def allowed_origin_list(self) -> list[str]:
