@@ -63,3 +63,15 @@ export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
   if (!response.ok) return parseErrorAndThrow(response)
   return (await response.json()) as T
 }
+
+/** Dev-identity auth is a custom header, not a cookie, so a plain
+ * `<a href download>` navigation can't carry it - fetch the file with the
+ * same header this client already uses everywhere else, and let the
+ * caller turn the Blob into a download (see downloadBlob in analyses.ts). */
+export async function apiGetBlob(path: string): Promise<Blob> {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
+    headers: { ...identityHeaders() },
+  })
+  if (!response.ok) return parseErrorAndThrow(response)
+  return response.blob()
+}

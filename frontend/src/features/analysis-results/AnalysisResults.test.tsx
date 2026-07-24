@@ -14,6 +14,7 @@ const ANALYSIS: AnalysisResponse = {
   term: '2026 Spring',
   state: 'completed',
   owner_user_id: 'user-1',
+  predecessor_analysis_id: null,
   uploaded_files: [],
   exam_uploaded: true,
   tp153_uploaded: true,
@@ -72,6 +73,7 @@ function mockSuccessfulLoad(): void {
   vi.mocked(analysesApi.listFindings).mockResolvedValue([FINDING])
   vi.mocked(analysesApi.getAnalysisScore).mockResolvedValue(SCORE)
   vi.mocked(analysesApi.listRecommendations).mockResolvedValue([])
+  vi.mocked(analysesApi.listReports).mockResolvedValue([])
 }
 
 beforeEach(() => {
@@ -81,6 +83,7 @@ beforeEach(() => {
   vi.mocked(analysesApi.listFindings).mockReset()
   vi.mocked(analysesApi.getAnalysisScore).mockReset()
   vi.mocked(analysesApi.listRecommendations).mockReset()
+  vi.mocked(analysesApi.listReports).mockReset()
 })
 
 describe('AnalysisResults', () => {
@@ -104,14 +107,15 @@ describe('AnalysisResults', () => {
     expect(screen.queryByText('100.00')).not.toBeInTheDocument()
   })
 
-  it('shows the Report section as an honest deferral, not a working feature', async () => {
+  it('shows the Report section with a Generate Report action and an honest empty state', async () => {
     mockSuccessfulLoad()
     render(<AnalysisResults analysis={ANALYSIS} />)
     await screen.findByText('100.00')
 
     fireEvent.click(screen.getByRole('button', { name: 'Report' }))
 
-    expect(screen.getByText(/not available in this milestone/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /generate report/i })).toBeInTheDocument()
+    expect(screen.getByText(/no reports have been generated yet/i)).toBeInTheDocument()
   })
 
   it('shows an error message instead of a partial or broken view when a fetch fails', async () => {
@@ -121,6 +125,7 @@ describe('AnalysisResults', () => {
     vi.mocked(analysesApi.listFindings).mockResolvedValue([])
     vi.mocked(analysesApi.getAnalysisScore).mockResolvedValue(SCORE)
     vi.mocked(analysesApi.listRecommendations).mockResolvedValue([])
+    vi.mocked(analysesApi.listReports).mockResolvedValue([])
 
     render(<AnalysisResults analysis={ANALYSIS} />)
 

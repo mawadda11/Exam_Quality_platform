@@ -20,6 +20,7 @@ const BASE_ANALYSIS: AnalysisResponse = {
   term: '2026 Spring',
   state: 'queued',
   owner_user_id: 'user-1',
+  predecessor_analysis_id: null,
   uploaded_files: [],
   exam_uploaded: false,
   tp153_uploaded: false,
@@ -52,6 +53,10 @@ beforeEach(() => {
   vi.mocked(analysesApi.createAnalysis).mockReset()
   vi.mocked(analysesApi.getAnalysis).mockReset()
   vi.mocked(analysesApi.uploadAnalysisFile).mockReset()
+  // The history list fetches on mount whenever no analysis is selected yet -
+  // default to empty so existing tests (which don't care about history)
+  // don't need to know about it.
+  vi.mocked(analysesApi.listAnalyses).mockReset().mockResolvedValue([])
 })
 
 function fillCreateForm(): void {
@@ -161,5 +166,23 @@ describe('AnalysisUploadFlow', () => {
 
     expect(await screen.findByText(/field required/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /create analysis/i })).toBeInTheDocument()
+  })
+
+  it('does not show a history list when the user has no prior analyses', async () => {
+    render(<AnalysisUploadFlow />)
+    await waitFor(() => expect(analysesApi.listAnalyses).toHaveBeenCalled())
+    expect(screen.queryByText(/your analyses/i)).not.toBeInTheDocument()
+  })
+
+  it('shows a history list and loads the selected analysis directly, skipping the create form', async () => {
+    vi.mocked(analysesApi.listAnalyses).mockResolvedValue([BASE_ANALYSIS])
+
+    render(<AnalysisUploadFlow />)
+
+    expect(await screen.findByText(/your analyses/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /CPIT-450.*Midterm/ }))
+
+    expect(await screen.findByLabelText(/examination pdf/i)).toBeInTheDocument()
+    expect(analysesApi.createAnalysis).not.toHaveBeenCalled()
   })
 })

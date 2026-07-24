@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,15 @@ from app.models.uploaded_file import UploadedFile
 from app.models.user import User
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_TABLES = {"users", "courses", "analyses", "uploaded_files", "processing_events"}
+EXPECTED_TABLES = {
+    "users",
+    "courses",
+    "analyses",
+    "uploaded_files",
+    "processing_events",
+    "findings",
+    "reports",
+}
 
 
 def _alembic_config(sqlite_url: str) -> Config:
@@ -77,6 +85,48 @@ def test_migration_enforces_dual_file_unique_constraint(tmp_path: Path) -> None:
                 sha256_hash="b" * 64,
             )
         )
+        with pytest.raises(IntegrityError):
+            session.commit()
+        session.rollback()
+    engine.dispose()
+
+
+def test_predecessor_analysis_id_restricts_deletion_of_a_referenced_predecessor(
+    tmp_path: Path,
+) -> None:
+    # M10 decision 6: RESTRICT for predecessor relationships. SQLite ignores
+    # foreign-key actions unless explicitly enabled per-connection - without
+    # this, the DELETE below would silently succeed and this test would
+    # prove nothing about the migration's actual ondelete="RESTRICT".
+    sqlite_url = f"sqlite:///{tmp_path / 'migration_restrict.db'}"
+    command.upgrade(_alembic_config(sqlite_url), "head")
+
+    engine = create_engine(sqlite_url)
+    event.listen(engine, "connect", lambda conn, _: conn.execute("PRAGMA foreign_keys=ON"))
+
+    with Session(engine) as session:
+        user = User(email="restrict@kau.edu.sa", display_name="Restrict Test")
+        course = Course(code="RST-100", name="Restrict Test Course")
+        session.add_all([user, course])
+        session.flush()
+
+        predecessor = Analysis(
+            user_id=user.id, course_id=course.id, exam_type=ExamType.MIDTERM, term="Test"
+        )
+        session.add(predecessor)
+        session.flush()
+
+        reanalysis = Analysis(
+            user_id=user.id,
+            course_id=course.id,
+            exam_type=ExamType.MIDTERM,
+            term="Test",
+            predecessor_analysis_id=predecessor.id,
+        )
+        session.add(reanalysis)
+        session.commit()
+
+        session.delete(predecessor)
         with pytest.raises(IntegrityError):
             session.commit()
         session.rollback()

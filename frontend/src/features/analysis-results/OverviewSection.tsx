@@ -1,17 +1,25 @@
 import type { AnalysisResponse, AnalysisScoreResponse } from '../../types/api'
+import { ReanalysisAction } from './ReanalysisAction'
 
 interface OverviewSectionProps {
   analysis: AnalysisResponse
   score: AnalysisScoreResponse
+  onReanalysisCreated?: (reanalysis: AnalysisResponse) => void
 }
 
-export function OverviewSection({ analysis, score }: OverviewSectionProps) {
+export function OverviewSection({ analysis, score, onReanalysisCreated }: OverviewSectionProps) {
   return (
     <div className="overview-section">
       <h3>Overview</h3>
       <p>
         {analysis.course.code} — {analysis.exam_type} ({analysis.term})
       </p>
+      {analysis.predecessor_analysis_id && (
+        <p className="notice">
+          This is a reanalysis linked to a previous analysis - the earlier results and any of its
+          reports remain unchanged and available.
+        </p>
+      )}
 
       <div className="score-panel">
         {score.score !== null ? (
@@ -37,6 +45,10 @@ export function OverviewSection({ analysis, score }: OverviewSectionProps) {
           <li>Not Applicable: {score.not_applicable_count}</li>
         </ul>
       </div>
+
+      {onReanalysisCreated && (
+        <ReanalysisAction analysisId={analysis.id} onCreated={onReanalysisCreated} />
+      )}
     </div>
   )
 }

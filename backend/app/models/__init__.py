@@ -6,6 +6,7 @@ from app.models.evidence import Evidence
 from app.models.finding import Finding, FindingEvidence
 from app.models.processing_event import ProcessingEvent
 from app.models.question import Question
+from app.models.report import Report
 from app.models.topic import Topic
 from app.models.uploaded_file import UploadedFile
 from app.models.user import User
@@ -20,6 +21,7 @@ __all__ = [
     "FindingEvidence",
     "ProcessingEvent",
     "Question",
+    "Report",
     "Topic",
     "UploadedFile",
     "User",

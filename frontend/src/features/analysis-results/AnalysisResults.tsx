@@ -5,6 +5,7 @@ import {
   listFindings,
   listQuestions,
   listRecommendations,
+  listReports,
   listTopics,
 } from '../../api/analyses'
 import { ApiError } from '../../api/client'
@@ -15,6 +16,7 @@ import type {
   FindingResponse,
   QuestionResponse,
   RecommendationResponse,
+  ReportResponse,
   TopicResponse,
 } from '../../types/api'
 import { AlignmentCoverageSection } from './AlignmentCoverageSection'
@@ -49,6 +51,7 @@ interface ResultsData {
   findings: FindingResponse[]
   score: AnalysisScoreResponse
   recommendations: RecommendationResponse[]
+  reports: ReportResponse[]
 }
 
 // A discriminated union (rather than separate isLoading/error/data booleans
@@ -62,7 +65,12 @@ type ResultsState =
   | { status: 'error'; message: string }
   | { status: 'ready'; data: ResultsData }
 
-export function AnalysisResults({ analysis }: { analysis: AnalysisResponse }) {
+interface AnalysisResultsProps {
+  analysis: AnalysisResponse
+  onReanalysisCreated?: (reanalysis: AnalysisResponse) => void
+}
+
+export function AnalysisResults({ analysis, onReanalysisCreated }: AnalysisResultsProps) {
   const [section, setSection] = useState<SectionId>('overview')
   const [state, setState] = useState<ResultsState>({ status: 'loading' })
 
@@ -76,12 +84,13 @@ export function AnalysisResults({ analysis }: { analysis: AnalysisResponse }) {
       listFindings(analysis.id),
       getAnalysisScore(analysis.id),
       listRecommendations(analysis.id),
+      listReports(analysis.id),
     ])
-      .then(([questions, clos, topics, findings, score, recommendations]) => {
+      .then(([questions, clos, topics, findings, score, recommendations, reports]) => {
         if (cancelled) return
         setState({
           status: 'ready',
-          data: { questions, clos, topics, findings, score, recommendations },
+          data: { questions, clos, topics, findings, score, recommendations, reports },
         })
       })
       .catch((err: unknown) => {
@@ -148,7 +157,13 @@ export function AnalysisResults({ analysis }: { analysis: AnalysisResponse }) {
       </nav>
 
       <div className="results-panel">
-        {section === 'overview' && <OverviewSection analysis={analysis} score={data.score} />}
+        {section === 'overview' && (
+          <OverviewSection
+            analysis={analysis}
+            score={data.score}
+            onReanalysisCreated={onReanalysisCreated}
+          />
+        )}
         {section === 'questions' && <QuestionsSection questions={data.questions} />}
         {section === 'alignment-coverage' && (
           <AlignmentCoverageSection
@@ -168,7 +183,9 @@ export function AnalysisResults({ analysis }: { analysis: AnalysisResponse }) {
             lookups={lookups}
           />
         )}
-        {section === 'report' && <ReportSection />}
+        {section === 'report' && (
+          <ReportSection analysisId={analysis.id} initialReports={data.reports} />
+        )}
       </div>
     </div>
   )

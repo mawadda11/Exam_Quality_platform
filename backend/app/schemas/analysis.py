@@ -20,6 +20,18 @@ class AnalysisCreateRequest(BaseModel):
     term: str = Field(min_length=1, max_length=50)
 
 
+class ReanalysisCreateRequest(BaseModel):
+    """course/exam_type/term are always inherited from the predecessor - a
+    reanalysis is "the same course/exam, revised", never a way to change
+    what's being assessed. reuse_tp153 controls only what the new analysis
+    starts with: a copy of the predecessor's TP-153 file reference (True,
+    the default - "if unchanged") or nothing, requiring a fresh upload
+    (False). The revised exam itself is never carried over - the exam is
+    always freshly uploaded via the normal POST /analyses/{id}/files."""
+
+    reuse_tp153: bool = True
+
+
 class AnalysisResponse(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -29,6 +41,7 @@ class AnalysisResponse(BaseModel):
     term: str
     state: ProcessingStage
     owner_user_id: UUID
+    predecessor_analysis_id: UUID | None
     uploaded_files: list[UploadedFileResponse]
     exam_uploaded: bool
     tp153_uploaded: bool
@@ -45,6 +58,7 @@ class AnalysisResponse(BaseModel):
             term=analysis.term,
             state=analysis.state,
             owner_user_id=analysis.user_id,
+            predecessor_analysis_id=analysis.predecessor_analysis_id,
             uploaded_files=[UploadedFileResponse.model_validate(f) for f in analysis.files],
             exam_uploaded=analysis.exam_uploaded,
             tp153_uploaded=analysis.tp153_uploaded,

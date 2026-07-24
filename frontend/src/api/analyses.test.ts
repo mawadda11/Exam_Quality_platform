@@ -24,6 +24,7 @@ const SAMPLE_ANALYSIS: AnalysisResponse = {
   term: '2026 Spring',
   state: 'queued',
   owner_user_id: 'user-1',
+  predecessor_analysis_id: null,
   uploaded_files: [],
   exam_uploaded: false,
   tp153_uploaded: false,

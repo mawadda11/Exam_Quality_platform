@@ -20,6 +20,7 @@ function analysisResponse(state: AnalysisResponse['state']): AnalysisResponse {
     term: '2026 Spring',
     state,
     owner_user_id: 'user-1',
+    predecessor_analysis_id: null,
     uploaded_files: [],
     exam_uploaded: true,
     tp153_uploaded: true,

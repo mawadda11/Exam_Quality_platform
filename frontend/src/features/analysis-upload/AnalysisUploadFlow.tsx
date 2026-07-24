@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react'
-import { createAnalysis, getAnalysis } from '../../api/analyses'
+import { useEffect, useState, type FormEvent } from 'react'
+import { createAnalysis, getAnalysis, listAnalyses } from '../../api/analyses'
 import { ApiError } from '../../api/client'
 import type {
   AnalysisResponse,
@@ -8,6 +8,7 @@ import type {
   UploadedFileResponse,
 } from '../../types/api'
 import { AnalysisResults } from '../analysis-results/AnalysisResults'
+import { AnalysisHistoryList } from './AnalysisHistoryList'
 import { FileUploadField } from './FileUploadField'
 import { ProcessingStatus } from './ProcessingStatus'
 import { validateAnalysisDetails, type AnalysisDetailsErrors } from './validation'
@@ -24,6 +25,27 @@ export function AnalysisUploadFlow() {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null)
   const [processingState, setProcessingState] = useState<ProcessingStage | null>(null)
+  const [history, setHistory] = useState<AnalysisResponse[]>([])
+
+  useEffect(() => {
+    if (analysis) return
+    let cancelled = false
+    listAnalyses()
+      .then((analyses) => {
+        if (!cancelled) setHistory(analyses)
+      })
+      .catch(() => {
+        // History is a convenience list, not required to create a new analysis.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [analysis])
+
+  function handleReanalysisCreated(reanalysis: AnalysisResponse): void {
+    setAnalysis(reanalysis)
+    setProcessingState(null)
+  }
 
   async function handleSubmit(event: FormEvent): Promise<void> {
     event.preventDefault()
@@ -59,58 +81,61 @@ export function AnalysisUploadFlow() {
 
   if (!analysis) {
     return (
-      <form className="analysis-form" onSubmit={handleSubmit} noValidate>
-        <h2>Create a new analysis</h2>
+      <>
+        {history.length > 0 && <AnalysisHistoryList analyses={history} onSelect={setAnalysis} />}
+        <form className="analysis-form" onSubmit={handleSubmit} noValidate>
+          <h2>Create a new analysis</h2>
 
-        <label>
-          Course code
-          <input value={courseCode} onChange={(e) => setCourseCode(e.target.value)} />
-        </label>
-        {errors.courseCode && <p className="field-error">{errors.courseCode}</p>}
+          <label>
+            Course code
+            <input value={courseCode} onChange={(e) => setCourseCode(e.target.value)} />
+          </label>
+          {errors.courseCode && <p className="field-error">{errors.courseCode}</p>}
 
-        <label>
-          Course name
-          <input value={courseName} onChange={(e) => setCourseName(e.target.value)} />
-        </label>
-        {errors.courseName && <p className="field-error">{errors.courseName}</p>}
+          <label>
+            Course name
+            <input value={courseName} onChange={(e) => setCourseName(e.target.value)} />
+          </label>
+          {errors.courseName && <p className="field-error">{errors.courseName}</p>}
 
-        <fieldset>
-          <legend>Exam type</legend>
-          {EXAM_TYPES.map((type) => (
-            <label key={type} className="radio-option">
-              <input
-                type="radio"
-                name="exam_type"
-                value={type}
-                checked={examType === type}
-                onChange={() => setExamType(type)}
-              />
-              {type}
-            </label>
-          ))}
-        </fieldset>
-        {errors.examType && <p className="field-error">{errors.examType}</p>}
+          <fieldset>
+            <legend>Exam type</legend>
+            {EXAM_TYPES.map((type) => (
+              <label key={type} className="radio-option">
+                <input
+                  type="radio"
+                  name="exam_type"
+                  value={type}
+                  checked={examType === type}
+                  onChange={() => setExamType(type)}
+                />
+                {type}
+              </label>
+            ))}
+          </fieldset>
+          {errors.examType && <p className="field-error">{errors.examType}</p>}
 
-        <label>
-          Term
-          <input
-            value={term}
-            onChange={(e) => setTerm(e.target.value)}
-            placeholder="e.g. 2026 Spring"
-          />
-        </label>
-        {errors.term && <p className="field-error">{errors.term}</p>}
+          <label>
+            Term
+            <input
+              value={term}
+              onChange={(e) => setTerm(e.target.value)}
+              placeholder="e.g. 2026 Spring"
+            />
+          </label>
+          {errors.term && <p className="field-error">{errors.term}</p>}
 
-        {submitError && (
-          <p className="field-error" role="alert">
-            {submitError}
-          </p>
-        )}
+          {submitError && (
+            <p className="field-error" role="alert">
+              {submitError}
+            </p>
+          )}
 
-        <button type="submit" disabled={isCreating}>
-          {isCreating ? 'Creating…' : 'Create analysis'}
-        </button>
-      </form>
+          <button type="submit" disabled={isCreating}>
+            {isCreating ? 'Creating…' : 'Create analysis'}
+          </button>
+        </form>
+      </>
     )
   }
 
@@ -153,7 +178,11 @@ export function AnalysisUploadFlow() {
       )}
 
       {(processingState ?? analysis.state) === 'completed' && (
-        <AnalysisResults key={analysis.id} analysis={analysis} />
+        <AnalysisResults
+          key={analysis.id}
+          analysis={analysis}
+          onReanalysisCreated={handleReanalysisCreated}
+        />
       )}
     </div>
   )

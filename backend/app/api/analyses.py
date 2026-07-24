@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_user, get_owned_analysis
 from app.core.config import Settings, get_settings
-from app.core.domain import ProcessingStage, UploadedFileType
+from app.core.domain import ProcessingStage, ReportFormat, UploadedFileType
 from app.db.session import get_db
 from app.models.analysis import Analysis
 from app.models.assessment_record import AssessmentRecord
@@ -20,10 +21,11 @@ from app.models.course import Course
 from app.models.finding import Finding, FindingEvidence
 from app.models.processing_event import ProcessingEvent
 from app.models.question import Question
+from app.models.report import Report
 from app.models.topic import Topic
 from app.models.uploaded_file import UploadedFile
 from app.models.user import User
-from app.schemas.analysis import AnalysisCreateRequest, AnalysisResponse
+from app.schemas.analysis import AnalysisCreateRequest, AnalysisResponse, ReanalysisCreateRequest
 from app.schemas.assessment_record import AssessmentRecordResponse
 from app.schemas.clo import CloResponse
 from app.schemas.course import CourseInput
@@ -31,6 +33,7 @@ from app.schemas.finding import FindingResponse
 from app.schemas.progress import ProgressResponse
 from app.schemas.question import QuestionResponse
 from app.schemas.recommendation import RecommendationResponse
+from app.schemas.report import ReportResponse
 from app.schemas.score import AnalysisScoreResponse
 from app.schemas.topic import TopicResponse
 from app.schemas.uploaded_file import UploadedFileResponse
@@ -39,8 +42,11 @@ from app.services.knowledge_base.reference_data import (
     get_requirement_display,
 )
 from app.services.processing.runner import run_analysis_pipeline
+from app.services.reporting.content import assemble_report_content
+from app.services.reporting.pdf import render_report_pdf
+from app.services.reporting.storage import store_report_pdf
 from app.services.storage.files import UploadTooLargeError, stream_validate_and_store
-from app.services.storage.keys import resolve_storage_path
+from app.services.storage.keys import generate_storage_key, resolve_storage_path
 from app.services.storage.validation import UploadValidationError
 
 router = APIRouter(prefix="/analyses", tags=["analyses"])
@@ -207,6 +213,70 @@ def run_analysis(
     return AnalysisResponse.from_model(_load_with_relations(db, analysis.id))
 
 
+@router.post(
+    "/{analysis_id}/reanalysis",
+    response_model=AnalysisResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_reanalysis(
+    predecessor: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    payload: ReanalysisCreateRequest | None = None,
+) -> AnalysisResponse:
+    payload = payload or ReanalysisCreateRequest()
+    # PRD: "Create a linked reanalysis for a revised examination when needed"
+    # - reads as a post-review action on results already seen, not a retry
+    # mechanism for a run that never finished.
+    if predecessor.state != ProcessingStage.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only a completed analysis can be reanalyzed.",
+        )
+
+    reanalysis = Analysis(
+        user_id=current_user.id,
+        course_id=predecessor.course_id,
+        exam_type=predecessor.exam_type,
+        term=predecessor.term,
+        predecessor_analysis_id=predecessor.id,
+    )
+    db.add(reanalysis)
+    db.flush()
+
+    if payload.reuse_tp153:
+        predecessor_tp153 = next(
+            (f for f in predecessor.files if f.file_type == UploadedFileType.TP153), None
+        )
+        if predecessor_tp153 is not None:
+            # Copy the bytes to a storage key of the *new* analysis's own -
+            # storage_key is unique per row, and every other stage (extraction,
+            # evidence persistence) already assumes "this analysis's own file
+            # reference", so the new row must look exactly like a fresh
+            # upload rather than aliasing the predecessor's row/key.
+            source_path = resolve_storage_path(settings.upload_root, predecessor_tp153.storage_key)
+            new_storage_key = generate_storage_key(reanalysis.id, UploadedFileType.TP153)
+            destination_path = resolve_storage_path(settings.upload_root, new_storage_key)
+            destination_path.parent.mkdir(parents=True, exist_ok=True)
+            destination_path.write_bytes(source_path.read_bytes())
+
+            db.add(
+                UploadedFile(
+                    analysis_id=reanalysis.id,
+                    file_type=UploadedFileType.TP153,
+                    original_filename=predecessor_tp153.original_filename,
+                    storage_key=new_storage_key,
+                    mime_type=predecessor_tp153.mime_type,
+                    size_bytes=predecessor_tp153.size_bytes,
+                    sha256_hash=predecessor_tp153.sha256_hash,
+                )
+            )
+            db.flush()
+
+    return AnalysisResponse.from_model(_load_with_relations(db, reanalysis.id))
+
+
 @router.get("/{analysis_id}/progress", response_model=ProgressResponse)
 def get_analysis_progress(
     analysis: Annotated[Analysis, Depends(get_owned_analysis)],
@@ -341,3 +411,75 @@ def list_analysis_recommendations(
         for finding in findings
         for display in get_recommendations_for(source_dir, finding.rule_id, finding.status)
     ]
+
+
+@router.post(
+    "/{analysis_id}/reports", response_model=ReportResponse, status_code=status.HTTP_201_CREATED
+)
+def create_report(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ReportResponse:
+    # M10 decision: on-demand only, triggered by this explicit action - never
+    # generated automatically by the processing pipeline. Regenerating
+    # creates a new Report row rather than replacing an existing one (see
+    # app.models.report.Report's docstring).
+    if analysis.state != ProcessingStage.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A report can only be generated for a completed analysis.",
+        )
+
+    findings = _load_findings(db, analysis.id)
+    source_dir = _kb_source_dir(settings)
+    content = assemble_report_content(analysis, findings, source_dir, datetime.now(UTC))
+    pdf_bytes = render_report_pdf(content)
+
+    report_id = uuid.uuid4()
+    stored = store_report_pdf(
+        content=pdf_bytes,
+        analysis_id=analysis.id,
+        report_id=report_id,
+        report_root=settings.report_root,
+    )
+
+    report = Report(
+        id=report_id,
+        analysis_id=analysis.id,
+        format=ReportFormat.PDF,
+        storage_key=stored.storage_key,
+        size_bytes=stored.size_bytes,
+        sha256_hash=stored.sha256_hash,
+        kb_version=content.kb_version,
+        score=content.score,
+        score_label=content.score_label,
+        denominator=content.denominator,
+        satisfied_count=content.satisfied_count,
+        partially_satisfied_count=content.partially_satisfied_count,
+        not_satisfied_count=content.not_satisfied_count,
+        not_verified_count=content.not_verified_count,
+        not_applicable_count=content.not_applicable_count,
+    )
+    db.add(report)
+    db.flush()
+    return ReportResponse.model_validate(report)
+
+
+@router.get("/{analysis_id}/reports", response_model=list[ReportResponse])
+def list_analysis_reports(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[ReportResponse]:
+    # Full history, most recent first - every generation is preserved (M10
+    # decision: never replace an existing Report record).
+    reports = (
+        db.execute(
+            select(Report)
+            .where(Report.analysis_id == analysis.id)
+            .order_by(Report.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+    return [ReportResponse.model_validate(report) for report in reports]

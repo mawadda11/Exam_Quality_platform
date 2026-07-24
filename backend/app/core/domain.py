@@ -15,6 +15,10 @@ class UploadedFileType(StrEnum):
     TP153 = "tp153"
 
 
+class ReportFormat(StrEnum):
+    PDF = "pdf"
+
+
 class AcademicStatus(StrEnum):
     SATISFIED = "Satisfied"
     PARTIALLY_SATISFIED = "Partially Satisfied"

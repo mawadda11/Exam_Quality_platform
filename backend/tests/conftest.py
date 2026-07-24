@@ -24,11 +24,19 @@ def upload_root(tmp_path: Path) -> Path:
 
 
 @pytest.fixture()
-def test_settings(upload_root: Path) -> Settings:
+def report_root(tmp_path: Path) -> Path:
+    root = tmp_path / "reports"
+    root.mkdir()
+    return root
+
+
+@pytest.fixture()
+def test_settings(upload_root: Path, report_root: Path) -> Settings:
     return Settings(
         secret_key="test-secret-key-not-for-production",
         database_url="sqlite:///:memory:",
         upload_root=str(upload_root),
+        report_root=str(report_root),
         max_upload_mb=1,
     )
 

@@ -52,12 +52,20 @@ export interface AnalysisResponse {
   term: string
   state: ProcessingStage
   owner_user_id: string
+  predecessor_analysis_id: string | null
   uploaded_files: UploadedFileResponse[]
   exam_uploaded: boolean
   tp153_uploaded: boolean
   ready_for_analysis: boolean
   created_at: string
   updated_at: string
+}
+
+/** course/exam_type/term are always inherited from the predecessor - see
+ * backend/app/schemas/analysis.py's ReanalysisCreateRequest docstring.
+ * reuse_tp153 defaults to true server-side when the body is omitted. */
+export interface ReanalysisCreateRequest {
+  reuse_tp153?: boolean
 }
 
 export interface ProblemDetail {
@@ -192,4 +200,23 @@ export interface RecommendationResponse {
   text: string
   target_user: string
   recommendation_type: string
+}
+
+export type ReportFormat = 'pdf'
+
+export interface ReportResponse {
+  id: string
+  analysis_id: string
+  format: ReportFormat
+  kb_version: string
+  score: string | null
+  score_label: string | null
+  denominator: number
+  satisfied_count: number
+  partially_satisfied_count: number
+  not_satisfied_count: number
+  not_verified_count: number
+  not_applicable_count: number
+  size_bytes: number
+  created_at: string
 }

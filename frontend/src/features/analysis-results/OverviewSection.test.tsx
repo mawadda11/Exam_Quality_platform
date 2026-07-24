@@ -1,7 +1,9 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { AnalysisResponse, AnalysisScoreResponse } from '../../types/api'
 import { OverviewSection } from './OverviewSection'
+
+vi.mock('../../api/analyses')
 
 const ANALYSIS: AnalysisResponse = {
   id: 'analysis-1',
@@ -10,6 +12,7 @@ const ANALYSIS: AnalysisResponse = {
   term: '2026 Spring',
   state: 'completed',
   owner_user_id: 'user-1',
+  predecessor_analysis_id: null,
   uploaded_files: [],
   exam_uploaded: true,
   tp153_uploaded: true,
@@ -72,5 +75,44 @@ describe('OverviewSection', () => {
     }
     render(<OverviewSection analysis={ANALYSIS} score={score} />)
     expect(screen.getByText(/based on 1 verified applicable rule\)/i)).toBeInTheDocument()
+  })
+
+  const zeroScore: AnalysisScoreResponse = {
+    analysis_id: 'analysis-1',
+    score: null,
+    label: 'Insufficient Evidence',
+    denominator: 0,
+    satisfied_count: 0,
+    partially_satisfied_count: 0,
+    not_satisfied_count: 0,
+    not_verified_count: 0,
+    not_applicable_count: 0,
+  }
+
+  it('shows a reanalysis notice only when the analysis has a predecessor', () => {
+    render(
+      <OverviewSection
+        analysis={{ ...ANALYSIS, predecessor_analysis_id: 'analysis-0' }}
+        score={zeroScore}
+      />,
+    )
+    expect(screen.getByText(/linked to a previous analysis/i)).toBeInTheDocument()
+  })
+
+  it('does not show a reanalysis notice for an analysis with no predecessor', () => {
+    render(<OverviewSection analysis={ANALYSIS} score={zeroScore} />)
+    expect(screen.queryByText(/linked to a previous analysis/i)).not.toBeInTheDocument()
+  })
+
+  it('only renders the Create Reanalysis action when onReanalysisCreated is provided', () => {
+    render(<OverviewSection analysis={ANALYSIS} score={zeroScore} />)
+    expect(screen.queryByRole('button', { name: /create reanalysis/i })).not.toBeInTheDocument()
+  })
+
+  it('renders the Create Reanalysis action when onReanalysisCreated is provided', () => {
+    render(
+      <OverviewSection analysis={ANALYSIS} score={zeroScore} onReanalysisCreated={vi.fn()} />,
+    )
+    expect(screen.getByRole('button', { name: /create reanalysis/i })).toBeInTheDocument()
   })
 })

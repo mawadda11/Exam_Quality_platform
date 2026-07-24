@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.identity import get_or_create_faculty_user
 from app.db.session import get_db
 from app.models.analysis import Analysis
+from app.models.report import Report
 from app.models.user import User
 
 
@@ -49,3 +50,20 @@ def get_owned_analysis(
         # confirming a resource's existence to a non-owner (IDOR mitigation).
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found.")
     return analysis
+
+
+def get_owned_report(
+    report_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> Report:
+    statement = (
+        select(Report)
+        .join(Analysis, Report.analysis_id == Analysis.id)
+        .where(Report.id == report_id, Analysis.user_id == current_user.id)
+    )
+    report = db.execute(statement).scalar_one_or_none()
+    if report is None:
+        # Same IDOR-safe non-disclosure as get_owned_analysis.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found.")
+    return report

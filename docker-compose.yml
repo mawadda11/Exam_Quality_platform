@@ -29,6 +29,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://exam_quality:exam_quality@postgres:5432/exam_quality
       UPLOAD_ROOT: /app/storage/uploads
+      REPORT_ROOT: /app/storage/reports
       KB_SOURCE_DIR: /app/knowledge_base/source
     ports: ["8000:8000"]
     volumes:

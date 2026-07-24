@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     allowed_origins: str = "http://localhost:5173"
     upload_root: str = "../storage/uploads"
     kb_source_dir: str = "../knowledge_base/source"
+    report_root: str = "../storage/reports"
 
     @property
     def allowed_origin_list(self) -> list[str]:

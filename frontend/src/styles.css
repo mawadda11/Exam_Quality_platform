@@ -74,3 +74,19 @@ p { line-height: 1.7; }
 
 .missing-evidence-panel { background: #eef3f7; border-radius: 12px; padding: 1rem; margin-bottom: 1.25rem; }
 .missing-evidence-panel h4 { margin-top: 0; }
+
+.report-section button, .reanalysis-action button { padding: .55rem 1.25rem; border: none; border-radius: 999px; background: #182230; color: white; font-weight: 600; cursor: pointer; margin-top: .5rem; }
+.report-section button:disabled, .reanalysis-action button:disabled { opacity: .6; cursor: not-allowed; }
+.report-list { list-style: none; padding: 0; margin: 1rem 0 0; display: flex; flex-direction: column; gap: .75rem; }
+.report-list-item { display: flex; align-items: center; justify-content: space-between; gap: 1rem; border: 1px solid #dfe4ea; border-radius: 12px; padding: .85rem 1rem; }
+.report-list-meta { font-size: .8rem; color: #6b7280; margin: .25rem 0 0; }
+.report-list-item button { margin-top: 0; }
+
+.reanalysis-action { margin-top: 1.5rem; padding: 1rem; border: 1px dashed #c7cfd8; border-radius: 12px; }
+.reanalysis-action h4 { margin-top: 0; }
+.reanalysis-reuse-option { display: flex; align-items: center; gap: .5rem; font-weight: 400; font-size: .9rem; }
+
+.analysis-history { margin-top: 1.5rem; text-align: left; }
+.analysis-history-list { list-style: none; padding: 0; margin: .75rem 0 0; display: flex; flex-direction: column; gap: .6rem; }
+.analysis-history-list button { width: 100%; text-align: left; padding: .75rem 1rem; border: 1px solid #dfe4ea; border-radius: 12px; background: white; font: inherit; cursor: pointer; display: flex; flex-direction: column; gap: .3rem; }
+.analysis-history-meta { font-size: .8rem; color: #6b7280; }
