@@ -19,7 +19,9 @@ services:
     volumes: [chroma_data:/chroma/chroma]
 
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      target: dev
     env_file: .env
     # Overrides .env's native-development defaults (localhost / relative
     # paths) back to values correct for this container: "postgres" only
@@ -43,7 +45,9 @@ services:
         condition: service_started
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      target: dev
     environment:
       VITE_API_BASE_URL: http://localhost:8000/api/v1
     ports: ["5173:5173"]
