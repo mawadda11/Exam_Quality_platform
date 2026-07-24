@@ -13,11 +13,17 @@
 11. Security hardening, performance tests, observability, and deployment.
 
 ## Notes on delivered scope vs. this list
-- Item 5 (OCR/layout adapter integration) and item 8's semantic-evaluator half are intentionally
-  deferred, not forgotten: no OCR/vision/semantic-AI capability has been built yet. Deterministic
-  rules that would require one are marked `unsupported` in
-  `backend/app/services/rules/capability_manifest.py` and produce no Finding, rather than being
-  skipped without a trace.
+- Item 5 (OCR/layout adapter integration) is delivered: `PdfPlumberExamExtractor`
+  (`backend/app/services/extraction/digital_pdf_extractor.py`) now falls back to OCR (local
+  Tesseract, via `backend/app/services/extraction/ocr.py`) for any page with no extractable
+  digital text. A cloud OCR vendor was deliberately not used - `docs/SECURITY_AND_PRIVACY.md`
+  requires an undocumented privacy-policy decision before sending files to an external provider,
+  and none exists. Item 8's semantic-evaluator half remains deferred - see below.
+- Item 8's semantic-evaluator half is intentionally deferred, not forgotten: no semantic-AI
+  capability has been built yet. Deterministic rules that would require one are marked
+  `unsupported` in `backend/app/services/rules/capability_manifest.py` and produce no Finding,
+  rather than being skipped without a trace. This also depends on item 6's runtime KB retrieval
+  (below), which remains unbuilt.
 - Item 6's runtime KB retrieval (similarity-based retrieval feeding semantic evaluators) also
   remains unimplemented - `run_retrieving_knowledge` is still a no-op placeholder. Only offline KB
   validation/normalization/versioning has been built. M9's read-time KB reference lookups

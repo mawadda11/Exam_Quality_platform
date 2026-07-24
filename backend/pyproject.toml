@@ -17,6 +17,7 @@ dependencies = [
   "alembic>=1.13,<2",
   "pdfplumber>=0.11,<1",
   "fpdf2>=2.8,<3",
+  "pytesseract>=0.3,<1",
 ]
 
 [project.optional-dependencies]
@@ -44,6 +45,13 @@ select = ["E", "F", "I", "B", "UP"]
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
+
+# pytesseract ships no inline types and no types-pytesseract stub package
+# exists on PyPI - narrowly scoped to just this module rather than weakening
+# strict mode project-wide.
+[[tool.mypy.overrides]]
+module = "pytesseract.*"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

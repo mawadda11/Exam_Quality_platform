@@ -1,32 +1,55 @@
-"""Digital, text-based exam PDF extractor.
+"""Exam PDF extractor: reads a PDF's native text layer via pdfplumber where
+one exists, and falls back to OCR (Tesseract, via app.services.extraction.ocr)
+for any page that yields no extractable text at all (e.g. a scanned image) -
+the only non-invented, mechanical signal available for "this page needs OCR".
+Native-text pages never go through OCR, keeping today's proven digital
+behavior and its confidence semantics completely unchanged.
 
-Reads only a PDF's existing text layer via pdfplumber - it never performs OCR.
-A page with no extractable text (e.g. a scanned image) simply yields no
-questions for that page; scanned-exam support is a separate, later milestone.
-
-Parsing is a deterministic, regex-based heuristic, not a statistical model:
+Parsing is a deterministic, regex-based heuristic, not a statistical model -
+see app.services.extraction.line_classification for the actual rules (shared
+between the digital and OCR paths, so a scanned exam and a digital exam are
+classified identically):
 - a line matching "Q<n>." starts a new top-level question;
 - a line matching "(<letter>)" is a child of the most recently seen
   top-level question;
 - a "[<n> marks]" bracket anywhere in a line attaches marks to that line;
 - a line starting with "Instructions:" becomes non-question evidence;
-- a line matching "Total Marks: <n>" becomes declared-total evidence (not a
-  question) - TOTAL_MARKS_PATTERN is exported so rule code (M6) can parse the
-  same value back out of the persisted evidence text without redefining it.
-Confidence reflects whether the text match and the position (geometry) match
-agreed, not any statistical certainty.
+- a line matching "Total Marks: <n>" becomes declared-total evidence.
+
+Confidence means different things per source: for a digitally-extracted line
+it reflects whether the text match and the position (geometry) match agreed,
+not statistical certainty; for an OCR-extracted line it's Tesseract's own
+recognition confidence, converted from its 0-100 scale to 0.0-1.0. Both are
+stored in the same `confidence: float` column - callers should not assume
+the two are numerically comparable.
 """
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterator
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pdfplumber
+from pdfplumber.page import Page
 
+# TOTAL_MARKS_PATTERN is unused in this file but re-exported - app.services.
+# rules.marks_total imports it from here (not from line_classification
+# directly) to parse the same declared-total value back out of persisted
+# evidence text, without redefining an equivalent pattern that could drift
+# out of sync. The `as TOTAL_MARKS_PATTERN` re-import (rather than a plain
+# import) is mypy's required idiom for an intentional re-export under strict
+# mode's implicit-reexport check.
+from app.services.extraction.line_classification import (
+    TOTAL_MARKS_PATTERN as TOTAL_MARKS_PATTERN,
+)
+from app.services.extraction.line_classification import (
+    ClassifiedLine,
+    LineKind,
+    Marks,
+    classify_line,
+)
+from app.services.extraction.ocr import OCR_RESOLUTION_DPI, OcrEngine, TesseractOcrEngine
 from app.services.extraction.types import (
     ExtractedEvidence,
     ExtractedQuestion,
@@ -34,16 +57,6 @@ from app.services.extraction.types import (
     ExtractionResult,
     Geometry,
 )
-
-_QUESTION_LINE = re.compile(r"^Q(\d+)\.\s*(.*)$")
-_SUBQUESTION_LINE = re.compile(r"^\(([a-z])\)\s*(.*)$")
-_INSTRUCTIONS_LINE = re.compile(r"^Instructions:\s*", re.IGNORECASE)
-_MARKS_ANYWHERE = re.compile(r"\[\s*(\d+(?:\.\d+)?)\s*marks?\s*\]", re.IGNORECASE)
-
-# Public (no leading underscore): M6's marks/total rule imports this to parse
-# the same declared-total value back out of the persisted evidence text,
-# rather than redefining an equivalent pattern that could drift out of sync.
-TOTAL_MARKS_PATTERN = re.compile(r"^Total\s+Marks\s*:\s*(\d+(?:\.\d+)?)\s*$", re.IGNORECASE)
 
 _QUESTION_SEARCH = r"Q\d+\."
 _SUBQUESTION_SEARCH = r"\([a-z]\)"
@@ -53,19 +66,6 @@ _TOTAL_MARKS_SEARCH = r"Total\s+Marks\s*:\s*\d+(?:\.\d+)?"
 
 _FULL_CONFIDENCE = 1.0
 _NO_GEOMETRY_CONFIDENCE = 0.6
-
-
-@dataclass(frozen=True)
-class _Marks:
-    value: float
-    matched_text: str
-
-
-def _parse_marks(line: str) -> _Marks | None:
-    match = _MARKS_ANYWHERE.search(line)
-    if match is None:
-        return None
-    return _Marks(value=float(match.group(1)), matched_text=match.group())
 
 
 def _geometry_from_match(match: dict[str, Any]) -> Geometry:
@@ -87,7 +87,10 @@ def _confidence_for(geometry: Geometry | None) -> float:
 
 
 class PdfPlumberExamExtractor:
-    """Digital-PDF-only exam extractor. See module docstring for the heuristic."""
+    """Digital-first, OCR-fallback exam extractor. See module docstring."""
+
+    def __init__(self, ocr_engine: OcrEngine | None = None) -> None:
+        self._ocr_engine = ocr_engine or TesseractOcrEngine()
 
     def extract(self, pdf_path: Path) -> ExtractionResult:
         try:
@@ -109,99 +112,195 @@ class PdfPlumberExamExtractor:
                 text = page.extract_text() or ""
                 lines = [line.strip() for line in text.splitlines() if line.strip()]
 
-                question_matches = iter(page.search(_QUESTION_SEARCH))
-                subquestion_matches = iter(page.search(_SUBQUESTION_SEARCH))
-                marks_matches = iter(page.search(_MARKS_SEARCH))
-                instructions_matches = iter(page.search(_INSTRUCTIONS_SEARCH))
-                total_marks_matches = iter(page.search(_TOTAL_MARKS_SEARCH))
-
-                for line in lines:
-                    marks = _parse_marks(line)
-                    marks_geometry = _next_geometry(marks_matches) if marks else None
-
-                    question_match = _QUESTION_LINE.match(line)
-                    subquestion_match = _SUBQUESTION_LINE.match(line)
-
-                    if question_match:
-                        number_label = f"Q{question_match.group(1)}"
-                        geometry = _next_geometry(question_matches)
-                        current_parent_label = number_label
-                    elif subquestion_match:
-                        letter = subquestion_match.group(1)
-                        number_label = (
-                            f"{current_parent_label}({letter})"
-                            if current_parent_label
-                            else f"({letter})"
-                        )
-                        geometry = _next_geometry(subquestion_matches)
-                    elif _INSTRUCTIONS_LINE.match(line):
-                        geometry = _next_geometry(instructions_matches)
-                        evidence.append(
-                            ExtractedEvidence(
-                                evidence_type="instructions",
-                                page_number=page_number,
-                                item_reference="instructions",
-                                extracted_text=line,
-                                confidence=_confidence_for(geometry),
-                                geometry=geometry,
-                                question_number_label=None,
-                            )
-                        )
-                        continue
-                    elif TOTAL_MARKS_PATTERN.match(line):
-                        geometry = _next_geometry(total_marks_matches)
-                        evidence.append(
-                            ExtractedEvidence(
-                                evidence_type="declared_total",
-                                page_number=page_number,
-                                item_reference="total",
-                                extracted_text=line,
-                                confidence=_confidence_for(geometry),
-                                geometry=geometry,
-                                question_number_label=None,
-                            )
-                        )
-                        continue
-                    else:
-                        continue
-
-                    sequence += 1
-                    questions.append(
-                        ExtractedQuestion(
-                            number_label=number_label,
-                            text=line,
-                            page_number=page_number,
-                            parent_number_label=(
-                                current_parent_label if subquestion_match else None
-                            ),
-                            marks=marks.value if marks else None,
-                            sequence=sequence,
-                            confidence=_confidence_for(geometry),
-                            geometry=geometry,
-                        )
+                if lines:
+                    sequence, current_parent_label = self._process_digital_page(
+                        page,
+                        lines,
+                        page_number,
+                        sequence,
+                        current_parent_label,
+                        questions,
+                        evidence,
                     )
-                    evidence.append(
-                        ExtractedEvidence(
-                            evidence_type="question_text",
-                            page_number=page_number,
-                            item_reference=number_label,
-                            extracted_text=line,
-                            confidence=_confidence_for(geometry),
-                            geometry=geometry,
-                            question_number_label=number_label,
-                        )
+                else:
+                    sequence, current_parent_label = self._process_ocr_page(
+                        page, page_number, sequence, current_parent_label, questions, evidence
                     )
-                    if marks is not None:
-                        evidence.append(
-                            ExtractedEvidence(
-                                evidence_type="marks",
-                                page_number=page_number,
-                                item_reference=number_label,
-                                extracted_text=marks.matched_text,
-                                confidence=_confidence_for(marks_geometry),
-                                geometry=marks_geometry,
-                                question_number_label=number_label,
-                            )
-                        )
 
         return ExtractionResult(questions=questions, evidence=evidence)
+
+    def _process_digital_page(
+        self,
+        page: Page,
+        lines: list[str],
+        page_number: int,
+        sequence: int,
+        current_parent_label: str | None,
+        questions: list[ExtractedQuestion],
+        evidence: list[ExtractedEvidence],
+    ) -> tuple[int, str | None]:
+        question_matches = iter(page.search(_QUESTION_SEARCH))
+        subquestion_matches = iter(page.search(_SUBQUESTION_SEARCH))
+        marks_matches = iter(page.search(_MARKS_SEARCH))
+        instructions_matches = iter(page.search(_INSTRUCTIONS_SEARCH))
+        total_marks_matches = iter(page.search(_TOTAL_MARKS_SEARCH))
+
+        for line in lines:
+            classified = classify_line(line, current_parent_label)
+            marks_geometry = _next_geometry(marks_matches) if classified.marks else None
+
+            if classified.kind is LineKind.QUESTION:
+                geometry = _next_geometry(question_matches)
+            elif classified.kind is LineKind.SUBQUESTION:
+                geometry = _next_geometry(subquestion_matches)
+            elif classified.kind is LineKind.INSTRUCTIONS:
+                geometry = _next_geometry(instructions_matches)
+            elif classified.kind is LineKind.TOTAL_MARKS:
+                geometry = _next_geometry(total_marks_matches)
+            else:
+                continue
+
+            sequence, current_parent_label = self._emit(
+                classified,
+                geometry,
+                _confidence_for(geometry),
+                marks_geometry,
+                _confidence_for(marks_geometry),
+                page_number,
+                sequence,
+                current_parent_label,
+                questions,
+                evidence,
+            )
+
+        return sequence, current_parent_label
+
+    def _process_ocr_page(
+        self,
+        page: Page,
+        page_number: int,
+        sequence: int,
+        current_parent_label: str | None,
+        questions: list[ExtractedQuestion],
+        evidence: list[ExtractedEvidence],
+    ) -> tuple[int, str | None]:
+        scale = OCR_RESOLUTION_DPI / 72.0
+        image = page.to_image(resolution=OCR_RESOLUTION_DPI).original
+        ocr_lines = self._ocr_engine.lines_for_image(image, scale)
+
+        for ocr_line in ocr_lines:
+            classified = classify_line(ocr_line.text, current_parent_label)
+            if classified.kind is LineKind.OTHER:
+                continue
+
+            # OCR gives one recognized geometry/confidence per whole line -
+            # unlike the digital path, there's no separate "just the marks
+            # bracket" position to look up, so a marks evidence row reuses
+            # the same line-level geometry/confidence as its parent line.
+            sequence, current_parent_label = self._emit(
+                classified,
+                ocr_line.geometry,
+                ocr_line.confidence,
+                ocr_line.geometry,
+                ocr_line.confidence,
+                page_number,
+                sequence,
+                current_parent_label,
+                questions,
+                evidence,
+            )
+
+        return sequence, current_parent_label
+
+    def _emit(
+        self,
+        classified: ClassifiedLine,
+        geometry: Geometry | None,
+        confidence: float,
+        marks_geometry: Geometry | None,
+        marks_confidence: float,
+        page_number: int,
+        sequence: int,
+        current_parent_label: str | None,
+        questions: list[ExtractedQuestion],
+        evidence: list[ExtractedEvidence],
+    ) -> tuple[int, str | None]:
+        """Shared row-construction, identical regardless of whether `classified`
+        came from a digital line or an OCR line - the only difference between
+        the two paths is how geometry/confidence were sourced above."""
+        marks: Marks | None = classified.marks
+
+        if classified.kind is LineKind.INSTRUCTIONS:
+            evidence.append(
+                ExtractedEvidence(
+                    evidence_type="instructions",
+                    page_number=page_number,
+                    item_reference="instructions",
+                    extracted_text=classified.text,
+                    confidence=confidence,
+                    geometry=geometry,
+                    question_number_label=None,
+                )
+            )
+            return sequence, current_parent_label
+
+        if classified.kind is LineKind.TOTAL_MARKS:
+            evidence.append(
+                ExtractedEvidence(
+                    evidence_type="declared_total",
+                    page_number=page_number,
+                    item_reference="total",
+                    extracted_text=classified.text,
+                    confidence=confidence,
+                    geometry=geometry,
+                    question_number_label=None,
+                )
+            )
+            return sequence, current_parent_label
+
+        # QUESTION or SUBQUESTION from here on.
+        number_label = classified.number_label
+        assert number_label is not None  # classify_line always sets it for these two kinds
+        if classified.kind is LineKind.QUESTION:
+            current_parent_label = number_label
+
+        sequence += 1
+        questions.append(
+            ExtractedQuestion(
+                number_label=number_label,
+                text=classified.text,
+                page_number=page_number,
+                parent_number_label=(
+                    current_parent_label if classified.kind is LineKind.SUBQUESTION else None
+                ),
+                marks=marks.value if marks else None,
+                sequence=sequence,
+                confidence=confidence,
+                geometry=geometry,
+            )
+        )
+        evidence.append(
+            ExtractedEvidence(
+                evidence_type="question_text",
+                page_number=page_number,
+                item_reference=number_label,
+                extracted_text=classified.text,
+                confidence=confidence,
+                geometry=geometry,
+                question_number_label=number_label,
+            )
+        )
+        if marks is not None:
+            evidence.append(
+                ExtractedEvidence(
+                    evidence_type="marks",
+                    page_number=page_number,
+                    item_reference=number_label,
+                    extracted_text=marks.matched_text,
+                    confidence=marks_confidence,
+                    geometry=marks_geometry,
+                    question_number_label=number_label,
+                )
+            )
+
+        return sequence, current_parent_label

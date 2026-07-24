@@ -18,6 +18,12 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
+      # tesseract-ocr: the system binary the OCR-fallback path shells out to
+      # via pytesseract - without it, tests/test_ocr_extraction.py's one
+      # real-Tesseract test skips itself rather than failing (see its
+      # shutil.which("tesseract") guard), but installing it here means CI
+      # actually exercises real OCR instead of always skipping that test.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr
       - run: pip install -e '.[dev]'
       - run: ruff check .
       - run: ruff format --check .
