@@ -16,6 +16,7 @@ from app.services.storage.validation import (
     validate_declared_mime_type,
     validate_filename_extension,
     validate_magic_bytes,
+    validate_pdf_readability,
     validate_pdf_trailer,
 )
 
@@ -78,6 +79,8 @@ async def stream_validate_and_store(
         with tmp_path.open("rb") as handle:
             handle.seek(total_bytes - tail_size)
             validate_pdf_trailer(handle.read(tail_size))
+
+        validate_pdf_readability(tmp_path)
 
         storage_key = generate_storage_key(analysis_id, file_type)
         final_path = resolve_storage_path(upload_root, storage_key)

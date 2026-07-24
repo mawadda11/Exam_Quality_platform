@@ -32,21 +32,13 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
-from helpers import auth_header
+from helpers import auth_header, valid_pdf_bytes
 
 ANALYSIS_PAYLOAD = {
     "course": {"code": "CPIT-450", "name": "Software Engineering"},
     "exam_type": "Midterm",
     "term": "2026 Spring",
 }
-
-# Upload-time validation (app.services.storage.validation) only checks the
-# filename extension, declared MIME type, PDF magic bytes, and trailer - real
-# parsing happens later, inside the pipeline stages this test's fake pipeline
-# replaces. A minimal-but-valid PDF byte string is therefore sufficient here
-# and keeps this test fast, unlike test_run_progress_api.py's real fixture
-# PDFs, which that file needs because it runs the real pipeline.
-MINIMAL_VALID_PDF = b"%PDF-1.4\n0000\n%%EOF"
 
 
 def _make_ready_analysis(client: TestClient, email: str) -> str:
@@ -59,7 +51,13 @@ def _make_ready_analysis(client: TestClient, email: str) -> str:
             f"/api/v1/analyses/{analysis_id}/files",
             headers=auth_header(email),
             data={"file_type": file_type},
-            files={"file": (f"{file_type}.pdf", io.BytesIO(MINIMAL_VALID_PDF), "application/pdf")},
+            files={
+                "file": (
+                    f"{file_type}.pdf",
+                    io.BytesIO(valid_pdf_bytes()),
+                    "application/pdf",
+                )
+            },
         )
         assert response.status_code == 201
     return analysis_id

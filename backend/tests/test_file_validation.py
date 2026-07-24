@@ -4,14 +4,17 @@ import uuid
 from pathlib import Path
 
 import pytest
+from helpers import corrupted_pdf_bytes, encrypted_pdf_bytes, valid_pdf_bytes
 
 from app.core.domain import UploadedFileType
 from app.services.storage.keys import generate_storage_key, resolve_storage_path
 from app.services.storage.validation import (
+    PDF_READABILITY_ERROR,
     UploadValidationError,
     validate_declared_mime_type,
     validate_filename_extension,
     validate_magic_bytes,
+    validate_pdf_readability,
     validate_pdf_trailer,
 )
 
@@ -50,6 +53,29 @@ def test_validate_pdf_trailer_rejects_missing_eof() -> None:
 
 def test_validate_pdf_trailer_accepts_eof_marker() -> None:
     validate_pdf_trailer(b"...content...\n%%EOF")
+
+
+def test_validate_pdf_readability_accepts_parser_valid_pdf(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "valid.pdf"
+    pdf_path.write_bytes(valid_pdf_bytes())
+
+    validate_pdf_readability(pdf_path)
+
+
+def test_validate_pdf_readability_rejects_corrupted_pdf(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "corrupted.pdf"
+    pdf_path.write_bytes(corrupted_pdf_bytes())
+
+    with pytest.raises(UploadValidationError, match=PDF_READABILITY_ERROR):
+        validate_pdf_readability(pdf_path)
+
+
+def test_validate_pdf_readability_rejects_inaccessible_encrypted_pdf(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "encrypted.pdf"
+    pdf_path.write_bytes(encrypted_pdf_bytes())
+
+    with pytest.raises(UploadValidationError, match=PDF_READABILITY_ERROR):
+        validate_pdf_readability(pdf_path)
 
 
 def test_generate_storage_key_never_contains_traversal_segments() -> None:

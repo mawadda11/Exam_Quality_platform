@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from helpers import valid_pdf_bytes
+from helpers import corrupted_pdf_bytes
 from tp153_pdf_fixtures import (
     build_complete_tp153_pdf,
     build_incomplete_assessment_tp153_pdf,
@@ -128,7 +128,7 @@ def test_incomplete_assessment_line_keeps_method_and_activity_with_null_percenta
 
 
 def test_unparseable_pdf_raises_extraction_error_without_leaking_details(tmp_path: Path) -> None:
-    pdf_path = _write(tmp_path, "fake.pdf", valid_pdf_bytes())
+    pdf_path = _write(tmp_path, "fake.pdf", corrupted_pdf_bytes())
 
     with pytest.raises(ExtractionError) as excinfo:
         PdfPlumberTp153Extractor().extract(pdf_path)

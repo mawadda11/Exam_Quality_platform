@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from helpers import valid_pdf_bytes
+from helpers import corrupted_pdf_bytes
 from pdf_fixtures import build_blank_pdf, build_synthetic_exam_pdf
 from rules_pdf_fixtures import build_exam_with_correct_total_pdf
 
@@ -163,7 +163,7 @@ def test_blank_pdf_yields_no_questions_without_error(tmp_path: Path) -> None:
 
 
 def test_unparseable_pdf_raises_extraction_error_without_leaking_details(tmp_path: Path) -> None:
-    pdf_path = _write(tmp_path, "fake.pdf", valid_pdf_bytes())
+    pdf_path = _write(tmp_path, "fake.pdf", corrupted_pdf_bytes())
 
     with pytest.raises(ExtractionError) as excinfo:
         PdfPlumberExamExtractor().extract(pdf_path)

@@ -2,17 +2,27 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
+from uuid import UUID
 
+import pytest
 from fastapi.testclient import TestClient
 from helpers import (
     auth_header,
+    corrupted_pdf_bytes,
+    encrypted_pdf_bytes,
     non_pdf_bytes,
     pdf_bytes_of_size,
-    pdf_missing_eof_bytes,
+    truncated_pdf_bytes,
     valid_pdf_bytes,
 )
+from pdf_fixtures import build_scanned_looking_exam_pdf
+from sqlalchemy import select
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
 
 from app.core.config import Settings
+from app.models.uploaded_file import UploadedFile
+from app.services.storage.validation import PDF_READABILITY_ERROR
 
 ANALYSIS_PAYLOAD = {
     "course": {"code": "CPIT-450", "name": "Software Engineering"},
@@ -63,6 +73,26 @@ def test_upload_valid_exam_pdf_returns_201(client: TestClient) -> None:
     assert body["file_type"] == "exam"
     assert len(body["sha256_hash"]) == 64
     assert "storage_key" not in body
+
+
+@pytest.mark.parametrize("file_type", ["exam", "tp153"])
+def test_upload_valid_scanned_pdf_without_digital_text_returns_201(
+    client: TestClient, file_type: str
+) -> None:
+    analysis_id = _create_analysis(client, f"scanned-{file_type}@kau.edu.sa")
+
+    response = _upload(
+        client,
+        analysis_id,
+        f"scanned-{file_type}@kau.edu.sa",
+        file_type,
+        f"{file_type}.pdf",
+        build_scanned_looking_exam_pdf(),
+        "application/pdf",
+    )
+
+    assert response.status_code == 201
+    assert response.json()["file_type"] == file_type
 
 
 def test_upload_on_analysis_not_owned_returns_404(client: TestClient) -> None:
@@ -126,11 +156,65 @@ def test_upload_missing_eof_trailer_returns_422(client: TestClient) -> None:
         "u5@kau.edu.sa",
         "exam",
         "exam.pdf",
-        pdf_missing_eof_bytes(),
+        truncated_pdf_bytes(),
         "application/pdf",
     )
 
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize("file_type", ["exam", "tp153"])
+def test_upload_corrupted_pdf_is_rejected_for_both_slots_without_file_or_record(
+    client: TestClient,
+    db_engine: Engine,
+    upload_root: Path,
+    file_type: str,
+) -> None:
+    email = f"corrupted-{file_type}@kau.edu.sa"
+    analysis_id = _create_analysis(client, email)
+
+    response = _upload(
+        client,
+        analysis_id,
+        email,
+        file_type,
+        f"{file_type}.pdf",
+        corrupted_pdf_bytes(),
+        "application/pdf",
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == PDF_READABILITY_ERROR
+    assert list(upload_root.rglob("*")) == []
+
+    with Session(db_engine) as session:
+        records = (
+            session.execute(
+                select(UploadedFile).where(UploadedFile.analysis_id == UUID(analysis_id))
+            )
+            .scalars()
+            .all()
+        )
+        assert records == []
+
+
+def test_upload_inaccessible_encrypted_pdf_returns_422(client: TestClient) -> None:
+    email = "encrypted@kau.edu.sa"
+    analysis_id = _create_analysis(client, email)
+
+    response = _upload(
+        client,
+        analysis_id,
+        email,
+        "exam",
+        "exam.pdf",
+        encrypted_pdf_bytes(),
+        "application/pdf",
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == PDF_READABILITY_ERROR
+    assert "password" not in response.text.lower()
 
 
 def test_upload_at_size_limit_succeeds(client: TestClient, test_settings: Settings) -> None:

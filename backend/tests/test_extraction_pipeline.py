@@ -3,9 +3,11 @@ from __future__ import annotations
 import io
 import time
 import uuid
+from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
-from helpers import auth_header, valid_pdf_bytes
+from helpers import auth_header
 from pdf_fixtures import build_synthetic_exam_pdf
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
@@ -14,6 +16,8 @@ from tp153_pdf_fixtures import build_complete_tp153_pdf
 
 from app.core.domain import UploadedFileType
 from app.models.evidence import Evidence
+from app.services.extraction.digital_pdf_extractor import PdfPlumberExamExtractor
+from app.services.extraction.types import ExtractionError, ExtractionResult
 from app.services.processing.runner import SAFE_FAILURE_MESSAGE
 
 ANALYSIS_PAYLOAD = {
@@ -131,14 +135,20 @@ def test_pipeline_persists_evidence_with_traceable_fields(
 
 def test_pipeline_extraction_failure_yields_failed_state_with_safe_message(
     client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    def fail_extract(self: PdfPlumberExamExtractor, pdf_path: Path) -> ExtractionResult:
+        raise ExtractionError(f"Injected parser failure for {pdf_path.name}")
+
+    monkeypatch.setattr(PdfPlumberExamExtractor, "extract", fail_extract)
+
     email = "pipeline3@kau.edu.sa"
     analysis_id = _create_analysis(client, email)
-    # Passes upload validation (correct magic bytes/EOF marker) but is not a
-    # structurally real PDF - pdfplumber cannot parse it, exercising the
-    # extraction-failure path without needing a special corrupt fixture.
-    _upload(client, analysis_id, email, "exam", "exam.pdf", valid_pdf_bytes())
-    _upload(client, analysis_id, email, "tp153", "tp153.pdf", valid_pdf_bytes())
+    # Upload validation now rejects parser-invalid PDFs, so exercise the
+    # independent processing-failure contract with an injected extraction
+    # error after two genuinely readable uploads.
+    _upload(client, analysis_id, email, "exam", "exam.pdf", build_synthetic_exam_pdf())
+    _upload(client, analysis_id, email, "tp153", "tp153.pdf", build_complete_tp153_pdf())
 
     headers = auth_header(email)
     client.post(f"/api/v1/analyses/{analysis_id}/run", headers=headers)
