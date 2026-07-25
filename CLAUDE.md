@@ -61,6 +61,8 @@ Processing failures are not academic statuses. Use separate processing states/er
 - Semantic confidence is categorical (`High`, `Medium`, or `Low`) and is eventually derived by the
   backend from validated evidence conditions, never trusted as model self-assessment. Low
   confidence produces `Not Verified`.
+- `app.core.domain.SemanticConfidenceLevel` is the single authoritative categorical-confidence
+  enum. ORM, Pydantic, API, and AI code must reuse it; do not define alternative confidence enums.
 - Do not convert numeric OCR or extraction confidence into semantic confidence.
 - Expose concise evidence-to-rule reasoning; never request, persist, or display private model
   chain-of-thought.

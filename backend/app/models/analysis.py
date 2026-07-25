@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Enum, ForeignKey, String, Uuid
+from sqlalchemy import Enum, ForeignKey, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.domain import ExamType, ProcessingStage, UploadedFileType, enum_values
@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from app.models.clo import Clo
     from app.models.course import Course
     from app.models.evidence import Evidence
+    from app.models.extraction_review_revision import ExtractionReviewRevision
     from app.models.finding import Finding
     from app.models.processing_event import ProcessingEvent
     from app.models.question import Question
@@ -26,6 +27,12 @@ if TYPE_CHECKING:
 
 class Analysis(TimestampMixin, Base):
     __tablename__ = "analyses"
+    __table_args__ = (
+        UniqueConstraint(
+            "confirmed_review_id",
+            name="uq_analyses_confirmed_review_id",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -54,6 +61,15 @@ class Analysis(TimestampMixin, Base):
         default=None,
         index=True,
     )
+    confirmed_review_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey(
+            "extraction_review_revisions.id",
+            name="fk_analyses_confirmed_review_id_extraction_review_revisions",
+            use_alter=True,
+        ),
+        default=None,
+    )
 
     owner: Mapped[User] = relationship(back_populates="analyses")
     course: Mapped[Course] = relationship(back_populates="analyses")
@@ -81,6 +97,14 @@ class Analysis(TimestampMixin, Base):
     )
     reports: Mapped[list[Report]] = relationship(
         back_populates="analysis", cascade="all, delete-orphan"
+    )
+    review_revisions: Mapped[list[ExtractionReviewRevision]] = relationship(
+        back_populates="analysis",
+        foreign_keys="ExtractionReviewRevision.analysis_id",
+        passive_deletes="all",
+    )
+    confirmed_review: Mapped[ExtractionReviewRevision | None] = relationship(
+        foreign_keys=[confirmed_review_id]
     )
     predecessor: Mapped[Analysis | None] = relationship(
         remote_side="Analysis.id", back_populates="reanalyses"

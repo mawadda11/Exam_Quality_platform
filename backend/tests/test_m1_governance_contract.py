@@ -1,7 +1,8 @@
 """Guards the M1 hybrid-evaluation governance and traceability freeze.
 
 These tests intentionally validate stable contract terms and exact controlled rule
-sets. They do not claim that planned M2-M10 runtime behavior is implemented.
+sets. M2 persistence/internal contracts are implemented; they do not claim
+that planned M3-M10 runtime behavior is implemented.
 """
 
 from __future__ import annotations
@@ -231,11 +232,14 @@ def test_current_numeric_semantic_runtime_is_documented_as_a_planned_gap() -> No
     assert "current API still returns numeric finding confidence" in api
 
 
-def test_m1_schema_and_runtime_non_implementation_are_explicit() -> None:
+def test_m1_governance_and_m2_persistence_status_are_explicit() -> None:
     schema = _read("docs/DATABASE_SCHEMA.md")
     roadmap = _read("docs/IMPLEMENTATION_ROADMAP.md")
 
-    assert "Milestone M1 creates no table, column, constraint, or migration." in schema
+    assert "migration `0008`" in schema
+    assert "placeholder" in schema
+    assert "SemanticConfidenceLevel" in schema
+    assert "`decision`" in schema
     assert "does not implement\n  runtime behavior" in roadmap
-    assert "M2 - Minimal persistence foundation: planned." in roadmap
+    assert "M2 - Minimal persistence foundation: currently implemented." in roadmap
     assert "M3 - Pipeline pause and initial snapshot: planned." in roadmap

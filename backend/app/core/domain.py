@@ -27,6 +27,19 @@ class AcademicStatus(StrEnum):
     NOT_APPLICABLE = "Not Applicable"
 
 
+class SemanticConfidenceLevel(StrEnum):
+    """The single authoritative categorical-confidence vocabulary.
+
+    Semantic confidence is deliberately separate from numeric OCR and
+    extraction confidence. ORM, Pydantic, API, and AI contracts must import
+    this enum rather than defining local alternatives.
+    """
+
+    HIGH = "High"
+    MEDIUM = "Medium"
+    LOW = "Low"
+
+
 class ProcessingStage(StrEnum):
     QUEUED = "queued"
     VALIDATING = "validating"

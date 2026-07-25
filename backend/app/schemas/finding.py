@@ -1,16 +1,56 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.domain import AcademicStatus, UploadedFileType
 
 if TYPE_CHECKING:
     from app.models.finding import Finding
     from app.services.knowledge_base.reference_data import RequirementDisplay
+
+
+class FindingEvaluationDetails(BaseModel):
+    """Versioned internal contract for future governed semantic findings.
+
+    M2 defines this contract but does not persist or expose it. Future
+    rule-specific schemas may extend it, while retaining these required core
+    fields and using the same schema version.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    schema_version: Literal[1]
+    decision: AcademicStatus
+    evidence_used: list[UUID]
+    reasoning: str = Field(min_length=1, max_length=4000)
+    recommendation: str | None
+
+    @field_validator("evidence_used")
+    @classmethod
+    def evidence_ids_are_unique(cls, value: list[UUID]) -> list[UUID]:
+        if len(value) != len(set(value)):
+            raise ValueError("evidence_used must not contain duplicate evidence IDs.")
+        return value
+
+    @field_validator("reasoning")
+    @classmethod
+    def reasoning_is_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("reasoning must not be blank.")
+        return value.strip()
+
+    @field_validator("recommendation")
+    @classmethod
+    def recommendation_is_controlled_or_absent(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not value.strip():
+            raise ValueError("recommendation must be a controlled recommendation ID or null.")
+        return value.strip()
 
 
 class FindingEvidenceRefResponse(BaseModel):

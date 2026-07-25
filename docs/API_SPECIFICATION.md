@@ -4,7 +4,8 @@ Base path: `/api/v1`
 
 Unless an endpoint is explicitly marked **Planned**, it describes the currently implemented API.
 Planned contracts are design-authorized by M1 but must not be treated as available until their
-implementation milestone is complete.
+implementation milestone is complete. M2 adds dormant persistence and internal schemas only; it
+does not expose a review or categorical-confidence API.
 
 ## Health
 - `GET /health`
@@ -49,7 +50,7 @@ implementation milestone is complete.
 
 ## Planned Extraction Review contract
 
-These endpoints are design-authorized but not implemented by M1:
+These endpoints are design-authorized but remain unimplemented after M2:
 
 - `GET /analyses/{id}/extraction-review` returns one coherent review snapshot, its revision
   identity, source anchors, warnings, and confirmation eligibility.
@@ -93,3 +94,9 @@ evidence, and never become source evidence.
 The backend derives confidence from validated evidence conditions. Low confidence requires Not
 Verified. The current API still returns numeric finding confidence until its planned replacement;
 clients must not interpret that implementation gap as the approved target contract.
+
+M2 persists nullable `confidence_level` and `evaluation_details` columns but does not expose or
+populate them. `SemanticConfidenceLevel` from the shared backend domain is the only authorized
+categorical-confidence enum for the future API. The internal version 1 `evaluation_details`
+contract contains `decision`, `evidence_used`, `reasoning`, and `recommendation` (a controlled ID
+or null).

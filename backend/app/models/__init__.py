@@ -3,6 +3,7 @@ from app.models.assessment_record import AssessmentRecord
 from app.models.clo import Clo
 from app.models.course import Course
 from app.models.evidence import Evidence
+from app.models.extraction_review_revision import ExtractionReviewRevision
 from app.models.finding import Finding, FindingEvidence
 from app.models.processing_event import ProcessingEvent
 from app.models.question import Question
@@ -17,6 +18,7 @@ __all__ = [
     "Clo",
     "Course",
     "Evidence",
+    "ExtractionReviewRevision",
     "Finding",
     "FindingEvidence",
     "ProcessingEvent",

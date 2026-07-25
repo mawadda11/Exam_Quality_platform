@@ -1,8 +1,8 @@
 # Database Schema
 
-This file lists the currently implemented schema first. The final section records the
-design-authorized M2 persistence plan so later sessions can distinguish planned schema from deployed
-schema. Milestone M1 creates no table, column, constraint, or migration.
+This file lists the currently implemented schema. Milestone M2 added the minimum durable
+Extraction Review foundation in migration `0008`; it did not activate the review workflow,
+processing pause, APIs, UI, or categorical semantic behavior.
 
 ## Core tables
 - `users`: Faculty Member identity, institution, and department. Version 1 does not require multi-role authorization.
@@ -19,6 +19,7 @@ schema. Milestone M1 creates no table, column, constraint, or migration.
 - `finding_evidence`: many-to-many trace links.
 - `reports`: storage key, generated time, format, KB version.
 - `processing_events`: stage, state, safe message, timestamps.
+- `extraction_review_revisions`: immutable analysis-local, versioned extraction snapshots.
 
 ## Constraints
 - Academic status is a database enum or checked value.
@@ -40,27 +41,31 @@ The `analyses` table intentionally has no persisted score or general KB-version 
 - Generated report rows persist their KB version and aggregate scoring snapshot.
 - Semantic findings persist the exact KB and prompt versions used for their evaluation.
 
-## Design-authorized M2 persistence plan - not implemented in M1
+## M2 Extraction Review persistence foundation - currently implemented
 
-The approved minimum persistence design adds one table and three columns in one future migration.
-Names remain planned until M2 creates and verifies the migration.
+Migration `0008` adds one table and three nullable columns. Existing analyses and Findings require
+no backfill, and current runtime/API behavior remains unchanged until later milestones.
 
-### Planned table: `extraction_review_revisions`
+### Table: `extraction_review_revisions`
 
 Each row represents one immutable complete review snapshot:
 
 - `id`: revision identity.
 - `analysis_id`: owning analysis.
-- `revision_number`: monotonic analysis-local version.
-- `snapshot`: versioned, strictly validated JSON containing the coherent reviewable extraction.
+- `revision_number`: positive, unique analysis-local version.
+- `snapshot`: versioned JSON containing only source-faithful extraction entities and evidence that
+  genuinely existed when the snapshot was created. Empty collections are valid; placeholder
+  questions, CLOs, topics, or assessment records are prohibited.
 - `created_at`: audit ordering.
 
-The first revision preserves the original machine extraction. Review saves append complete
-snapshots rather than replaying polymorphic edit events. On confirmation, one selected snapshot is
-planned to be materialized into the existing relational extraction projection. Relational
-extraction records then become immutable for analysis.
+The internal Pydantic contract uses `schema_version = 1`, stable source-record identifiers,
+source-faithful fields, explicit inclusion state, source geometry, and numeric
+`extraction_confidence`. It permits empty entity collections and validates internal question and
+evidence references. M3 will create revision 1 from the original machine extraction. M4 will append
+review saves and enforce correction/restoration/exclusion-only behavior against that original
+revision.
 
-### Planned columns
+### Columns added to existing tables
 
 - `analyses.confirmed_review_id`: binds all downstream results to the exact confirmed snapshot.
 - `findings.confidence_level`: nullable categorical semantic confidence; deterministic and legacy
@@ -68,8 +73,20 @@ extraction records then become immutable for analysis.
 - `findings.evaluation_details`: versioned JSON for rule-specific derived details and confidence
   basis.
 
-The existing numeric `findings.confidence` is retained temporarily for compatibility but is not the
-approved future semantic-confidence contract. It must not be threshold-converted into categories.
+`SemanticConfidenceLevel` in `app.core.domain` is the single authoritative `High`/`Medium`/`Low`
+enum for ORM, Pydantic, API, and future AI logic. Alternative semantic-confidence enums are
+prohibited. The existing numeric `findings.confidence` is retained temporarily for compatibility
+but must not be threshold-converted into categories.
+
+`evaluation_details` remains null and unused in M2. Its version 1 internal core contract is:
+
+- `decision`: one approved academic status;
+- `evidence_used`: unique evidence UUIDs;
+- `reasoning`: concise evidence-to-rule reasoning, never private chain-of-thought; and
+- `recommendation`: a controlled KB recommendation ID or null.
+
+The JSON also carries `schema_version = 1`. Future rule-specific schemas may extend this core
+contract without replacing or renaming its required fields.
 
 ### Explicitly rejected Version 1 schema additions
 

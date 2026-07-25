@@ -24,9 +24,10 @@ Hybrid-redesign status meanings:
 - **Planned**: design-authorized but not yet implemented.
 - **Deferred**: prohibited until the stated criterion, policy, or artifact is approved.
 
-Design authorization never changes an implementation status by itself. In particular, M1 does not
-implement Extraction Review, categorical semantic confidence, expanded evaluators, persistence,
-API, UI, or processing changes.
+Design authorization never changes an implementation status by itself. M1 implements governance
+contracts only. M2 implements the dormant review-revision/categorical-confidence persistence and
+strict internal schemas, but does not create revisions, pause processing, expose API/UI behavior,
+or change semantic evaluation.
 
 An unavailable evaluator is never represented by an unconditional `Not
 Verified` Finding. `Not Verified` is reserved for an implemented evaluator
@@ -95,14 +96,14 @@ are included with the capability they constrain.
 | FR-016 Generate downloadable report | Complete | Report suites | Add retained content |
 | FR-017 Store history | Complete | History API/UI tests | Navigation |
 | FR-018 Create linked reanalysis | Complete | Reanalysis API/UI tests | Preserve |
-| FR-019 Durable extraction review before semantic analysis | Design-authorized / Planned M2-M5 | M1 governance-contract tests only | Add revision persistence, processing pause, review API, and UI |
+| FR-019 Durable extraction review before semantic analysis | Partial: M2 foundation implemented; M3-M5 behavior planned | Migration `0008`, immutable revision ORM, strict source-faithful snapshot contract, and focused schema/model/migration tests | Create revision 1, pause processing, then add review API and UI |
 | FR-020 Source-faithful review operations only | Design-authorized / Planned M4-M5 | M1 governance-contract tests only | Permit correction/restoration/exclusion/confirmation; reject source authoring |
 | FR-021 No AI before extraction confirmation | Design-authorized / Planned M3-M4 | M1 governance-contract tests only | Add worker/provider non-invocation and state-transition tests |
 | FR-022 Separate source mappings from derived relationships | Design-authorized / Planned M6-M7 | M1 manifest/traceability tests | Add labeled typed derived details without overwriting Evidence |
 | FR-023 Derived relationships reference confirmed IDs and evidence | Design-authorized / Planned M6-M7 | M1 manifest/traceability tests | Add candidate-ID and same-analysis validation |
-| FR-024 Backend-derived High/Medium/Low semantic confidence | Design-authorized / Planned M6 | Current runtime remains numeric | Add categorical domain/schema/persistence and evidence-condition tests |
+| FR-024 Backend-derived High/Medium/Low semantic confidence | Partial: M2 enum/persistence implemented; M6 behavior planned | Shared authoritative `SemanticConfidenceLevel`, nullable Finding column, and contract tests; current runtime remains numeric | Add backend evidence-condition derivation and Low-to-Not-Verified enforcement |
 | FR-025 Low confidence becomes Not Verified and is excluded | Design-authorized / Planned M6-M7 | Existing Not Verified scoring exclusion is implemented | Add Low-to-Not-Verified and coverage-exclusion tests |
-| FR-026 Semantic Decision/Evidence/Reasoning/Confidence/Recommendation | Design-authorized / Planned M6-M10 | Current findings expose status/evidence/explanation/recommendation with numeric confidence | Add categorical contract and concise-reasoning presentation; never expose chain-of-thought |
+| FR-026 Semantic Decision/Evidence/Reasoning/Confidence/Recommendation | Partial: M2 internal core contract implemented; M6-M10 runtime/presentation planned | Versioned `decision`/`evidence_used`/`reasoning`/`recommendation` schema; current findings still expose numeric confidence | Populate validated details, expose categorical contract, and present concise reasoning without chain-of-thought |
 | FR-027 Deterministic coverage, totals, numbering, and score | Complete for current rules; planned mapping inputs | Existing rule/scoring suites | Keep deterministic while consuming validated non-Low mappings |
 | FR-028 No manual/AI source facts, policies, mappings, or thresholds | Design-authorized; current no-inference behavior implemented; review enforcement Planned | Existing extraction/governance tests plus M1 contract tests | Add review/AI boundary rejection tests |
 
@@ -164,9 +165,9 @@ types. Listing a planned component does not claim runtime support.
 | Decision | Requirement mapping | Rule mapping | Evidence mapping | Planned component | Planned test | Status |
 |---|---|---|---|---|---|---|
 | DD-001 Evidence-gated hybrid architecture | PRD-11, FR-010-FR-014, FR-021, FR-027 | Semantic/hybrid RULE001/002/003/004/007/008/011/012/013/021; deterministic RULE005/006/009/014/016/018/019/022 | EV002, EV003, EV004, EV005, EV012, EV014, EV015, EV018, EV021, EV022, EV024 | M3-M10 processing, evidence preparation, rule evaluators, scoring | Pipeline order, no pre-confirm AI, rule classification, deterministic aggregation | Design-authorized / Planned; current runtime remains uninterrupted |
-| DD-002 Extraction Review before AI | PRD-03, PRD-15, PRD-17, FR-019-FR-021 | RULE010, RULE023-RULE026, RULE030 | EV018, EV019, EV020, EV023 | M2 review revision; M3 pause; M4 API; M5 UI | Revision fidelity, provider non-invocation, ownership, stale revision, confirmation race | Design-authorized / Planned |
+| DD-002 Extraction Review before AI | PRD-03, PRD-15, PRD-17, FR-019-FR-021 | RULE010, RULE023-RULE026, RULE030 | EV018, EV019, EV020, EV023 | M2 review revision; M3 pause; M4 API; M5 UI | Revision fidelity, provider non-invocation, ownership, stale revision, confirmation race | M2 persistence implemented; workflow Planned |
 | DD-003 Source evidence versus derived relationships | PRD-15, PRD-19, FR-022-FR-023 | RULE001, RULE007, RULE010, RULE030 | EV002, EV012, EV015, EV018, EV021, EV024 | M6 typed details/validation; M7 derived mappings; M10 labels/report | Candidate allowlist, same-analysis evidence, source/derived label, no Evidence overwrite | Design-authorized / Planned |
-| DD-004 Categorical semantic confidence | PRD-12-PRD-14, FR-024-FR-026 | RULE029, RULE030 | EV018, EV019, EV020, EV021, EV024 | M2 persistence; M6 semantic contract; M10 UI/report | Exact High/Medium/Low enum, no numeric conversion, no percentage display | Design-authorized / Planned; numeric runtime currently implemented |
+| DD-004 Categorical semantic confidence | PRD-12-PRD-14, FR-024-FR-026 | RULE029, RULE030 | EV018, EV019, EV020, EV021, EV024 | M2 persistence; M6 semantic contract; M10 UI/report | Exact High/Medium/Low enum, no numeric conversion, no percentage display | M2 enum/persistence implemented; numeric runtime currently implemented |
 | DD-005 Backend-derived confidence | PRD-11-PRD-13, FR-023-FR-025 | RULE010, RULE029, RULE030 | EV018, EV019, EV020, EV021, EV024 | M6 validation and persistence | Model cannot elevate confidence; server evidence gates and downgrade tests | Design-authorized / Planned |
 | DD-006 Low confidence becomes Not Verified | PRD-12-PRD-14, FR-012, FR-014, FR-025 | RULE005, RULE009, RULE029, RULE030 | EV021, EV024 | M6 validation; M7 coverage; existing scoring | Low-to-Not-Verified, score-denominator exclusion, mapping coverage exclusion | Design-authorized / Planned; Not Verified scoring exclusion currently implemented |
 | DD-007 Deterministic coverage and scoring | PRD-14, FR-014, FR-027 | RULE005, RULE006, RULE009, RULE018, RULE019 | EV003, EV004, EV005, EV012, EV015, EV021, EV022, EV024 | Existing pure rules/scoring; M7 validated mapping inputs | Repeatable coverage/totals/numbering/score; confidence has no weight | Currently implemented for current inputs; confirmed semantic inputs Planned |
@@ -174,7 +175,7 @@ types. Listing a planned component does not claim runtime support.
 | DD-009 No AI-generated source facts | PRD-13, PRD-29, FR-023, FR-028 | RULE010, RULE024-RULE026, RULE028, RULE030 | EV002, EV004, EV012, EV014, EV015, EV017, EV018, EV021, EV023 | M6 schema/allowlists; M7-M9 evaluators | Unknown ID, invented page/text/mark/source record, prompt-injection rejection | Design-authorized / Planned; current validators partially enforce |
 | DD-010 Unsupported rules remain deferred | PRD-11, PRD-13, FR-011-FR-012 | RULE006 two-or-more branch, RULE015, RULE017, RULE020 | EV004, EV008, EV009, EV010, EV012, EV019, EV020, EV023 | Capability manifest and traceability only until governed dependency exists | No runtime identifier/finding; reasons remain explicit | Deferred |
 | DD-011 Decision-support scope | PRD-31, FR-013, FR-028 | RULE028 | EV024 | M6-M10 prompts, validation, UI, report | Reject accreditation/attainment/compliance claims; preserve disclaimer | Current advisory scope implemented; expanded-rule preservation Planned |
-| DD-012 Concise reasoning, not chain-of-thought | PRD-13, PRD-15, FR-013, FR-026 | RULE027, RULE030 | EV018, EV024, EV025 | M6 output contract; M10 API/UI/report | Evidence-to-rule explanation, controlled recommendation, no private chain-of-thought | Partially implemented; categorical presentation Planned |
+| DD-012 Concise reasoning, not chain-of-thought | PRD-13, PRD-15, FR-013, FR-026 | RULE027, RULE030 | EV018, EV024, EV025 | M6 output contract; M10 API/UI/report | Evidence-to-rule explanation, controlled recommendation, no private chain-of-thought | M2 internal details core implemented; runtime/presentation Planned |
 
 ## Production-only deferrals
 

@@ -32,8 +32,11 @@ The design-authorized evaluation order is:
 - **M1 - Governance and Contract Freeze: currently implemented by the documentation/manifest
   milestone once its validation passes.** It authorizes the target design but does not implement
   runtime behavior.
-- **M2 - Minimal persistence foundation: planned.** One review-revision table and additive analysis
-  and Finding fields in one future migration.
+- **M2 - Minimal persistence foundation: currently implemented.** Migration `0008` adds the
+  immutable review-revision table, the nullable analysis confirmation pointer, and nullable
+  categorical-confidence/evaluation-detail Finding fields. Strict internal snapshot and
+  evaluation-detail contracts are implemented, but no revision is created and no runtime behavior
+  changes until M3 or later.
 
 ### Version 1.2 - Extraction Review
 

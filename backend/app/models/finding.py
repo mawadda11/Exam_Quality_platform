@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.domain import AcademicStatus, enum_values
+from app.core.domain import AcademicStatus, SemanticConfidenceLevel, enum_values
 from app.db.base import Base
 from app.db.mixins import utcnow
 
@@ -44,6 +44,16 @@ class Finding(Base):
     ai_model: Mapped[str | None] = mapped_column(String(200), default=None)
     prompt_template_version: Mapped[str | None] = mapped_column(String(100), default=None)
     kb_version: Mapped[str | None] = mapped_column(String(50), default=None)
+    confidence_level: Mapped[SemanticConfidenceLevel | None] = mapped_column(
+        Enum(
+            SemanticConfidenceLevel,
+            native_enum=False,
+            validate_strings=True,
+            values_callable=enum_values,
+        ),
+        default=None,
+    )
+    evaluation_details: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     analysis: Mapped[Analysis] = relationship(back_populates="findings")

@@ -7,8 +7,9 @@ The design-authorized target architecture is evidence-gated:
 
 `confirmed source evidence -> deterministic checks -> constrained semantic relationships -> deterministic aggregation and scoring`
 
-Milestone M1 freezes this target but does not implement its review pause, persistence, API, UI, or
-expanded semantic evaluators.
+Milestone M1 freezes this target. M2 implements only its dormant persistence and strict internal
+schema foundation: no review revision is created yet, and the review pause, API, UI,
+categorical-confidence runtime behavior, and expanded semantic evaluators remain planned.
 
 ## Components
 - React frontend: upload, progress, results, evidence drill-down, history, report download.

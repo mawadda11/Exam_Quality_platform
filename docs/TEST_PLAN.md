@@ -33,7 +33,10 @@
 - OCR, AI provider, vector store, and file storage adapters.
 - API request/response schemas.
 - Governance manifest classifications, system gates, and retained deferrals.
-- Planned review snapshot and categorical semantic-output schemas.
+- Implemented M2 contracts: strict source-faithful review snapshot shape, empty collection
+  behavior, internal reference validation, immutable revision metadata, and the versioned
+  `decision`/`evidence_used`/`reasoning`/`recommendation` evaluation-details core.
+- Planned categorical semantic-output runtime schemas.
 
 ## Security tests
 - Unauthorized access and IDOR.

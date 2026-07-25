@@ -35,8 +35,10 @@ FR-027 Keep coverage, marks totals, numbering outcomes, and score aggregation de
 FR-028 Prohibit manual or AI creation of official CLOs, topics, assessment records, mappings,
 institutional policies, and rule thresholds.
 
-FR-019 through FR-028 are design-authorized in M1 and planned for later milestones. They are not
-claims of current runtime implementation.
+FR-019 through FR-028 are design-authorized in M1 and planned for later runtime milestones. M2
+implements only the dormant revision/categorical-confidence persistence and strict internal schema
+foundation. It does not claim review, confirmation, pipeline, API, UI, or semantic runtime
+behavior.
 
 ## Non-functional requirements
 - Accuracy: unsupported claims are prohibited; insufficient evidence becomes Not Verified.

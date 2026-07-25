@@ -22,8 +22,10 @@ The design-authorized Version 1 evaluation order is:
 
 `confirmed source evidence -> deterministic checks -> constrained semantic relationships -> deterministic aggregation and scoring`
 
-This contract is approved in M1. The review pause, categorical-confidence persistence, API/UI, and
-expanded evaluators are planned for later milestones and are not implemented by M1.
+This contract is approved in M1. M2 implements dormant review-revision and
+categorical-confidence persistence plus strict internal schemas. The review pause, revision
+creation, API/UI, categorical-confidence runtime behavior, and expanded evaluators remain planned
+for M3 and later.
 
 ## Extraction Review boundary
 
