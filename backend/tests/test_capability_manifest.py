@@ -16,7 +16,10 @@ import pytest
 from app.services.processing.stages import RUNTIME_RULE_IDENTIFIERS
 from app.services.rules.capability_manifest import (
     CAPABILITY_MANIFEST,
+    SYSTEM_GOVERNANCE_RULE_IDS,
     CapabilityEntry,
+    DesignDisposition,
+    EvaluationMode,
     SupportStatus,
 )
 
@@ -101,6 +104,7 @@ def test_capability_entry_rejects_unsupported_without_reason() -> None:
             rule_id="RULE999",
             requirement_name="Test",
             support_status=SupportStatus.UNSUPPORTED,
+            target_evaluation_mode=EvaluationMode.DETERMINISTIC,
         )
 
 
@@ -111,6 +115,7 @@ def test_capability_entry_rejects_partially_supported_without_reason() -> None:
             rule_id="RULE999",
             requirement_name="Test",
             support_status=SupportStatus.PARTIALLY_SUPPORTED,
+            target_evaluation_mode=EvaluationMode.DETERMINISTIC,
         )
 
 
@@ -120,8 +125,34 @@ def test_capability_entry_allows_supported_without_reason() -> None:
         rule_id="RULE999",
         requirement_name="Test",
         support_status=SupportStatus.SUPPORTED,
+        target_evaluation_mode=EvaluationMode.DETERMINISTIC,
     )
     assert entry.reason is None
+
+
+def test_deferred_entry_requires_no_authorized_method() -> None:
+    with pytest.raises(ValueError, match="no_authorized_method"):
+        CapabilityEntry(
+            requirement_id="REQ999",
+            rule_id="RULE999",
+            requirement_name="Test",
+            support_status=SupportStatus.UNSUPPORTED,
+            target_evaluation_mode=EvaluationMode.DETERMINISTIC,
+            design_disposition=DesignDisposition.DEFERRED,
+            reason="Missing governed policy.",
+        )
+
+
+def test_no_authorized_method_requires_deferred_disposition() -> None:
+    with pytest.raises(ValueError, match="deferred"):
+        CapabilityEntry(
+            requirement_id="REQ999",
+            rule_id="RULE999",
+            requirement_name="Test",
+            support_status=SupportStatus.UNSUPPORTED,
+            target_evaluation_mode=EvaluationMode.NO_AUTHORIZED_METHOD,
+            reason="Missing governed policy.",
+        )
 
 
 # --- Correspondence with the real runtime pipeline ----------------------------
@@ -145,7 +176,7 @@ def test_unsupported_entries_are_not_in_runtime_rule_identifiers() -> None:
     assert unsupported_ids.isdisjoint(actual_runtime_ids)
 
 
-def test_approved_semantic_rules_are_supported() -> None:
+def test_currently_implemented_semantic_rules_are_supported() -> None:
     by_rule_id = {e.rule_id: e for e in CAPABILITY_MANIFEST}
     for rule_id in ("RULE002", "RULE004", "RULE008"):
         entry = by_rule_id[rule_id]
@@ -166,14 +197,21 @@ def test_rule006_is_partially_supported_with_both_branches_documented() -> None:
 # --- Approved retained and deferred Version 1 scope --------------------------
 
 
-def test_only_approved_retained_rules_name_a_v1_implementation_dependency() -> None:
+def test_only_approved_planned_rules_name_an_implementation_dependency() -> None:
     planned = {
         entry.rule_id
         for entry in CAPABILITY_MANIFEST
         if entry.planned_milestone_or_dependency is not None
     }
     assert planned == {
+        "RULE001",
+        "RULE002",
         "RULE003",
+        "RULE004",
+        "RULE005",
+        "RULE007",
+        "RULE008",
+        "RULE009",
         "RULE011",
         "RULE012",
         "RULE013",
@@ -196,6 +234,68 @@ def test_criteria_blocked_rules_remain_explicitly_deferred() -> None:
     assert "threshold" in (by_rule_id["RULE015"].reason or "").lower()
     assert "institutional" in (by_rule_id["RULE017"].reason or "").lower()
     assert "institutional" in (by_rule_id["RULE020"].reason or "").lower()
+
+
+def test_design_authorized_semantic_or_hybrid_target_is_exact() -> None:
+    assert {
+        entry.rule_id
+        for entry in CAPABILITY_MANIFEST
+        if entry.target_evaluation_mode is EvaluationMode.SEMANTIC_OR_HYBRID
+        and entry.design_disposition is DesignDisposition.DESIGN_AUTHORIZED
+    } == {
+        "RULE001",
+        "RULE002",
+        "RULE003",
+        "RULE004",
+        "RULE007",
+        "RULE008",
+        "RULE011",
+        "RULE012",
+        "RULE013",
+        "RULE021",
+    }
+
+
+def test_design_authorized_deterministic_target_is_exact() -> None:
+    assert {
+        entry.rule_id
+        for entry in CAPABILITY_MANIFEST
+        if entry.target_evaluation_mode is EvaluationMode.DETERMINISTIC
+        and entry.design_disposition is DesignDisposition.DESIGN_AUTHORIZED
+    } == {
+        "RULE005",
+        "RULE006",
+        "RULE009",
+        "RULE014",
+        "RULE016",
+        "RULE018",
+        "RULE019",
+        "RULE022",
+    }
+
+
+def test_design_deferred_target_is_exact() -> None:
+    assert {
+        entry.rule_id
+        for entry in CAPABILITY_MANIFEST
+        if entry.design_disposition is DesignDisposition.DEFERRED
+        and entry.target_evaluation_mode is EvaluationMode.NO_AUTHORIZED_METHOD
+    } == {"RULE015", "RULE017", "RULE020"}
+
+
+def test_system_and_governance_gates_are_exact_and_not_exam_facing() -> None:
+    assert SYSTEM_GOVERNANCE_RULE_IDS == {
+        "RULE010",
+        "RULE023",
+        "RULE024",
+        "RULE025",
+        "RULE026",
+        "RULE027",
+        "RULE028",
+        "RULE029",
+        "RULE030",
+    }
+    assert SYSTEM_GOVERNANCE_RULE_IDS.isdisjoint({entry.rule_id for entry in CAPABILITY_MANIFEST})
 
 
 # --- Manifest population covers every exam-facing KB rule -------------------

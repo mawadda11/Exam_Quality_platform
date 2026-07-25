@@ -30,7 +30,10 @@ Every executed academic evaluation rule returns exactly one of:
 - `Not Verified`
 - `Not Applicable`
 
-Never add severity, priority, Critical/High/Medium/Low, rule weights, dimension weights, readiness bands, or qualitative score labels.
+Never add severity, priority, rule weights, dimension weights, readiness bands, or qualitative
+score labels. `High`, `Medium`, and `Low` are permitted only as categorical semantic-confidence
+levels under the approved governance contract. They are not academic statuses, severity, priority,
+readiness, quality labels, probabilities, or scoring weights.
 
 Processing failures are not academic statuses. Use separate processing states/errors.
 
@@ -44,13 +47,33 @@ Processing failures are not academic statuses. Use separate processing states/er
 ## Evidence and AI governance
 - Never generate a released finding without evidence.
 - Never invent CLOs, topics, marks, questions, citations, pages, or knowledge-base records.
+- Never create assessment records, institutional policies, rule thresholds, or official mappings
+  from AI output.
 - Use `Not Verified` when evidence is missing, unreadable, unreliable, or insufficient.
 - Store source document, page, question/item, evidence identifier, requirement ID, and rule ID where applicable.
 - Require structured model output and validate it with typed schemas before persistence.
 - Treat model output as untrusted input.
 - Keep deterministic calculations deterministic.
+- Keep explicit source mappings separate from AI-derived semantic relationships. A derived
+  relationship must reference confirmed source records and must never overwrite source evidence.
+- Do not call an AI evaluator before the uploaded-document extraction has been reviewed and
+  confirmed. This is the approved target contract; implementation begins after M1.
+- Semantic confidence is categorical (`High`, `Medium`, or `Low`) and is eventually derived by the
+  backend from validated evidence conditions, never trusted as model self-assessment. Low
+  confidence produces `Not Verified`.
+- Do not convert numeric OCR or extraction confidence into semantic confidence.
+- Expose concise evidence-to-rule reasoning; never request, persist, or display private model
+  chain-of-thought.
 - Limit conclusions to the uploaded exam and TP-153.
 - Recommendations are academic support, not institutional decisions.
+
+## Approved hybrid evaluation order
+
+`confirmed source evidence -> deterministic checks -> constrained semantic relationships -> deterministic aggregation and scoring`
+
+Semantic AI may interpret governed relationships. It may not create source facts, questions, CLOs,
+topics, assessment records, institutional policies, thresholds, or official mappings. Coverage,
+marks arithmetic, numbering outcomes, and score aggregation remain deterministic.
 
 ## Architecture rules
 - Frontend: React + TypeScript.

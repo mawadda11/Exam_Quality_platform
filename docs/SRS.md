@@ -19,10 +19,35 @@ FR-015 Display progress, status counts, score, mappings, findings, missing evide
 FR-016 Generate a downloadable report.
 FR-017 Store analysis history.
 FR-018 Create a reanalysis linked to its predecessor.
+FR-019 Create a durable reviewable extraction before semantic analysis.
+FR-020 Permit only source-faithful transcription correction, restoration, false-positive exclusion,
+and extraction confirmation during review.
+FR-021 Prohibit AI analysis before extraction confirmation.
+FR-022 Keep explicit source mappings separate from AI-derived semantic relationships.
+FR-023 Require derived relationships to reference existing confirmed question and target
+identifiers and compatible evidence.
+FR-024 Return backend-derived categorical semantic confidence: High, Medium, or Low.
+FR-025 Require Low semantic confidence to produce Not Verified and exclusion from the score
+denominator.
+FR-026 Present Decision, Evidence Used, Concise Reasoning, categorical Confidence, and an optional
+controlled Recommendation for semantic findings.
+FR-027 Keep coverage, marks totals, numbering outcomes, and score aggregation deterministic.
+FR-028 Prohibit manual or AI creation of official CLOs, topics, assessment records, mappings,
+institutional policies, and rule thresholds.
+
+FR-019 through FR-028 are design-authorized in M1 and planned for later milestones. They are not
+claims of current runtime implementation.
 
 ## Non-functional requirements
 - Accuracy: unsupported claims are prohibited; insufficient evidence becomes Not Verified.
 - Explainability: rule, evidence, explanation, and recommendation are available where applicable.
+- Provenance: original machine extraction, reviewed source evidence, and derived semantic
+  relationships remain distinguishable.
+- Human review: review validates transcription only and never becomes an academic approval or
+  course-authoring workflow.
+- AI safety: model output is untrusted; no AI evaluation occurs before extraction confirmation.
+- Confidence: semantic confidence is categorical, backend-derived, nonnumeric, and has no scoring
+  weight.
 - Security: ownership checks, upload validation, restricted storage, safe logging, and secrets management.
 - Privacy: limited use, retention hooks, and secure-deletion capability.
 - Performance: background jobs and progress polling.
@@ -31,3 +56,12 @@ FR-018 Create a reanalysis linked to its predecessor.
 
 ## Status and scoring invariants
 See `docs/SCORING_POLICY.md` and `docs/AI_GOVERNANCE.md`.
+
+## Scope invariants
+
+Conclusions are limited to the uploaded Exam and TP-153. The system must not claim program
+accreditation, student attainment, learning achievement, faculty performance, teaching quality,
+institutional compliance beyond uploaded evidence, or an official accreditation decision.
+
+The unsupported RULE015, RULE017, RULE020, and the two-or-more-CLO branch of RULE006 remain
+deferred until their missing governed criteria exist.

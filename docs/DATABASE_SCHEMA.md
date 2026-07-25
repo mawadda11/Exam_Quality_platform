@@ -1,5 +1,9 @@
 # Database Schema
 
+This file lists the currently implemented schema first. The final section records the
+design-authorized M2 persistence plan so later sessions can distinguish planned schema from deployed
+schema. Milestone M1 creates no table, column, constraint, or migration.
+
 ## Core tables
 - `users`: Faculty Member identity, institution, and department. Version 1 does not require multi-role authorization.
 - `courses`: course code/name, department, program.
@@ -35,3 +39,46 @@ The `analyses` table intentionally has no persisted score or general KB-version 
 - `predecessor_analysis_id` preserves linked reanalysis history.
 - Generated report rows persist their KB version and aggregate scoring snapshot.
 - Semantic findings persist the exact KB and prompt versions used for their evaluation.
+
+## Design-authorized M2 persistence plan - not implemented in M1
+
+The approved minimum persistence design adds one table and three columns in one future migration.
+Names remain planned until M2 creates and verifies the migration.
+
+### Planned table: `extraction_review_revisions`
+
+Each row represents one immutable complete review snapshot:
+
+- `id`: revision identity.
+- `analysis_id`: owning analysis.
+- `revision_number`: monotonic analysis-local version.
+- `snapshot`: versioned, strictly validated JSON containing the coherent reviewable extraction.
+- `created_at`: audit ordering.
+
+The first revision preserves the original machine extraction. Review saves append complete
+snapshots rather than replaying polymorphic edit events. On confirmation, one selected snapshot is
+planned to be materialized into the existing relational extraction projection. Relational
+extraction records then become immutable for analysis.
+
+### Planned columns
+
+- `analyses.confirmed_review_id`: binds all downstream results to the exact confirmed snapshot.
+- `findings.confidence_level`: nullable categorical semantic confidence; deterministic and legacy
+  findings may remain null.
+- `findings.evaluation_details`: versioned JSON for rule-specific derived details and confidence
+  basis.
+
+The existing numeric `findings.confidence` is retained temporarily for compatibility but is not the
+approved future semantic-confidence contract. It must not be threshold-converted into categories.
+
+### Explicitly rejected Version 1 schema additions
+
+- child edit-event tables;
+- a separate semantic-mapping table;
+- a confidence-basis column;
+- a reasoning table;
+- review-status columns duplicating analysis state; and
+- reviewed-value columns duplicated across each extraction entity.
+
+These additions are unnecessary for the bounded Version 1 workflow. Derived mappings remain
+analysis details on their authoritative Finding and never use Exam or TP-153 source provenance.

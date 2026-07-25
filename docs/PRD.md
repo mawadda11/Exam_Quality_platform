@@ -11,8 +11,9 @@ The platform uses:
 - a controlled, versioned knowledge base.
 
 The platform supports one evidence-based analysis workflow. Both the examination PDF and the
-populated TP-153 are mandatory, and analysis does not start until both files are uploaded and
-pass validation.
+populated TP-153 are mandatory. Extraction does not start until both files are uploaded and pass
+validation, and AI analysis does not start until the extracted evidence is reviewed and confirmed.
+The review-and-confirm workflow is design-authorized in M1 and planned for later implementation.
 
 ---
 
@@ -73,10 +74,18 @@ excluded from score calculation.
 1. Create a new analysis.
 2. Upload the examination PDF and the populated TP-153.
 3. Validate uploaded documents.
-4. Process the analysis.
-5. Review results.
-6. Download the report.
-7. Create a linked reanalysis for a revised examination when needed.
+4. Extract source evidence.
+5. Review source-faithful extraction.
+6. Confirm the reviewed extraction.
+7. Run deterministic checks and constrained semantic analysis.
+8. Review results.
+9. Download the report.
+10. Create a linked reanalysis for a revised examination when needed.
+
+Extraction Review is not a course-authoring or mapping workflow. It may correct an existing
+transcription, restore the original machine extraction, exclude a false positive, and confirm the
+reviewed extraction. It may not create official CLOs, topics, assessment records, question-to-CLO
+mappings, question-to-topic mappings, institutional requirements, or AI-generated source records.
 
 When either the examination PDF or the populated TP-153 is missing or fails validation, the
 platform:
@@ -139,6 +148,9 @@ The interface provides access to evidence, mappings, findings, recommendations, 
 - Semantic AI evaluation.
 - Five-status evaluation model.
 - Deterministic score calculation.
+- Source-faithful Extraction Review and explicit confirmation before AI analysis.
+- Clear separation of explicit source mappings from AI-derived semantic relationships.
+- Categorical semantic confidence (`High`, `Medium`, `Low`) derived by the backend.
 - Evidence traceability.
 - Downloadable reports.
 - Separate reporting of `Not Verified` results.
@@ -162,6 +174,8 @@ The upload interface provides:
 The template is presented as a reference document.
 
 Version 1 accepts only official TP-153 evidence and does not allow manual entry of CLOs or course topics.
+It also does not allow manual creation of official assessment records or question-to-CLO/topic
+mappings. AI-derived relationships are analysis outputs, not official TP-153 evidence.
 
 ---
 
@@ -192,6 +206,11 @@ Displayed score label:
 - Dimensions receive the status `Not Verified` when required evidence is missing, unreadable, ambiguous, or insufficient within the uploaded exam or TP-153.
 - Missing or insufficient evidence never produces the status `Not Satisfied`.
 - Course-specific information is never inferred when official evidence is unavailable.
+- No semantic AI evaluator runs before extraction confirmation.
+- An AI-derived relationship references only confirmed source records, is clearly labeled as
+  derived or AI-assisted, and never overwrites source evidence.
+- Low semantic confidence produces `Not Verified` and is excluded from score calculation.
+- Confidence never changes the approved score value of a verified academic status.
 - Every reported finding references supporting evidence or a documented missing-evidence record.
 - Every revised examination produces a new linked analysis without replacing previous results.
 
@@ -217,7 +236,26 @@ Version 1 does not include:
 - Automatic document modification.
 - Automatic reconstruction of missing TP-153 information.
 - Manual CLO or topic entry as official evidence.
+- Manual assessment-record or question-to-CLO/topic mapping creation as official evidence.
+- AI-generated source facts or official mappings.
 - Approval workflows.
+
+---
+
+## Academic and Institutional Scope
+
+The platform evaluates only the uploaded examination evidence against the uploaded TP-153 and the
+controlled KB. It is a decision-support tool and does not establish:
+
+- full program accreditation;
+- student attainment or learning achievement;
+- institutional compliance beyond the uploaded evidence;
+- student, faculty, or teaching performance; or
+- an official accreditation, approval, or rejection decision.
+
+Semantic confidence is categorical only. It is not a percentage, severity, priority, readiness
+label, quality score, or scoring weight. Existing numeric OCR and extraction confidence remain
+separate technical metadata.
 
 ---
 

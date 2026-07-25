@@ -1,7 +1,8 @@
 # AI Governance
 
 1. No released finding without traceable evidence.
-2. Never invent CLOs, topics, source text, pages, marks, questions, requirements, or rules.
+2. Never invent CLOs, topics, assessment records, source text, pages, marks, questions,
+   requirements, institutional policies, rule thresholds, or rules.
 3. Never modify the uploaded exam or TP-153.
 4. Clearly distinguish official-source records from derived requirements and system policies.
 5. Never issue accreditation, approval, or rejection decisions.
@@ -14,3 +15,91 @@
 12. Treat recommendations as academic support.
 13. Record model/provider/version and prompt-template version without logging private document text.
 14. Permit human review and preserve the original generated result in audit history.
+
+## Approved hybrid contract
+
+The design-authorized Version 1 evaluation order is:
+
+`confirmed source evidence -> deterministic checks -> constrained semantic relationships -> deterministic aggregation and scoring`
+
+This contract is approved in M1. The review pause, categorical-confidence persistence, API/UI, and
+expanded evaluators are planned for later milestones and are not implemented by M1.
+
+## Extraction Review boundary
+
+No AI evaluator may run before extraction confirmation.
+
+Future Extraction Review may only:
+
+- correct a source-faithful transcription;
+- restore the original machine extraction;
+- exclude a false positive; and
+- confirm the reviewed extraction.
+
+Extraction Review may not:
+
+- create an official CLO, course topic, or assessment record;
+- create a question-to-CLO or question-to-topic mapping;
+- add undocumented institutional requirements; or
+- accept AI-generated source records.
+
+Review confirms transcription of uploaded documents. It is not a course-authoring, policy-authoring,
+mapping, or academic-approval workflow.
+
+## Source evidence and derived relationships
+
+An explicit source mapping and an AI-derived semantic relationship are different concepts.
+AI-derived relationships:
+
+- are analysis outputs, not official source evidence;
+- reference only existing confirmed question and target identifiers;
+- cite compatible traceable evidence;
+- are labeled `AI-assisted` or `derived`;
+- include concise reasoning; and
+- never overwrite extracted source evidence.
+
+When required source evidence is absent, the model must not reconstruct it. The affected implemented
+rule returns Not Verified or Not Applicable according to the controlled KB.
+
+## Semantic confidence
+
+Semantic confidence uses only `High`, `Medium`, and `Low`:
+
+- **High**: confirmed, source-anchored, unambiguous evidence has direct textual or deterministic
+  support and no material conflict.
+- **Medium**: confirmed, traceable, non-conflicting evidence requires semantic interpretation.
+- **Low**: evidence is missing, unreadable, incomplete, conflicting, unconfirmed, or unvalidated.
+
+The backend, not the model, is authoritative for the final confidence level. Low confidence must
+produce the academic status Not Verified and is therefore excluded from the score denominator.
+
+Confidence is not a percentage, academic status, severity, priority, quality score, readiness label,
+or scoring weight. Numeric OCR and extraction confidence are separate technical metadata and must
+not be converted into semantic confidence.
+
+## Reasoning and recommendation
+
+A released semantic finding eventually exposes:
+
+- Decision;
+- Evidence Used;
+- Concise Reasoning;
+- categorical Confidence; and
+- an optional controlled Recommendation.
+
+Reasoning is a bounded evidence-to-rule explanation. The platform must not request, store, or
+display private model chain-of-thought. Recommendation text remains controlled KB content.
+
+## Scope limitation
+
+The platform evaluates only the uploaded Midterm or Final exam against the uploaded TP-153 and the
+controlled KB. It does not establish:
+
+- full program accreditation;
+- student attainment or learning achievement;
+- student, faculty, or teaching performance;
+- institutional compliance beyond uploaded evidence; or
+- an official accreditation, approval, or rejection decision.
+
+See `docs/DESIGN_DECISIONS.md` for the approved alternatives, technical justification, academic
+justification, consequences, and limitations.
