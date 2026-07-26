@@ -98,7 +98,10 @@ describe('AnalysisResults', () => {
 
     expect(screen.getByText(/loading results/i)).toBeInTheDocument()
     expect(await screen.findByText('100.00')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Overview' })).toHaveClass('results-nav-active')
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
   })
 
   it('switches sections when a nav button is clicked', async () => {
@@ -106,7 +109,7 @@ describe('AnalysisResults', () => {
     render(<AnalysisResults analysis={ANALYSIS} />)
     await screen.findByText('100.00')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Questions' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Questions' }))
 
     expect(screen.getByText('Explain a stack.')).toBeInTheDocument()
     expect(screen.queryByText('100.00')).not.toBeInTheDocument()
@@ -117,7 +120,7 @@ describe('AnalysisResults', () => {
     render(<AnalysisResults analysis={ANALYSIS} />)
     await screen.findByText('100.00')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Report' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Report' }))
 
     expect(screen.getByRole('button', { name: /generate report/i })).toBeInTheDocument()
     expect(screen.getByText(/no reports have been generated yet/i)).toBeInTheDocument()
@@ -144,7 +147,7 @@ describe('AnalysisResults', () => {
     expect(
       await screen.findByText(/this ai evaluation is advisory/i),
     ).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Findings & Recommendations' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Findings & Recommendations' }))
     expect(screen.getByText('AI-Assisted')).toBeInTheDocument()
     expect(screen.getByText(/confidence: 84%/i)).toBeInTheDocument()
     expect(screen.getByText(/provider: fake/i)).toBeInTheDocument()

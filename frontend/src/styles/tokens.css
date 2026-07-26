@@ -1,0 +1,68 @@
+:root {
+  color-scheme: light;
+
+  --color-brand-navy: #102a43;
+  --color-brand-navy-active: #1f3a57;
+  --color-brand-teal: #14b8a6;
+  --color-brand-teal-strong: #0f8f83;
+  --color-brand-teal-subtle: #ecfdfb;
+
+  --color-canvas: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f1f5f9;
+  --color-border: #dbe4ee;
+  --color-border-strong: #cbd5e1;
+
+  --color-text: #102a43;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748b;
+  --color-text-inverse: #ffffff;
+
+  --color-success: #047857;
+  --color-success-surface: #ecfdf5;
+  --color-warning: #b45309;
+  --color-warning-surface: #fffbeb;
+  --color-danger: #be123c;
+  --color-danger-surface: #fff1f2;
+  --color-info: #1d4ed8;
+  --color-info-surface: #eff6ff;
+  --color-neutral-status: #475569;
+  --color-neutral-status-surface: #f1f5f9;
+
+  --font-family-sans:
+    Inter, "Noto Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.5rem;
+  --font-size-2xl: 2rem;
+  --line-height-tight: 1.2;
+  --line-height-normal: 1.6;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-pill: 999px;
+
+  --border-width: 1px;
+  --shadow-card: 0 1px 2px rgb(16 42 67 / 5%);
+  --shadow-raised: 0 12px 32px rgb(16 42 67 / 14%);
+  --focus-ring: 0 0 0 3px rgb(20 184 166 / 28%);
+
+  --content-width-compact: 48rem;
+  --content-width-form: 72rem;
+  --content-width-wide: 90rem;
+  --control-min-height: 2.75rem;
+}

@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { createAnalysis, getAnalysis, listAnalyses } from '../../api/analyses'
 import { ApiError } from '../../api/client'
+import { Alert } from '../../components/ui/Alert'
+import { Button } from '../../components/ui/Button'
 import type {
   AnalysisResponse,
   ExamType,
@@ -126,14 +128,14 @@ export function AnalysisUploadFlow() {
           {errors.term && <p className="field-error">{errors.term}</p>}
 
           {submitError && (
-            <p className="field-error" role="alert">
+            <Alert variant="error" title="Could not create analysis">
               {submitError}
-            </p>
+            </Alert>
           )}
 
-          <button type="submit" disabled={isCreating}>
-            {isCreating ? 'Creating…' : 'Create analysis'}
-          </button>
+          <Button type="submit" isLoading={isCreating} loadingLabel="Creating…">
+            Create analysis
+          </Button>
         </form>
       </>
     )

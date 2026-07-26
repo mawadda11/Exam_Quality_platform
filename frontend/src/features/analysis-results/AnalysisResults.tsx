@@ -9,6 +9,7 @@ import {
   listTopics,
 } from '../../api/analyses'
 import { ApiError } from '../../api/client'
+import { Tabs } from '../../components/ui/Tabs'
 import type {
   AnalysisResponse,
   AnalysisScoreResponse,
@@ -151,21 +152,19 @@ export function AnalysisResults({ analysis, onReanalysisCreated }: AnalysisResul
           responsibility remains with the instructor.
         </p>
       )}
-      <nav className="results-nav" aria-label="Results sections">
-        {SECTIONS.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            className={entry.id === section ? 'results-nav-button results-nav-active' : 'results-nav-button'}
-            aria-current={entry.id === section ? 'page' : undefined}
-            onClick={() => setSection(entry.id)}
-          >
-            {entry.label}
-          </button>
-        ))}
-      </nav>
+      <Tabs
+        items={SECTIONS}
+        value={section}
+        onValueChange={setSection}
+        ariaLabel="Results sections"
+      />
 
-      <div className="results-panel">
+      <div
+        className="results-panel"
+        role="tabpanel"
+        id={`tabpanel-${section}`}
+        aria-labelledby={`tab-${section}`}
+      >
         {section === 'overview' && (
           <OverviewSection
             analysis={analysis}

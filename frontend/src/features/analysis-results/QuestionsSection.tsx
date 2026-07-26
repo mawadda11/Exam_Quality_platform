@@ -1,3 +1,4 @@
+import { ResponsiveTable } from '../../components/ui/ResponsiveTable'
 import type { QuestionResponse } from '../../types/api'
 
 export function QuestionsSection({ questions }: { questions: QuestionResponse[] }) {
@@ -6,7 +7,7 @@ export function QuestionsSection({ questions }: { questions: QuestionResponse[] 
   }
 
   return (
-    <table className="questions-table">
+    <ResponsiveTable caption="Extracted questions" className="questions-table">
       <thead>
         <tr>
           <th>Question</th>
@@ -18,13 +19,17 @@ export function QuestionsSection({ questions }: { questions: QuestionResponse[] 
       <tbody>
         {questions.map((question) => (
           <tr key={question.id}>
-            <td>{question.number_label}</td>
+            <td>
+              <bdi>{question.number_label}</bdi>
+            </td>
             <td>{question.page_number}</td>
             <td>{question.marks ?? '—'}</td>
-            <td>{question.question_text}</td>
+            <td>
+              <span dir="auto">{question.question_text}</span>
+            </td>
           </tr>
         ))}
       </tbody>
-    </table>
+    </ResponsiveTable>
   )
 }
