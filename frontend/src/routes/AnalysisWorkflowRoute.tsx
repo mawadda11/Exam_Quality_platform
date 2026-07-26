@@ -11,8 +11,10 @@ import { ApiError } from '../api/client'
 import { Card } from '../components/ui/Card'
 import { PageHeader } from '../components/ui/PageHeader'
 import { PageState } from '../components/ui/PageState'
+import { AnalysisWorkflowStepper } from '../features/analysis-upload/AnalysisWorkflowStepper'
 import { AnalysisDocuments } from '../features/analysis-upload/AnalysisUploadFlow'
 import { ProcessingStatus } from '../features/analysis-upload/ProcessingStatus'
+import { ReviewStartSummary } from '../features/analysis-upload/ReviewStartSummary'
 import { routeForAnalysis } from '../router/analysisRouting'
 import type { AnalysisResponse, ProcessingStage } from '../types/api'
 import { type AnalysisRouteContext, useAnalysisRoute } from './analysisRouteContext'
@@ -131,17 +133,13 @@ export function AnalysisIndexRoute() {
 
 export function AnalysisDocumentsRoute() {
   const { analysis, refreshAnalysis } = useAnalysisRoute()
-  const navigate = useNavigate()
 
-  if (analysis.state !== 'queued' || analysis.ready_for_analysis) {
+  if (analysis.state !== 'queued') {
     return <Navigate to={routeForAnalysis(analysis)} replace />
   }
 
   async function handleRefreshed(): Promise<void> {
-    const refreshed = await refreshAnalysis()
-    if (refreshed.ready_for_analysis) {
-      navigate(`/analyses/${refreshed.id}/start`)
-    }
+    await refreshAnalysis()
   }
 
   return (
@@ -150,9 +148,19 @@ export function AnalysisDocumentsRoute() {
         title="Upload Documents"
         description="Upload the examination PDF and populated TP-153 required by this analysis."
       />
+      <div className="analysis-workflow-stepper">
+        <AnalysisWorkflowStepper currentStep="documents" />
+      </div>
       <Card as="section" className="route-card">
         <AnalysisDocuments analysis={analysis} onRefreshed={handleRefreshed} />
       </Card>
+      {analysis.ready_for_analysis && (
+        <div className="workflow-route-actions workflow-route-actions--end">
+          <Link className="ui-button" to={`/analyses/${analysis.id}/start`}>
+            Continue to Review and Start
+          </Link>
+        </div>
+      )}
     </div>
   )
 }
@@ -171,22 +179,27 @@ export function AnalysisStartRoute() {
   }
 
   return (
-    <div className="route-stack route-content-compact">
+    <div className="route-stack route-content-form">
       <PageHeader
-        title="Start Analysis"
-        description="Both required documents are uploaded. Start the existing analysis workflow."
+        title="Review and Start"
+        description="Review the persisted information and explicitly start the analysis when ready."
       />
+      <div className="analysis-workflow-stepper">
+        <AnalysisWorkflowStepper currentStep="review" />
+      </div>
       <Card as="section" className="route-card">
-        <h2>
-          <bdi>{analysis.course.code}</bdi> — {analysis.exam_type}
-        </h2>
-        <p>Term: {analysis.term}</p>
+        <ReviewStartSummary analysis={analysis} />
+      </Card>
+      <div className="workflow-route-actions">
+        <Link className="ui-button ui-button--secondary" to={`/analyses/${analysis.id}/documents`}>
+          Back to Upload Documents
+        </Link>
         <ProcessingStatus
           analysisId={analysis.id}
           initialState={analysis.state}
           onAnalysisStarted={handleStarted}
         />
-      </Card>
+      </div>
     </div>
   )
 }
@@ -212,6 +225,9 @@ export function AnalysisProgressRoute() {
         title="Analysis Progress"
         description="Processing continues through the existing backend workflow."
       />
+      <div className="analysis-workflow-stepper">
+        <AnalysisWorkflowStepper currentStep="complete" />
+      </div>
       <Card as="section" className="route-card">
         <h2>
           <bdi>{analysis.course.code}</bdi> — {analysis.exam_type}

@@ -3,6 +3,7 @@
 @import './styles/components.css';
 @import './styles/layout.css';
 @import './styles/dashboard.css';
+@import './styles/analysis-workflow.css';
 
 p { line-height: 1.7; }
 .notice { margin-top: 1.5rem; padding: 1rem; border-radius: 12px; background: #eef3f7; }
@@ -12,24 +13,7 @@ p { line-height: 1.7; }
 .dev-identity-bar label { display: flex; flex-direction: column; gap: .35rem; }
 .dev-identity-bar input { padding: .5rem .65rem; border: 1px solid #c7cfd8; border-radius: 8px; font: inherit; }
 
-.analysis-form, .analysis-upload { margin-top: 1.5rem; display: flex; flex-direction: column; gap: 1rem; text-align: left; }
-.analysis-form label, .analysis-form fieldset { display: flex; flex-direction: column; gap: .35rem; font-weight: 600; font-size: .9rem; }
-.analysis-form input[type='text'], .analysis-form input:not([type]), .analysis-form input[type='email'] { padding: .6rem .75rem; border: 1px solid #c7cfd8; border-radius: 8px; font: inherit; font-weight: 400; }
-.analysis-form fieldset { border: none; padding: 0; margin: 0; }
-.analysis-form .radio-option { flex-direction: row; align-items: center; gap: .5rem; font-weight: 400; }
-.analysis-form button { align-self: flex-start; padding: .65rem 1.5rem; border: none; border-radius: 999px; background: #182230; color: white; font-weight: 600; cursor: pointer; }
-.analysis-form button:disabled { opacity: .6; cursor: not-allowed; }
-
-.field-error, .file-field-error { color: #b3261e; font-size: .85rem; margin: 0; }
-.file-field { padding: 1rem; border: 1px solid #dfe4ea; border-radius: 12px; }
-.file-field-label { display: block; font-weight: 600; margin-bottom: .5rem; }
-.file-field-status { margin: .5rem 0 0; font-size: .85rem; }
-.file-field-status-success { color: #14532d; }
-
-.processing-status { margin-top: .75rem; display: flex; flex-direction: column; gap: .5rem; align-items: flex-start; }
-.processing-status button { padding: .55rem 1.25rem; border: none; border-radius: 999px; background: #182230; color: white; font-weight: 600; cursor: pointer; }
-.processing-status button:disabled { opacity: .6; cursor: not-allowed; }
-.processing-stage { margin: 0; }
+.field-error { color: #b3261e; font-size: .85rem; margin: 0; }
 
 .analysis-results { margin-top: 2rem; text-align: left; }
 .results-nav { display: flex; flex-wrap: wrap; gap: .5rem; border-bottom: 1px solid #dfe4ea; padding-bottom: .75rem; }

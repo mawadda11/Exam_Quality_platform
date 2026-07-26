@@ -50,124 +50,95 @@ const UPLOADED_TP153: UploadedFileResponse = {
 }
 
 beforeEach(() => {
-  vi.mocked(analysesApi.createAnalysis).mockReset()
-  vi.mocked(analysesApi.uploadAnalysisFile).mockReset()
+  vi.clearAllMocks()
 })
 
 function fillCreateForm(): void {
-  fireEvent.change(screen.getByLabelText(/course code/i), { target: { value: 'CPIT-450' } })
+  fireEvent.change(screen.getByLabelText(/course code/i), {
+    target: { value: 'CPIT-450' },
+  })
   fireEvent.change(screen.getByLabelText(/course name/i), {
     target: { value: 'Software Engineering' },
   })
   fireEvent.click(screen.getByRole('radio', { name: 'Midterm' }))
-  fireEvent.change(screen.getByLabelText(/^term$/i), { target: { value: '2026 Spring' } })
+  fireEvent.change(screen.getByLabelText(/^term$/i), {
+    target: { value: '2026 Spring' },
+  })
 }
 
 describe('AnalysisUploadFlow', () => {
-  it('shows validation errors and does not call the API when required fields are empty', async () => {
+  it('focuses the validation summary and does not call the API when required fields are empty', async () => {
     render(<AnalysisUploadFlow onCreated={vi.fn()} />)
 
-    fireEvent.click(screen.getByRole('button', { name: /create analysis/i }))
+    fireEvent.click(
+      screen.getByRole('button', { name: /continue to upload documents/i }),
+    )
 
-    expect(await screen.findByText(/course code is required/i)).toBeInTheDocument()
+    const summary = await screen.findByText(/correct the highlighted fields/i)
+    await waitFor(() => expect(summary.closest('[tabindex="-1"]')).toHaveFocus())
+    expect(screen.getByLabelText(/course code/i)).toHaveAttribute('aria-invalid', 'true')
     expect(analysesApi.createAnalysis).not.toHaveBeenCalled()
   })
 
-  it('creates the analysis and reports it to the route adapter', async () => {
+  it('creates the analysis with the existing payload and reports it to the route adapter', async () => {
     const onCreated = vi.fn()
     vi.mocked(analysesApi.createAnalysis).mockResolvedValue(BASE_ANALYSIS)
     render(<AnalysisUploadFlow onCreated={onCreated} />)
     fillCreateForm()
 
-    fireEvent.click(screen.getByRole('button', { name: /create analysis/i }))
+    fireEvent.click(
+      screen.getByRole('button', { name: /continue to upload documents/i }),
+    )
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(BASE_ANALYSIS))
+    expect(analysesApi.createAnalysis).toHaveBeenCalledWith({
+      course: { code: 'CPIT-450', name: 'Software Engineering' },
+      exam_type: 'Midterm',
+      term: '2026 Spring',
+    })
   })
 
-  it('rejects a non-pdf file client-side without calling the upload API', async () => {
+  it('shows persisted metadata and browser refresh limitations on the documents step', () => {
     render(<AnalysisDocuments analysis={BASE_ANALYSIS} onRefreshed={vi.fn()} />)
 
-    const examInput = screen.getByLabelText(/examination pdf/i)
-    const badFile = new File(['not a pdf'], 'exam.txt', { type: 'text/plain' })
-    fireEvent.change(examInput, { target: { files: [badFile] } })
+    expect(screen.getByText('CPIT-450')).toBeInTheDocument()
+    expect(screen.getByText(/software engineering/i)).toBeInTheDocument()
+    expect(screen.getByText(/browser will require you to select that file again/i))
+      .toBeInTheDocument()
+    expect(screen.getAllByText('missing')).toHaveLength(2)
+  })
 
-    expect(await screen.findByText(/must be a \.pdf file/i)).toBeInTheDocument()
+  it('renders only backend-confirmed readiness and persisted uploaded files', () => {
+    const readyAnalysis: AnalysisResponse = {
+      ...BASE_ANALYSIS,
+      uploaded_files: [UPLOADED_EXAM, UPLOADED_TP153],
+      exam_uploaded: true,
+      tp153_uploaded: true,
+      ready_for_analysis: true,
+    }
+
+    render(<AnalysisDocuments analysis={readyAnalysis} onRefreshed={vi.fn()} />)
+
+    expect(screen.getByText(/refreshed analysis confirms/i)).toBeInTheDocument()
+    expect(screen.getByText(/exam\.pdf/i)).toBeInTheDocument()
+    expect(screen.getByText(/tp153\.pdf/i)).toBeInTheDocument()
     expect(analysesApi.uploadAnalysisFile).not.toHaveBeenCalled()
   })
 
-  it('uploads a valid pdf and reflects ready_for_analysis once both files are present', async () => {
-    const onRefreshed = vi.fn().mockResolvedValue(undefined)
-    const { rerender } = render(
-      <AnalysisDocuments analysis={BASE_ANALYSIS} onRefreshed={onRefreshed} />,
-    )
-    vi.mocked(analysesApi.uploadAnalysisFile).mockResolvedValueOnce(UPLOADED_EXAM)
-
-    const examInput = screen.getByLabelText(/examination pdf/i)
-    const goodFile = new File(['%PDF-1.4'], 'exam.pdf', { type: 'application/pdf' })
-    fireEvent.change(examInput, { target: { files: [goodFile] } })
-
-    await waitFor(() =>
-      expect(analysesApi.uploadAnalysisFile).toHaveBeenCalledWith('analysis-1', 'exam', goodFile),
-    )
-    rerender(
-      <AnalysisDocuments
-        analysis={{
-          ...BASE_ANALYSIS,
-          exam_uploaded: true,
-          uploaded_files: [UPLOADED_EXAM],
-        }}
-        onRefreshed={onRefreshed}
-      />,
-    )
-    expect(await screen.findByText(/uploaded: exam\.pdf/i)).toBeInTheDocument()
-    expect(screen.getByText(/upload both the examination pdf/i)).toBeInTheDocument()
-
-    vi.mocked(analysesApi.uploadAnalysisFile).mockResolvedValueOnce(UPLOADED_TP153)
-    const tp153Input = screen.getByLabelText(/populated tp-153/i)
-    const tp153File = new File(['%PDF-1.4'], 'tp153.pdf', { type: 'application/pdf' })
-    fireEvent.change(tp153Input, { target: { files: [tp153File] } })
-
-    await waitFor(() => expect(onRefreshed).toHaveBeenCalledTimes(2))
-    rerender(
-      <AnalysisDocuments
-        analysis={{
-          ...BASE_ANALYSIS,
-          exam_uploaded: true,
-          tp153_uploaded: true,
-          ready_for_analysis: true,
-          uploaded_files: [UPLOADED_EXAM, UPLOADED_TP153],
-        }}
-        onRefreshed={onRefreshed}
-      />,
-    )
-    expect(screen.getByText(/both required documents are uploaded/i)).toBeInTheDocument()
-  })
-
-  it('surfaces a server error message without marking the file as uploaded', async () => {
-    render(<AnalysisDocuments analysis={BASE_ANALYSIS} onRefreshed={vi.fn()} />)
-    vi.mocked(analysesApi.uploadAnalysisFile).mockRejectedValueOnce(
-      new ApiError(409, 'A exam file has already been uploaded for this analysis.'),
-    )
-
-    const examInput = screen.getByLabelText(/examination pdf/i)
-    const goodFile = new File(['%PDF-1.4'], 'exam.pdf', { type: 'application/pdf' })
-    fireEvent.change(examInput, { target: { files: [goodFile] } })
-
-    expect(await screen.findByText(/already been uploaded/i)).toBeInTheDocument()
-    expect(screen.queryByText(/uploaded: exam\.pdf/i)).not.toBeInTheDocument()
-  })
-
-  it('shows a create-analysis error and stays on the form when the API call fails', async () => {
+  it('shows a create-analysis API error and keeps the information form available', async () => {
     vi.mocked(analysesApi.createAnalysis).mockRejectedValueOnce(
       new ApiError(422, "['term': field required]"),
     )
     render(<AnalysisUploadFlow onCreated={vi.fn()} />)
     fillCreateForm()
 
-    fireEvent.click(screen.getByRole('button', { name: /create analysis/i }))
+    fireEvent.click(
+      screen.getByRole('button', { name: /continue to upload documents/i }),
+    )
 
     expect(await screen.findByText(/field required/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /create analysis/i })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /continue to upload documents/i }),
+    ).toBeInTheDocument()
   })
-
 })

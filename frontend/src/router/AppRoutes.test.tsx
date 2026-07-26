@@ -259,7 +259,59 @@ describe('AppRoutes', () => {
       ),
     )
     expect(analysesApi.getAnalysis).toHaveBeenCalledTimes(1)
-    expect(screen.getByText('Validating')).toBeInTheDocument()
+    expect(screen.getByText('validating', { selector: 'strong' })).toBeInTheDocument()
+  })
+
+  it('keeps a ready queued analysis on documents until the user explicitly continues and starts', async () => {
+    const ready = {
+      ...QUEUED_ANALYSIS,
+      exam_uploaded: true,
+      tp153_uploaded: true,
+      ready_for_analysis: true,
+      uploaded_files: [
+        {
+          id: 'exam-file',
+          file_type: 'exam' as const,
+          original_filename: 'exam.pdf',
+          mime_type: 'application/pdf',
+          size_bytes: 1024,
+          sha256_hash: 'a'.repeat(64),
+          created_at: '2026-01-01T00:00:00Z',
+        },
+        {
+          id: 'tp153-file',
+          file_type: 'tp153' as const,
+          original_filename: 'tp153.pdf',
+          mime_type: 'application/pdf',
+          size_bytes: 2048,
+          sha256_hash: 'b'.repeat(64),
+          created_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+    }
+    vi.mocked(analysesApi.getAnalysis).mockResolvedValue(ready)
+
+    renderAt('/analyses/analysis-1/documents')
+
+    expect(
+      await screen.findByRole('link', { name: /continue to review and start/i }),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Current route')).toHaveTextContent(
+      '/analyses/analysis-1/documents',
+    )
+    expect(analysesApi.runAnalysis).not.toHaveBeenCalled()
+
+    fireEvent.click(
+      screen.getByRole('link', { name: /continue to review and start/i }),
+    )
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Review and Start' }))
+      .toBeInTheDocument()
+    expect(screen.getByText('exam.pdf')).toBeInTheDocument()
+    expect(screen.getByText('tp153.pdf')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /start analysis/i })).toBeInTheDocument()
+    expect(analysesApi.runAnalysis).not.toHaveBeenCalled()
+    expect(analysesApi.getAnalysis).toHaveBeenCalledTimes(1)
   })
 
   it('loads a newly created reanalysis before applying its child-route guards', async () => {

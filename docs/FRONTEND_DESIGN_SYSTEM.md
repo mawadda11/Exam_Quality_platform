@@ -456,7 +456,40 @@ use `StatusBadge` or be translated into the five academic statuses.
 
 ## Currently implemented, planned, and deferred
 
-### Currently implemented after Phase 3
+### Phase 4 New Analysis presentation contract
+
+The approved Option A lifecycle is presented as three steps without changing the backend lifecycle:
+
+1. **Exam Information** creates the analysis through the existing API.
+2. **Upload Documents** shows persisted metadata as read-only and uploads the Exam and populated
+   TP-153 independently.
+3. **Review and Start** shows only persisted analysis and file metadata and requires an explicit
+   Start Analysis action.
+
+The documents route does not navigate automatically when both uploads become ready, and document
+readiness never starts processing. The Continue action appears only when a refreshed backend
+analysis reports `ready_for_analysis === true`. The shared analysis route remains the server-state
+authority; an upload response may identify the accepted file, but it does not authorize the
+frontend to infer overall readiness.
+
+Upload cards distinguish missing, selected, uploading, uploaded, rejected, and retry states.
+Client-valid selection is separate from upload, and a rejected request retains that browser
+`File` for an independent retry. If an upload succeeds but the analysis refresh fails, the card
+retries only the analysis refresh and never repeats the accepted upload.
+
+Browser-selected files are intentionally not persisted by the frontend. Refreshing the page before
+a selected file has been uploaded clears that browser selection and requires the user to select
+the file again. Already persisted uploads are restored from the refreshed analysis record. The
+current API has no replacement or deletion contract, so a confirmed uploaded file remains
+read-only.
+
+Processing uses the shared `ProgressStepper` without changing its contract. It displays only the
+existing backend stages, using their exact identifiers and no percentages. Polling is single-flight:
+one failed progress request shows a degraded-connectivity notice, polling continues, and the notice
+clears after the next successful response. `failed` is a non-linear terminal state and is not
+placed into the ordered success path.
+
+### Currently implemented after Phase 4
 
 - Central visual tokens and shared base/component CSS.
 - Eleven shared UI primitives documented above.
@@ -469,16 +502,20 @@ use `StatusBadge` or be translated into the five academic statuses.
 - Real API-backed dashboard summary cards and five-record recent-analysis table.
 - Exact backend processing-state badges kept separate from academic-status badges.
 - Option A recorded as the approved Version 1 New Analysis lifecycle.
+- Three-step New Analysis presentation with persisted metadata read-only after Step 1.
+- Independently retryable Exam and populated TP-153 upload cards with explicit upload states.
+- Backend-authoritative readiness followed by an explicit Review and Start transition.
+- Persisted-data-only review summary and an explicit Start Analysis action.
+- Exact backend processing stages in the shared progress-stepper presentation.
+- Single-flight polling with degraded-connectivity and recovery behavior.
 - Production Nginx fallback for nested client-side routes.
 - Keyboard-operable result tabs.
 - `dir="auto"` for displayed question source text and `<bdi>` for question labels.
-- Existing API calls, workflow states, scoring, numeric confidence behavior, upload lifecycle,
-  report generation, and reanalysis behavior unchanged.
+- Existing API calls, backend workflow states, scoring, numeric confidence behavior, report
+  generation, and reanalysis behavior unchanged.
 
 ### Planned frontend-alignment work
 
-- Three-step New Analysis presentation.
-- Upload cards and complete processing presentation.
 - Results header, score summary, filters, partial loading, and full responsive alignment.
 
 ### M3-M5 reserved states - not implemented

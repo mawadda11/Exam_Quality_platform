@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { createAnalysis } from '../../api/analyses'
 import { ApiError } from '../../api/client'
 import { Alert } from '../../components/ui/Alert'
@@ -14,6 +14,7 @@ interface AnalysisUploadFlowProps {
 }
 
 export function AnalysisUploadFlow({ onCreated }: AnalysisUploadFlowProps) {
+  const errorSummaryRef = useRef<HTMLDivElement>(null)
   const [courseCode, setCourseCode] = useState('')
   const [courseName, setCourseName] = useState('')
   const [examType, setExamType] = useState<ExamType | ''>('')
@@ -26,7 +27,10 @@ export function AnalysisUploadFlow({ onCreated }: AnalysisUploadFlowProps) {
     event.preventDefault()
     const validationErrors = validateAnalysisDetails({ courseCode, courseName, examType, term })
     setErrors(validationErrors)
-    if (Object.keys(validationErrors).length > 0) return
+    if (Object.keys(validationErrors).length > 0) {
+      requestAnimationFrame(() => errorSummaryRef.current?.focus())
+      return
+    }
 
     setIsCreating(true)
     setSubmitError(null)
@@ -37,8 +41,10 @@ export function AnalysisUploadFlow({ onCreated }: AnalysisUploadFlowProps) {
         term,
       })
       onCreated(created)
-    } catch (err) {
-      setSubmitError(err instanceof ApiError ? err.detail : 'Could not create the analysis.')
+    } catch (error) {
+      setSubmitError(
+        error instanceof ApiError ? error.detail : 'Could not create the analysis.',
+      )
     } finally {
       setIsCreating(false)
     }
@@ -46,46 +52,97 @@ export function AnalysisUploadFlow({ onCreated }: AnalysisUploadFlowProps) {
 
   return (
     <form className="analysis-form" onSubmit={handleSubmit} noValidate>
-      <h2>Create a new analysis</h2>
+      <div>
+        <h2>Exam Information</h2>
+        <p>Enter the course and exam details. These details become read-only after creation.</p>
+      </div>
 
-      <label>
-        Course code
-        <input value={courseCode} onChange={(e) => setCourseCode(e.target.value)} />
-      </label>
-      {errors.courseCode && <p className="field-error">{errors.courseCode}</p>}
+      {Object.keys(errors).length > 0 && (
+        <div
+          ref={errorSummaryRef}
+          className="analysis-error-summary"
+          tabIndex={-1}
+        >
+          <Alert variant="error" title="Check the exam information">
+            Correct the highlighted fields and try again.
+          </Alert>
+        </div>
+      )}
 
-      <label>
-        Course name
-        <input value={courseName} onChange={(e) => setCourseName(e.target.value)} />
-      </label>
-      {errors.courseName && <p className="field-error">{errors.courseName}</p>}
-
-      <fieldset>
-        <legend>Exam type</legend>
-        {EXAM_TYPES.map((type) => (
-          <label key={type} className="radio-option">
-            <input
-              type="radio"
-              name="exam_type"
-              value={type}
-              checked={examType === type}
-              onChange={() => setExamType(type)}
-            />
-            {type}
-          </label>
-        ))}
-      </fieldset>
-      {errors.examType && <p className="field-error">{errors.examType}</p>}
-
-      <label>
-        Term
+      <div className="analysis-form-field">
+        <label htmlFor="course-code">Course code</label>
         <input
-          value={term}
-          onChange={(e) => setTerm(e.target.value)}
-          placeholder="e.g. 2026 Spring"
+          id="course-code"
+          value={courseCode}
+          onChange={(event) => setCourseCode(event.target.value)}
+          aria-invalid={Boolean(errors.courseCode)}
+          aria-describedby={errors.courseCode ? 'course-code-error' : undefined}
         />
-      </label>
-      {errors.term && <p className="field-error">{errors.term}</p>}
+        {errors.courseCode && (
+          <p id="course-code-error" className="field-error">
+            {errors.courseCode}
+          </p>
+        )}
+      </div>
+
+      <div className="analysis-form-field">
+        <label htmlFor="course-name">Course name</label>
+        <input
+          id="course-name"
+          value={courseName}
+          onChange={(event) => setCourseName(event.target.value)}
+          aria-invalid={Boolean(errors.courseName)}
+          aria-describedby={errors.courseName ? 'course-name-error' : undefined}
+        />
+        {errors.courseName && (
+          <p id="course-name-error" className="field-error">
+            {errors.courseName}
+          </p>
+        )}
+      </div>
+
+      <fieldset
+        aria-invalid={Boolean(errors.examType)}
+        aria-describedby={errors.examType ? 'exam-type-error' : undefined}
+      >
+        <legend>Exam type</legend>
+        <div className="analysis-form-options">
+          {EXAM_TYPES.map((type) => (
+            <label key={type} className="radio-option">
+              <input
+                type="radio"
+                name="exam_type"
+                value={type}
+                checked={examType === type}
+                onChange={() => setExamType(type)}
+              />
+              {type}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      {errors.examType && (
+        <p id="exam-type-error" className="field-error">
+          {errors.examType}
+        </p>
+      )}
+
+      <div className="analysis-form-field">
+        <label htmlFor="term">Term</label>
+        <input
+          id="term"
+          value={term}
+          onChange={(event) => setTerm(event.target.value)}
+          placeholder="e.g. 2026 Spring"
+          aria-invalid={Boolean(errors.term)}
+          aria-describedby={errors.term ? 'term-error' : undefined}
+        />
+        {errors.term && (
+          <p id="term-error" className="field-error">
+            {errors.term}
+          </p>
+        )}
+      </div>
 
       {submitError && (
         <Alert variant="error" title="Could not create analysis">
@@ -93,9 +150,11 @@ export function AnalysisUploadFlow({ onCreated }: AnalysisUploadFlowProps) {
         </Alert>
       )}
 
-      <Button type="submit" isLoading={isCreating} loadingLabel="Creating…">
-        Create analysis
-      </Button>
+      <div className="analysis-form-actions">
+        <Button type="submit" isLoading={isCreating} loadingLabel="Creating…">
+          Continue to Upload Documents
+        </Button>
+      </div>
     </form>
   )
 }
@@ -112,33 +171,59 @@ export function AnalysisDocuments({ analysis, onRefreshed }: AnalysisDocumentsPr
 
   return (
     <div className="analysis-upload">
-      <h2>
-        <bdi>{analysis.course.code}</bdi> — {analysis.exam_type} ({analysis.term})
-      </h2>
-      <p>
-        Both the examination PDF and the populated TP-153 are required before this analysis can
-        proceed.
-      </p>
+      <div>
+        <h2>Upload Documents</h2>
+        <p>
+          Both the examination PDF and the populated TP-153 are required. Each upload can be
+          retried independently.
+        </p>
+      </div>
 
-      <FileUploadField
-        analysisId={analysis.id}
-        fileType="exam"
-        label="Examination PDF"
-        uploaded={findUploaded('exam')}
-        onUploaded={onRefreshed}
-      />
-      <FileUploadField
-        analysisId={analysis.id}
-        fileType="tp153"
-        label="Populated TP-153"
-        uploaded={findUploaded('tp153')}
-        onUploaded={onRefreshed}
-      />
+      <dl className="analysis-persisted-summary" aria-label="Persisted exam information">
+        <div>
+          <dt>Course</dt>
+          <dd>
+            <bdi>{analysis.course.code}</bdi> —{' '}
+            <bdi dir="auto">{analysis.course.name}</bdi>
+          </dd>
+        </div>
+        <div>
+          <dt>Exam</dt>
+          <dd>
+            {analysis.exam_type} — <bdi dir="auto">{analysis.term}</bdi>
+          </dd>
+        </div>
+      </dl>
+
+      <div className="upload-cards">
+        <FileUploadField
+          analysisId={analysis.id}
+          fileType="exam"
+          label="Examination PDF"
+          description="Select the Midterm or Final examination PDF."
+          uploaded={findUploaded('exam')}
+          onUploaded={onRefreshed}
+        />
+        <FileUploadField
+          analysisId={analysis.id}
+          fileType="tp153"
+          label="Populated TP-153"
+          description="Select the populated course specification PDF."
+          uploaded={findUploaded('tp153')}
+          onUploaded={onRefreshed}
+        />
+      </div>
 
       {analysis.ready_for_analysis ? (
-        <p className="notice notice-success">Both required documents are uploaded.</p>
+        <Alert variant="success" title="Documents ready">
+          The refreshed analysis confirms that both required documents are uploaded. Continue when
+          you are ready to review and start.
+        </Alert>
       ) : (
-        <p className="notice">Upload both the examination PDF and the populated TP-153 to continue.</p>
+        <Alert variant="info" title="Both documents are required">
+          Upload both PDFs to continue. If this page is refreshed before a selected file is
+          uploaded, the browser will require you to select that file again.
+        </Alert>
       )}
     </div>
   )

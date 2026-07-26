@@ -1,14 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getAnalysisProgress, runAnalysis } from '../../api/analyses'
 import { ApiError } from '../../api/client'
+import { Alert } from '../../components/ui/Alert'
+import { Button } from '../../components/ui/Button'
+import { ProgressStepper, type ProgressStep } from '../../components/ui/ProgressStepper'
 import type { AnalysisResponse, ProcessingStage } from '../../types/api'
 
 const TERMINAL_STAGES: ProcessingStage[] = ['completed', 'failed']
-
-function formatStage(stage: ProcessingStage): string {
-  const spaced = stage.replaceAll('_', ' ')
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
-}
+const ORDERED_PROCESSING_STAGES: ProcessingStage[] = [
+  'validating',
+  'extracting_exam',
+  'extracting_tp153',
+  'building_evidence',
+  'retrieving_knowledge',
+  'applying_rules',
+  'generating_report',
+  'completed',
+]
 
 interface ProcessingStatusProps {
   analysisId: string
@@ -18,6 +26,15 @@ interface ProcessingStatusProps {
   onAnalysisStarted?: (analysis: AnalysisResponse) => void
 }
 
+function processingSteps(currentState: ProcessingStage): ProgressStep[] {
+  const currentIndex = ORDERED_PROCESSING_STAGES.indexOf(currentState)
+  return ORDERED_PROCESSING_STAGES.map((stage, index) => ({
+    id: stage,
+    label: stage,
+    status: index < currentIndex ? 'complete' : index === currentIndex ? 'current' : 'upcoming',
+  }))
+}
+
 export function ProcessingStatus({
   analysisId,
   initialState,
@@ -25,42 +42,67 @@ export function ProcessingStatus({
   onStateChange,
   onAnalysisStarted,
 }: ProcessingStatusProps) {
+  const onStateChangeRef = useRef(onStateChange)
   const [state, setState] = useState<ProcessingStage>(initialState)
   const [message, setMessage] = useState<string | null>(null)
   const [isStarting, setIsStarting] = useState(false)
   const [startRequested, setStartRequested] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
+  const [connectivityDegraded, setConnectivityDegraded] = useState(false)
+  const [failureDetailsLoaded, setFailureDetailsLoaded] = useState(false)
+
+  useEffect(() => {
+    onStateChangeRef.current = onStateChange
+  }, [onStateChange])
 
   const hasStarted = state !== 'queued' || startRequested
   const isTerminal = TERMINAL_STAGES.includes(state)
+  const needsFailureDetails = state === 'failed' && !failureDetailsLoaded
 
-  function applyState(next: ProcessingStage): void {
+  const applyState = useCallback((next: ProcessingStage): void => {
     setState(next)
-    onStateChange?.(next)
-  }
+    onStateChangeRef.current?.(next)
+  }, [])
 
   useEffect(() => {
-    if (!hasStarted || isTerminal) return undefined
+    if (!hasStarted || (isTerminal && !needsFailureDetails)) return undefined
 
     let cancelled = false
-    const interval = setInterval(() => {
-      getAnalysisProgress(analysisId)
-        .then((progress) => {
-          if (cancelled) return
-          applyState(progress.state)
-          setMessage(progress.message)
-        })
-        .catch(() => {
-          // Transient polling failure - retry on the next tick.
-        })
-    }, pollIntervalMs)
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
 
+    async function poll(): Promise<void> {
+      let shouldContinue = true
+      try {
+        const progress = await getAnalysisProgress(analysisId)
+        if (cancelled) return
+        setConnectivityDegraded(false)
+        applyState(progress.state)
+        setMessage(progress.message)
+        if (progress.state === 'failed') setFailureDetailsLoaded(true)
+        shouldContinue = !TERMINAL_STAGES.includes(progress.state)
+      } catch {
+        if (cancelled) return
+        setConnectivityDegraded(true)
+      }
+
+      if (!cancelled && shouldContinue) {
+        timeoutId = setTimeout(() => void poll(), pollIntervalMs)
+      }
+    }
+
+    void poll()
     return () => {
       cancelled = true
-      clearInterval(interval)
+      if (timeoutId) clearTimeout(timeoutId)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analysisId, hasStarted, isTerminal, pollIntervalMs])
+  }, [
+    analysisId,
+    applyState,
+    hasStarted,
+    isTerminal,
+    needsFailureDetails,
+    pollIntervalMs,
+  ])
 
   async function handleStart(): Promise<void> {
     setIsStarting(true)
@@ -70,9 +112,11 @@ export function ProcessingStatus({
       setStartRequested(true)
       applyState(response.state)
       onAnalysisStarted?.(response)
-    } catch (err) {
+    } catch (error) {
       setStartRequested(false)
-      setStartError(err instanceof ApiError ? err.detail : 'Could not start the analysis.')
+      setStartError(
+        error instanceof ApiError ? error.detail : 'Could not start the analysis.',
+      )
     } finally {
       setIsStarting(false)
     }
@@ -81,24 +125,45 @@ export function ProcessingStatus({
   return (
     <div className="processing-status">
       {!hasStarted && (
-        <button type="button" onClick={() => void handleStart()} disabled={isStarting}>
-          {isStarting ? 'Starting…' : 'Start analysis'}
-        </button>
+        <Button
+          onClick={() => void handleStart()}
+          isLoading={isStarting}
+          loadingLabel="Starting…"
+        >
+          Start Analysis
+        </Button>
       )}
+
       {hasStarted && (
-        <p className="processing-stage" role="status">
-          Current stage: <strong>{formatStage(state)}</strong>
-        </p>
+        <>
+          {state !== 'failed' && state !== 'queued' && (
+            <div className="processing-progress" tabIndex={0} aria-label="Processing stages">
+              <ProgressStepper
+                steps={processingSteps(state)}
+                ariaLabel="Analysis processing progress"
+              />
+            </div>
+          )}
+          <p className="processing-stage" role="status">
+            Current backend stage: <strong>{state}</strong>
+          </p>
+        </>
+      )}
+
+      {connectivityDegraded && (
+        <Alert variant="warning" title="Connection interrupted">
+          Progress could not be refreshed. Polling will retry automatically.
+        </Alert>
       )}
       {state === 'failed' && message && (
-        <p className="field-error" role="alert">
+        <Alert variant="error" title="Analysis processing failed">
           {message}
-        </p>
+        </Alert>
       )}
       {startError && (
-        <p className="field-error" role="alert">
+        <Alert variant="error" title="Could not start analysis">
           {startError}
-        </p>
+        </Alert>
       )}
     </div>
   )

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as analysesApi from '../../api/analyses'
 import { ApiError } from '../../api/client'
@@ -8,14 +8,19 @@ import { ProcessingStatus } from './ProcessingStatus'
 vi.mock('../../api/analyses')
 
 beforeEach(() => {
-  vi.mocked(analysesApi.runAnalysis).mockReset()
-  vi.mocked(analysesApi.getAnalysisProgress).mockReset()
+  vi.clearAllMocks()
 })
 
 function analysisResponse(state: AnalysisResponse['state']): AnalysisResponse {
   return {
     id: 'analysis-1',
-    course: { id: 'course-1', code: 'CPIT-450', name: 'SE', department: null, program: null },
+    course: {
+      id: 'course-1',
+      code: 'CPIT-450',
+      name: 'SE',
+      department: null,
+      program: null,
+    },
     exam_type: 'Midterm',
     term: '2026 Spring',
     state,
@@ -34,73 +39,123 @@ function progressResponse(
   state: ProgressResponse['state'],
   message: string | null = null,
 ): ProgressResponse {
-  return { analysis_id: 'analysis-1', state, message, updated_at: '2026-01-01T00:00:00Z' }
+  return {
+    analysis_id: 'analysis-1',
+    state,
+    message,
+    updated_at: '2026-01-01T00:00:00Z',
+  }
 }
 
 describe('ProcessingStatus', () => {
-  it('shows a Start analysis button when the analysis is still queued', () => {
+  it('requires an explicit action before starting the analysis', () => {
     render(<ProcessingStatus analysisId="analysis-1" initialState="queued" />)
+
     expect(screen.getByRole('button', { name: /start analysis/i })).toBeInTheDocument()
-    expect(screen.queryByText(/current stage/i)).not.toBeInTheDocument()
+    expect(analysesApi.runAnalysis).not.toHaveBeenCalled()
+    expect(analysesApi.getAnalysisProgress).not.toHaveBeenCalled()
   })
 
-  it('starts the analysis and shows the returned stage', async () => {
+  it('starts after the explicit action and preserves the exact backend stage label', async () => {
     vi.mocked(analysesApi.runAnalysis).mockResolvedValue(analysisResponse('validating'))
-    render(<ProcessingStatus analysisId="analysis-1" initialState="queued" pollIntervalMs={10} />)
+    vi.mocked(analysesApi.getAnalysisProgress).mockImplementation(
+      () => new Promise(() => undefined),
+    )
+    render(<ProcessingStatus analysisId="analysis-1" initialState="queued" />)
 
     fireEvent.click(screen.getByRole('button', { name: /start analysis/i }))
 
-    expect(await screen.findByText(/current stage/i)).toBeInTheDocument()
-    expect(screen.getByText('Validating')).toBeInTheDocument()
+    expect(await screen.findByText('validating', { selector: 'strong' })).toBeInTheDocument()
     expect(analysesApi.runAnalysis).toHaveBeenCalledWith('analysis-1')
   })
 
-  it('keeps polling when the start response is still queued', async () => {
-    vi.mocked(analysesApi.runAnalysis).mockResolvedValue(analysisResponse('queued'))
-    vi.mocked(analysesApi.getAnalysisProgress).mockResolvedValue(
-      progressResponse('completed'),
-    )
-    render(<ProcessingStatus analysisId="analysis-1" initialState="queued" pollIntervalMs={10} />)
-
-    fireEvent.click(screen.getByRole('button', { name: /start analysis/i }))
-
-    expect(await screen.findByText('Completed')).toBeInTheDocument()
-    expect(analysesApi.getAnalysisProgress).toHaveBeenCalledWith('analysis-1')
-    expect(screen.queryByRole('button', { name: /start analysis/i })).not.toBeInTheDocument()
-  })
-
-  it('polls progress and stops once a terminal stage is reached', async () => {
+  it('polls immediately and stops once a terminal stage is reached', async () => {
     vi.mocked(analysesApi.getAnalysisProgress)
       .mockResolvedValueOnce(progressResponse('extracting_exam'))
       .mockResolvedValueOnce(progressResponse('completed'))
+
+    render(
+      <ProcessingStatus
+        analysisId="analysis-1"
+        initialState="validating"
+        pollIntervalMs={10}
+      />,
+    )
+
+    await screen.findByText('extracting_exam', { selector: 'strong' })
+    await screen.findByText('completed', { selector: 'strong' })
+    const callsAtCompletion = vi.mocked(analysesApi.getAnalysisProgress).mock.calls.length
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(analysesApi.getAnalysisProgress).toHaveBeenCalledTimes(callsAtCompletion)
+  })
+
+  it('shows degraded connectivity while retrying and clears it after recovery', async () => {
+    vi.mocked(analysesApi.getAnalysisProgress)
+      .mockRejectedValueOnce(new ApiError(503, 'Unavailable'))
+      .mockResolvedValueOnce(progressResponse('applying_rules'))
       .mockResolvedValue(progressResponse('completed'))
 
     render(
-      <ProcessingStatus analysisId="analysis-1" initialState="validating" pollIntervalMs={10} />,
+      <ProcessingStatus
+        analysisId="analysis-1"
+        initialState="retrieving_knowledge"
+        pollIntervalMs={50}
+      />,
     )
 
-    await screen.findByText('Extracting exam')
-    await screen.findByText('Completed')
-
-    const callCountAtCompletion = vi.mocked(analysesApi.getAnalysisProgress).mock.calls.length
-    await new Promise((resolve) => setTimeout(resolve, 50))
-    expect(analysesApi.getAnalysisProgress).toHaveBeenCalledTimes(callCountAtCompletion)
+    expect(await screen.findByText(/polling will retry automatically/i)).toBeInTheDocument()
+    await screen.findByText('applying_rules', { selector: 'strong' })
+    await waitFor(() =>
+      expect(screen.queryByText(/polling will retry automatically/i)).not.toBeInTheDocument(),
+    )
   })
 
-  it('shows the safe failure message when progress reports failed', async () => {
+  it('shows the API-derived failure message without placing failed in the linear stepper', async () => {
     vi.mocked(analysesApi.getAnalysisProgress).mockResolvedValue(
-      progressResponse('failed', 'Processing failed due to an internal error. Please try again later.'),
+      progressResponse(
+        'failed',
+        'Processing failed due to an internal error. Please try again later.',
+      ),
     )
 
     render(
-      <ProcessingStatus analysisId="analysis-1" initialState="applying_rules" pollIntervalMs={10} />,
+      <ProcessingStatus
+        analysisId="analysis-1"
+        initialState="applying_rules"
+        pollIntervalMs={10}
+      />,
     )
 
-    expect(await screen.findByText(/processing failed due to an internal error/i)).toBeInTheDocument()
+    expect(await screen.findByText(/processing failed due to an internal error/i))
+      .toBeInTheDocument()
+    expect(screen.getByText('failed', { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: /analysis processing progress/i }))
+      .not.toBeInTheDocument()
   })
 
-  it('shows a start error without changing the displayed stage', async () => {
-    vi.mocked(analysesApi.runAnalysis).mockRejectedValue(new ApiError(500, 'Server unavailable.'))
+  it('retrieves failure details once when a failed progress route is refreshed', async () => {
+    vi.mocked(analysesApi.getAnalysisProgress).mockResolvedValue(
+      progressResponse('failed', 'The analysis could not be completed.'),
+    )
+
+    render(
+      <ProcessingStatus
+        analysisId="analysis-1"
+        initialState="failed"
+        pollIntervalMs={10}
+      />,
+    )
+
+    expect(await screen.findByText(/analysis could not be completed/i)).toBeInTheDocument()
+    expect(analysesApi.getAnalysisProgress).toHaveBeenCalledTimes(1)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(analysesApi.getAnalysisProgress).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the explicit start action available after a start error', async () => {
+    vi.mocked(analysesApi.runAnalysis).mockRejectedValue(
+      new ApiError(500, 'Server unavailable.'),
+    )
     render(<ProcessingStatus analysisId="analysis-1" initialState="queued" />)
 
     fireEvent.click(screen.getByRole('button', { name: /start analysis/i }))
@@ -109,20 +164,22 @@ describe('ProcessingStatus', () => {
     expect(screen.getByRole('button', { name: /start analysis/i })).toBeInTheDocument()
   })
 
-  it('calls onStateChange whenever the tracked stage changes, so a parent can react to completion', async () => {
-    vi.mocked(analysesApi.runAnalysis).mockResolvedValue(analysisResponse('validating'))
+  it('notifies the route adapter when the tracked backend state changes', async () => {
+    vi.mocked(analysesApi.getAnalysisProgress).mockResolvedValue(
+      progressResponse('generating_report'),
+    )
     const onStateChange = vi.fn()
+
     render(
       <ProcessingStatus
         analysisId="analysis-1"
-        initialState="queued"
+        initialState="applying_rules"
+        pollIntervalMs={100}
         onStateChange={onStateChange}
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /start analysis/i }))
-
-    await screen.findByText('Validating')
-    expect(onStateChange).toHaveBeenCalledWith('validating')
+    await screen.findByText('generating_report', { selector: 'strong' })
+    expect(onStateChange).toHaveBeenCalledWith('generating_report')
   })
 })
