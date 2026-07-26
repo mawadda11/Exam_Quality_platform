@@ -26,8 +26,8 @@ RUN npm run build
 # nginx's own maintained variant that already listens on 8080 (not the
 # privileged port 80) and runs as a non-root user out of the box, so this
 # doesn't need to hand-roll listen-port/permission changes on top of the
-# stock nginx image. This app currently has no client-side router (no
-# deep-linkable routes beyond "/"), so no SPA try_files fallback config is
-# needed - the image's default static-file serving is sufficient as-is.
+# stock nginx image. The custom server block preserves React Router deep
+# links by falling back to index.html when a static asset is not found.
 FROM nginxinc/nginx-unprivileged:stable-alpine AS production
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getAnalysisProgress, runAnalysis } from '../../api/analyses'
 import { ApiError } from '../../api/client'
-import type { ProcessingStage } from '../../types/api'
+import type { AnalysisResponse, ProcessingStage } from '../../types/api'
 
 const TERMINAL_STAGES: ProcessingStage[] = ['completed', 'failed']
 
@@ -15,6 +15,7 @@ interface ProcessingStatusProps {
   initialState: ProcessingStage
   pollIntervalMs?: number
   onStateChange?: (state: ProcessingStage) => void
+  onAnalysisStarted?: (analysis: AnalysisResponse) => void
 }
 
 export function ProcessingStatus({
@@ -22,6 +23,7 @@ export function ProcessingStatus({
   initialState,
   pollIntervalMs = 1500,
   onStateChange,
+  onAnalysisStarted,
 }: ProcessingStatusProps) {
   const [state, setState] = useState<ProcessingStage>(initialState)
   const [message, setMessage] = useState<string | null>(null)
@@ -67,6 +69,7 @@ export function ProcessingStatus({
       const response = await runAnalysis(analysisId)
       setStartRequested(true)
       applyState(response.state)
+      onAnalysisStarted?.(response)
     } catch (err) {
       setStartRequested(false)
       setStartError(err instanceof ApiError ? err.detail : 'Could not start the analysis.')

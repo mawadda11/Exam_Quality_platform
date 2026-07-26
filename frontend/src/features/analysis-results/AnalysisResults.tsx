@@ -27,23 +27,7 @@ import { MarksStructureSection } from './MarksStructureSection'
 import { OverviewSection } from './OverviewSection'
 import { QuestionsSection } from './QuestionsSection'
 import { ReportSection } from './ReportSection'
-
-type SectionId =
-  | 'overview'
-  | 'questions'
-  | 'alignment-coverage'
-  | 'marks-structure'
-  | 'findings-recommendations'
-  | 'report'
-
-const SECTIONS: { id: SectionId; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'questions', label: 'Questions' },
-  { id: 'alignment-coverage', label: 'Alignment & Coverage' },
-  { id: 'marks-structure', label: 'Marks & Structure' },
-  { id: 'findings-recommendations', label: 'Findings & Recommendations' },
-  { id: 'report', label: 'Report' },
-]
+import { RESULTS_SECTIONS, type ResultsSectionId } from './resultSections'
 
 interface ResultsData {
   questions: QuestionResponse[]
@@ -69,11 +53,27 @@ type ResultsState =
 interface AnalysisResultsProps {
   analysis: AnalysisResponse
   onReanalysisCreated?: (reanalysis: AnalysisResponse) => void
+  section?: ResultsSectionId
+  onSectionChange?: (section: ResultsSectionId) => void
 }
 
-export function AnalysisResults({ analysis, onReanalysisCreated }: AnalysisResultsProps) {
-  const [section, setSection] = useState<SectionId>('overview')
+export function AnalysisResults({
+  analysis,
+  onReanalysisCreated,
+  section: controlledSection,
+  onSectionChange,
+}: AnalysisResultsProps) {
+  const [localSection, setLocalSection] = useState<ResultsSectionId>('overview')
+  const section = controlledSection ?? localSection
   const [state, setState] = useState<ResultsState>({ status: 'loading' })
+
+  function handleSectionChange(nextSection: ResultsSectionId): void {
+    if (onSectionChange) {
+      onSectionChange(nextSection)
+    } else {
+      setLocalSection(nextSection)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -153,9 +153,9 @@ export function AnalysisResults({ analysis, onReanalysisCreated }: AnalysisResul
         </p>
       )}
       <Tabs
-        items={SECTIONS}
+        items={RESULTS_SECTIONS}
         value={section}
-        onValueChange={setSection}
+        onValueChange={handleSectionChange}
         ariaLabel="Results sections"
       />
 

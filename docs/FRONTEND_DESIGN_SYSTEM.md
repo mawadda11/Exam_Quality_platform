@@ -2,13 +2,18 @@
 
 ## Status and purpose
 
-This document is the authoritative frontend visual-foundation contract established by Frontend
-Alignment Phase 1. It records design decisions derived from the approved Base44 reference
-screenshots without treating simulated screenshot content as product behavior.
+This document is the authoritative frontend visual and navigation contract established by
+Frontend Alignment Phase 1 and extended by Phase 2. It records design decisions derived from the
+approved Base44 reference screenshots without treating simulated screenshot content as product
+behavior.
 
 Phase 1 implements design tokens, shared UI primitives, focused tests, and minimal integration into
 the existing single-page frontend. It does not add routing, page architecture, authentication,
 dashboard metrics, a new upload lifecycle, Extraction Review behavior, or semantic evaluators.
+
+Phase 2 implements the application shell, responsive primary navigation, refresh-safe routes, and
+URL-controlled analysis/result navigation. It does not redesign the New Analysis lifecycle or
+introduce Phase 3, M3, authentication, new APIs, dashboard statistics, or Extraction Review.
 
 The design system exists so future Codex and Claude Code sessions can extend the interface without
 reinterpreting screenshots, inventing business behavior, or creating inconsistent component
@@ -159,9 +164,9 @@ Tokens reserve three maximum content widths:
 - form: multi-column data entry;
 - wide: results, evidence, and reports.
 
-Phase 1 does not implement the future application shell or sidebar. Later alignment phases may use
-the screenshot's persistent desktop sidebar, but they must consume these tokens and retain
-responsive fallbacks.
+Phase 2 uses these widths inside a persistent desktop sidebar layout and a responsive mobile header
+and navigation drawer. Route content selects the narrowest appropriate width rather than forcing
+forms and evidence tables into one shared container.
 
 **Reason:** content-width tokens allow the current single-card frontend and future wide workspace to
 share one foundation without prematurely creating routing or page architecture.
@@ -229,7 +234,8 @@ must be explicitly approved before they receive a specialized action contract.
 - Controlled component with a stable string ID per item.
 - Uses tablist/tab semantics, one tab stop, `aria-selected`, and matching tab-panel IDs.
 - Supports click, Left/Right Arrow, Home, and End with automatic activation.
-- Result tabs remain local state in Phase 1; routing is deferred.
+- Result tabs are controlled by `/analyses/:analysisId/results/:tab` in Phase 2. Back, forward,
+  refresh, and shared URLs therefore retain the selected result section.
 
 ### `ResponsiveTable`
 
@@ -324,16 +330,17 @@ history/polling failures belongs to later alignment phases.
 
 ## Responsive rules
 
-- Wide desktop: future sidebar plus wide evidence workspace.
+- Wide desktop: persistent sidebar plus wide evidence workspace.
 - Tablet: reduced gutters and horizontally scrollable result tabs.
-- Mobile: one-column content, future navigation drawer, stacked actions, and stacked upload cards.
+- Mobile: one-column content, keyboard-operable navigation drawer, stacked actions, and later
+  stacked upload cards.
 - Complex tables remain native tables inside labelled horizontal-scroll regions. Short history or
   question datasets may gain an alternate card presentation only if semantic equivalence is tested.
 - Progress steppers collapse to a vertical list on narrow screens.
 - Page-header actions stack when horizontal space is insufficient.
 
-Phase 1 includes responsive behavior only for shared primitives. Sidebar, navigation, dashboard,
-upload cards, and complete page layouts remain planned.
+Phase 2 implements the shell, sidebar, mobile header/drawer, and route content widths. Full
+dashboard composition, upload-card redesign, and complete result-page alignment remain planned.
 
 ## Arabic and mixed-language content
 
@@ -364,23 +371,71 @@ Do not introduce:
 - Base44 editor chrome, Preview/Publish controls, upgrade prompts, or decorative purple borders;
 - unavailable global reports/help routes or unapproved TP-153 artifacts.
 
+## Phase 2 route and shell contract
+
+React Router is the single navigation authority. Runtime analysis data remains owned by the
+existing API layer; route state must not duplicate or replace backend state.
+
+| Route | Current purpose |
+|---|---|
+| `/` | Replace-redirect to `/dashboard` |
+| `/dashboard` | Honest entry point and navigation actions; no fabricated metrics |
+| `/analyses` | Owned analysis history from the existing list endpoint |
+| `/analyses/new` | Existing analysis-creation form and persistence lifecycle |
+| `/analyses/:analysisId/documents` | Existing required Exam and TP-153 uploads |
+| `/analyses/:analysisId/start` | Existing run action, only when queued and ready |
+| `/analyses/:analysisId/progress` | Existing polling view, only while processing or failed |
+| `/analyses/:analysisId/results/:tab` | Completed-analysis results with a URL-controlled tab |
+
+The shared `/analyses/:analysisId` route loads the analysis once. Its child routes consume that
+loaded record through outlet context, so ordinary documents/start/progress/results navigation does
+not issue redundant analysis-summary requests. An explicit post-upload refresh remains necessary
+because the backend has changed the uploaded-file and readiness state.
+
+Route guards use the backend's returned `state` and `ready_for_analysis` fields:
+
+- queued and not ready routes to documents;
+- queued and ready routes to start;
+- active processing or failed routes to progress;
+- completed routes to results overview.
+
+An unknown results tab replace-redirects to overview. A missing, inaccessible, or malformed
+analysis URL shows a safe error using the API Problem Details message where available. General
+unknown routes show a neutral application fallback.
+
+Desktop navigation is persistent. Mobile navigation is a modal drawer with initial focus, a focus
+boundary, Escape dismissal, backdrop/close controls, and focus return. Active primary links use
+`aria-current="page"`. The shell deliberately exposes only Dashboard, Analyses, and New Analysis;
+unsupported Reports, Help, Profile, Sign Out, and authentication destinations are absent.
+
+The development identity remains a clearly labelled workspace notice and header adapter. It is not
+presented as login, profile, role, or session behavior.
+
+The production frontend image uses Nginx and installs an SPA `try_files` fallback. Static assets
+continue to resolve normally, while direct requests to nested application routes return
+`index.html` so React Router can restore the URL.
+
 ## Currently implemented, planned, and deferred
 
-### Currently implemented after Phase 1
+### Currently implemented after Phase 2
 
 - Central visual tokens and shared base/component CSS.
 - Eleven shared UI primitives documented above.
-- Minimal use of shared brand/card/page-header, button/alert, status badge, tabs, and responsive
-  table primitives in the existing single-page frontend.
-- Keyboard-operable local result tabs.
+- Responsive application shell, persistent desktop sidebar, and mobile navigation drawer.
+- Refresh-safe route hierarchy for dashboard, history, creation, documents, start, progress, and
+  results.
+- One shared analysis-summary load across nested analysis routes, plus backend-state route guards.
+- URL-controlled keyboard-operable result tabs with browser history.
+- Real API-backed analysis history links; no score request is issued for a history row.
+- Production Nginx fallback for nested client-side routes.
+- Keyboard-operable result tabs.
 - `dir="auto"` for displayed question source text and `<bdi>` for question labels.
 - Existing API calls, workflow states, scoring, numeric confidence behavior, upload lifecycle,
   report generation, and reanalysis behavior unchanged.
 
 ### Planned frontend-alignment work
 
-- Application shell, responsive sidebar/mobile navigation, and refresh-safe routes.
-- Dashboard and full history pages using real API data.
+- Full dashboard composition using only approved real API data.
 - Three-step New Analysis presentation.
 - Upload cards and complete processing presentation.
 - Results header, score summary, filters, partial loading, and full responsive alignment.
