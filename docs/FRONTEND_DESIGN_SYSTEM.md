@@ -19,6 +19,15 @@ Phase 3 approves the Version 1 New Analysis lifecycle and implements real API-ba
 history presentation. It does not change the existing creation/upload/run sequence, add score
 requests for dashboard rows, or introduce Phase 4, M3, authentication, or Extraction Review.
 
+Phase 4 presents that lifecycle as Exam Information, Upload Documents, and Review and Start while
+preserving backend-authoritative readiness, explicit start, independent upload retry, and exact
+processing stages.
+
+Phase 5 implements the completed-analysis results workspace with real API data, independent
+resource states, client-side finding filters, assessment-record source evidence, report-only
+refresh, and contextual reanalysis. It does not add mappings, derived totals, score thresholds,
+semantic evaluators, or Extraction Review behavior.
+
 The design system exists so future Codex and Claude Code sessions can extend the interface without
 reinterpreting screenshots, inventing business behavior, or creating inconsistent component
 variants.
@@ -297,9 +306,10 @@ Current score behavior is unchanged:
 - Not Verified and Not Applicable are excluded;
 - no verified applicable findings produces `Insufficient Evidence`.
 
-Phase 1 does not change the currently implemented numeric confidence shown for existing semantic
-findings. The approved future categorical semantic-confidence contract (`High`, `Medium`, `Low`)
-remains planned for M6 and must use the backend's authoritative enum when implemented.
+Phase 5 does not present the legacy numeric semantic-confidence value as the approved confidence
+model. The approved future categorical semantic-confidence contract (`High`, `Medium`, `Low`)
+remains planned for M6 and must use the backend's authoritative enum when implemented. Existing
+backend confidence data and API contracts remain unchanged.
 
 Numeric OCR/extraction confidence must be labelled extraction confidence and must never be converted
 to semantic confidence.
@@ -489,7 +499,38 @@ one failed progress request shows a degraded-connectivity notice, polling contin
 clears after the next successful response. `failed` is a non-linear terminal state and is not
 placed into the ordered success path.
 
-### Currently implemented after Phase 4
+### Phase 5 results workspace contract
+
+The completed-analysis workspace loads questions, CLOs, topics, assessment records, findings,
+score, recommendations, and reports as independent resources through existing endpoints. One
+resource failure must not hide successful unrelated sections. Each failed resource has its own
+retry, and retry repeats only that request. In-flight requests are reused during a React Strict
+Mode remount where practical; responses are ignored after unmount or when the analysis identifier
+has changed.
+
+The results header uses only the loaded analysis summary and score response. It may show course,
+exam type, term, uploaded filenames, last-updated date, predecessor context, score, and score
+denominator. It must not relabel `updated_at` as an unsupported analysis date. Overview displays
+the backend score and all five approved academic-status counts without thresholds, score bands, or
+pass/fail language.
+
+Alignment & Coverage presents extracted CLOs, topics, and assessment records as independent source
+evidence. It does not infer question mappings, coverage, topic alignment, or assessment-method
+consistency. Evidence expansion uses already-loaded question, CLO, and topic resources; a failed
+lookup resource is disclosed without suppressing the underlying finding evidence.
+
+Findings filters are client-side and operate only on the already-loaded findings. They may filter
+by exact academic status, dimension, and source-linked question identifier.
+Provider, model, prompt-template, and KB provenance is displayed only when those values are already
+present on a finding response. Numeric semantic confidence is not presented as categorical
+confidence.
+
+Report generation remains analysis-scoped and on demand. After generation, only the reports
+resource is refreshed. Report generation remains available when history cannot be loaded, with the
+history failure shown independently. Reanalysis remains a contextual action for the current
+analysis and uses the existing API.
+
+### Currently implemented after Phase 5
 
 - Central visual tokens and shared base/component CSS.
 - Eleven shared UI primitives documented above.
@@ -511,12 +552,20 @@ placed into the ordered success path.
 - Production Nginx fallback for nested client-side routes.
 - Keyboard-operable result tabs.
 - `dir="auto"` for displayed question source text and `<bdi>` for question labels.
-- Existing API calls, backend workflow states, scoring, numeric confidence behavior, report
+- Existing API calls, backend workflow states, scoring, confidence data contracts, report
   generation, and reanalysis behavior unchanged.
+- Real-data results header and backend score summary with all five academic-status counts.
+- Independent loading, error, empty, and retry states for result resources, including assessment
+  records and report history.
+- Stale-response protection and practical Strict Mode in-flight request reuse.
+- Source-faithful CLO, topic, and assessment-record evidence without inferred mappings.
+- Client-side finding filters, structured evidence expansion, and conditional existing provenance.
+- Analysis-scoped report history and generation with reports-only refresh.
+- Contextual reanalysis presentation for the current analysis.
 
 ### Planned frontend-alignment work
 
-- Results header, score summary, filters, partial loading, and full responsive alignment.
+- Phase 6 final frontend accessibility, responsive, documentation, and acceptance-test polish.
 
 ### M3-M5 reserved states - not implemented
 

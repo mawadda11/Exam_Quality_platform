@@ -1,8 +1,5 @@
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
-import { PageHeader } from '../components/ui/PageHeader'
-import {
-  AnalysisResults,
-} from '../features/analysis-results/AnalysisResults'
+import { AnalysisResults } from '../features/analysis-results/AnalysisResults'
 import { isResultsSectionId } from '../features/analysis-results/resultSections'
 import { routeForAnalysis } from '../router/analysisRouting'
 import { useAnalysisRoute } from './analysisRouteContext'
@@ -29,10 +26,6 @@ export function AnalysisResultsRoute() {
 
   return (
     <div className="route-stack route-content-wide">
-      <PageHeader
-        title={`${analysis.course.code} — ${analysis.exam_type}`}
-        description={`${analysis.course.name} · ${analysis.term}`}
-      />
       <AnalysisResults
         analysis={analysis}
         section={tab}

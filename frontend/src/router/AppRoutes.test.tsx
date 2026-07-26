@@ -98,6 +98,7 @@ function mockResults(): void {
   vi.mocked(analysesApi.listQuestions).mockResolvedValue([QUESTION])
   vi.mocked(analysesApi.listClos).mockResolvedValue([])
   vi.mocked(analysesApi.listTopics).mockResolvedValue([])
+  vi.mocked(analysesApi.listAssessmentRecords).mockResolvedValue([])
   vi.mocked(analysesApi.listFindings).mockResolvedValue([])
   vi.mocked(analysesApi.getAnalysisScore).mockResolvedValue(SCORE)
   vi.mocked(analysesApi.listRecommendations).mockResolvedValue([])
@@ -355,7 +356,7 @@ describe('AppRoutes', () => {
 
     renderAt('/analyses/analysis-1/results/not-a-tab')
 
-    expect(await screen.findByText('100.00')).toBeInTheDocument()
+    expect((await screen.findAllByText('100.00%')).length).toBeGreaterThan(0)
     expect(screen.getByLabelText('Current route')).toHaveTextContent(
       '/analyses/analysis-1/results/overview',
     )
@@ -369,7 +370,7 @@ describe('AppRoutes', () => {
     renderAt('/analyses/missing/results/overview')
 
     expect(await screen.findByText('Analysis not found.')).toBeInTheDocument()
-    expect(screen.queryByText('100.00')).not.toBeInTheDocument()
+    expect(screen.queryByText('100.00%')).not.toBeInTheDocument()
   })
 
   it('shows a safe fallback for an unknown application route', () => {

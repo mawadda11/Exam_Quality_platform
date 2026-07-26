@@ -58,9 +58,13 @@ describe('EvidenceDrillDown', () => {
         lookups={lookups}
       />,
     )
-    expect(
-      screen.getByText(/CLO CLO2: Apply data structures to solve problems\. \(TP-153 p\.3\)/),
-    ).toBeInTheDocument()
+    expect(screen.getByText('CLO2')).toBeInTheDocument()
+    expect(screen.getByText('Apply data structures to solve problems.')).toHaveAttribute(
+      'dir',
+      'auto',
+    )
+    expect(screen.getByText('TP-153')).toBeInTheDocument()
+    expect(screen.getByText('3')).toBeInTheDocument()
   })
 
   it('falls back to the bare code when no matching CLO/topic/question is found', () => {
@@ -73,7 +77,8 @@ describe('EvidenceDrillDown', () => {
         lookups={buildLookups([], [], [])}
       />,
     )
-    expect(screen.getByText(/CLO CLO9 \(TP-153 p\.2\)/)).toBeInTheDocument()
+    expect(screen.getByText('CLO9')).toBeInTheDocument()
+    expect(screen.queryByText(/matching extracted clo/i)).not.toBeInTheDocument()
   })
 
   it('labels an unrecognized evidence_type with the raw value rather than failing', () => {
@@ -84,6 +89,20 @@ describe('EvidenceDrillDown', () => {
         lookups={buildLookups([], [], [])}
       />,
     )
-    expect(screen.getByText(/future_evidence_type: X/)).toBeInTheDocument()
+    expect(screen.getByText('future_evidence_type')).toBeInTheDocument()
+    expect(screen.getByText('X')).toBeInTheDocument()
+  })
+
+  it('distinguishes failed lookup enrichment from absent evidence', () => {
+    render(
+      <EvidenceDrillDown
+        evidence={[evidence({ evidence_type: 'topic', item_reference: 'T1' })]}
+        status="Not Verified"
+        lookups={buildLookups([], [], [])}
+        unavailableLookups={new Set(['topic'])}
+      />,
+    )
+    expect(screen.getByText(/extracted-data request failed/i)).toBeInTheDocument()
+    expect(screen.queryByText(/no evidence was linked/i)).not.toBeInTheDocument()
   })
 })

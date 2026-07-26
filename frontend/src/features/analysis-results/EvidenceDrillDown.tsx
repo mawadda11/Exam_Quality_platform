@@ -12,41 +12,65 @@ const EVIDENCE_TYPE_LABELS: Record<string, string> = {
   missing_section: 'Missing section',
 }
 
-function describeEvidenceItem(item: FindingEvidenceRef, lookups: EvidenceLookups): string {
-  const location = `${item.source_document === 'exam' ? 'Exam' : 'TP-153'} p.${item.page_number}`
+export type EvidenceLookupKind = 'clo' | 'topic' | 'question'
 
+interface ResolvedEvidence {
+  label: string
+  sourceText: string | null
+  lookupKind: EvidenceLookupKind | null
+}
+
+function resolveEvidence(
+  item: FindingEvidenceRef,
+  lookups: EvidenceLookups,
+): ResolvedEvidence {
   if (item.evidence_type === 'clo') {
-    const clo = lookups.cloByCode.get(item.item_reference)
-    return `CLO ${item.item_reference}${clo ? `: ${clo.text}` : ''} (${location})`
+    return {
+      label: 'CLO citation',
+      sourceText: lookups.cloByCode.get(item.item_reference)?.text ?? null,
+      lookupKind: 'clo',
+    }
   }
   if (item.evidence_type === 'topic') {
-    const topic = lookups.topicByCode.get(item.item_reference)
-    return `Topic ${item.item_reference}${topic ? `: ${topic.text}` : ''} (${location})`
+    return {
+      label: 'Topic citation',
+      sourceText: lookups.topicByCode.get(item.item_reference)?.text ?? null,
+      lookupKind: 'topic',
+    }
   }
   if (item.evidence_type === 'question_text') {
-    const question = lookups.questionByLabel.get(item.item_reference)
-    return `Question ${item.item_reference}${question ? `: ${question.question_text}` : ''} (${location})`
+    return {
+      label: 'Question text',
+      sourceText:
+        lookups.questionByLabel.get(item.item_reference)?.question_text ?? null,
+      lookupKind: 'question',
+    }
   }
-  const label = EVIDENCE_TYPE_LABELS[item.evidence_type] ?? item.evidence_type
-  return `${label}: ${item.item_reference} (${location})`
+  return {
+    label: EVIDENCE_TYPE_LABELS[item.evidence_type] ?? item.evidence_type,
+    sourceText: null,
+    lookupKind: null,
+  }
 }
 
 interface EvidenceDrillDownProps {
   evidence: FindingEvidenceRef[]
   status: AcademicStatus
   lookups: EvidenceLookups
+  unavailableLookups?: ReadonlySet<EvidenceLookupKind>
 }
 
-/** Honest empty/degraded states (no invented data):
- * - Not Applicable with no evidence: expected, not a failure.
- * - Any other status with no evidence: a real absence, worth surfacing as
- *   such rather than showing a blank drill-down panel. */
-export function EvidenceDrillDown({ evidence, status, lookups }: EvidenceDrillDownProps) {
+export function EvidenceDrillDown({
+  evidence,
+  status,
+  lookups,
+  unavailableLookups = new Set(),
+}: EvidenceDrillDownProps) {
   if (evidence.length === 0) {
     return (
       <p className="evidence-empty">
         {status === 'Not Applicable'
-          ? 'No evidence is linked - this rule does not apply in this case.'
+          ? 'No evidence is linked — this rule does not apply in this case.'
           : 'No evidence was linked to this finding.'}
       </p>
     )
@@ -54,9 +78,45 @@ export function EvidenceDrillDown({ evidence, status, lookups }: EvidenceDrillDo
 
   return (
     <ul className="evidence-list">
-      {evidence.map((item) => (
-        <li key={item.id}>{describeEvidenceItem(item, lookups)}</li>
-      ))}
+      {evidence.map((item) => {
+        const resolved = resolveEvidence(item, lookups)
+        const enrichmentUnavailable =
+          resolved.lookupKind !== null && unavailableLookups.has(resolved.lookupKind)
+        return (
+          <li key={item.id} className="evidence-item">
+            <dl>
+              <div>
+                <dt>Source</dt>
+                <dd>{item.source_document === 'exam' ? 'Exam' : 'TP-153'}</dd>
+              </div>
+              <div>
+                <dt>Page</dt>
+                <dd>{item.page_number}</dd>
+              </div>
+              <div>
+                <dt>Evidence type</dt>
+                <dd>{resolved.label}</dd>
+              </div>
+              <div>
+                <dt>Reference</dt>
+                <dd>
+                  <bdi dir="auto">{item.item_reference}</bdi>
+                </dd>
+              </div>
+            </dl>
+            {resolved.sourceText && (
+              <p className="evidence-source-text" dir="auto">
+                {resolved.sourceText}
+              </p>
+            )}
+            {!resolved.sourceText && enrichmentUnavailable && (
+              <p className="evidence-enrichment-note">
+                Referenced source text is unavailable because its extracted-data request failed.
+              </p>
+            )}
+          </li>
+        )
+      })}
     </ul>
   )
 }

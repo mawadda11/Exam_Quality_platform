@@ -1,5 +1,5 @@
 import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { FindingResponse, RecommendationResponse } from '../../types/api'
 import { FindingsRecommendationsSection } from './FindingsRecommendationsSection'
 import { buildLookups } from './lookups'
@@ -31,9 +31,28 @@ function finding(overrides: Partial<FindingResponse>): FindingResponse {
 
 const LOOKUPS = buildLookups([], [], [])
 
+function renderSection(
+  findings: FindingResponse[],
+  recommendations: RecommendationResponse[] = [],
+) {
+  const byFinding = new Map<string, RecommendationResponse[]>()
+  for (const recommendation of recommendations) {
+    byFinding.set(recommendation.finding_id, [recommendation])
+  }
+  render(
+    <FindingsRecommendationsSection
+      findings={findings}
+      recommendations={{ status: 'ready', data: recommendations }}
+      recommendationsByFinding={byFinding}
+      lookups={LOOKUPS}
+      onRetryRecommendations={vi.fn()}
+    />,
+  )
+}
+
 describe('FindingsRecommendationsSection', () => {
-  it('calls out Not Verified findings in a separate Missing Evidence panel', () => {
-    const findings = [
+  it('calls out filtered Not Verified findings as Missing Evidence', () => {
+    renderSection([
       finding({ id: 'f-ok', status: 'Satisfied' }),
       finding({
         id: 'f-missing',
@@ -41,31 +60,13 @@ describe('FindingsRecommendationsSection', () => {
         requirement_name: 'Applicable CLO Coverage',
         explanation: 'No CLOs were extracted from the TP-153.',
       }),
-    ]
-    render(
-      <FindingsRecommendationsSection
-        findings={findings}
-        recommendationsByFinding={new Map()}
-        lookups={LOOKUPS}
-      />,
-    )
+    ])
 
     const panel = screen.getByText(/missing evidence \(1\)/i).closest('div') as HTMLElement
-    expect(within(panel).getByText(/no clos were extracted from the tp-153\./i)).toBeInTheDocument()
+    expect(within(panel).getByText(/no clos were extracted/i)).toBeInTheDocument()
   })
 
-  it('does not render a Missing Evidence panel when there are no Not Verified findings', () => {
-    render(
-      <FindingsRecommendationsSection
-        findings={[finding({ status: 'Satisfied' })]}
-        recommendationsByFinding={new Map()}
-        lookups={LOOKUPS}
-      />,
-    )
-    expect(screen.queryByText(/missing evidence/i)).not.toBeInTheDocument()
-  })
-
-  it('renders the recommendation attached to its finding', () => {
+  it('renders a recommendation attached to its finding', () => {
     const target = finding({ id: 'f-partial', status: 'Partially Satisfied' })
     const recommendation: RecommendationResponse = {
       finding_id: 'f-partial',
@@ -74,26 +75,33 @@ describe('FindingsRecommendationsSection', () => {
       status: 'Partially Satisfied',
       recommendation_id: 'REC001',
       title: 'Map the Question to a CLO',
-      text: 'Review the question and assign it to at least one supported course learning outcome.',
-      target_user: 'Faculty and Course Coordinator',
+      text: 'Review the existing evidence.',
+      target_user: 'Faculty',
       recommendation_type: 'Corrective',
     }
+    renderSection([target], [recommendation])
+
+    expect(screen.getByText('Map the Question to a CLO')).toBeInTheDocument()
+    expect(screen.getByText(/for: faculty/i)).toBeInTheDocument()
+  })
+
+  it('keeps findings visible while a recommendation request is unavailable', () => {
     render(
       <FindingsRecommendationsSection
-        findings={[target]}
-        recommendationsByFinding={new Map([['f-partial', [recommendation]]])}
+        findings={[finding({})]}
+        recommendations={{ status: 'error', message: 'Recommendations unavailable.' }}
+        recommendationsByFinding={new Map()}
         lookups={LOOKUPS}
+        onRetryRecommendations={vi.fn()}
       />,
     )
 
-    expect(screen.getByText('Map the Question to a CLO')).toBeInTheDocument()
-    expect(screen.getByText(/for: faculty and course coordinator/i)).toBeInTheDocument()
+    expect(screen.getByText('Question-to-CLO Mapping')).toBeInTheDocument()
+    expect(screen.getByText(/recommendations unavailable/i)).toBeInTheDocument()
   })
 
-  it('shows an honest empty state when there are no findings at all', () => {
-    render(
-      <FindingsRecommendationsSection findings={[]} recommendationsByFinding={new Map()} lookups={LOOKUPS} />,
-    )
-    expect(screen.getByText(/findings are not available yet/i)).toBeInTheDocument()
+  it('shows an honest empty state when there are no findings', () => {
+    renderSection([])
+    expect(screen.getByText(/no findings are available/i)).toBeInTheDocument()
   })
 })

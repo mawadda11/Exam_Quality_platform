@@ -1,26 +1,49 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { StrictMode, type ReactElement } from 'react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as analysesApi from '../../api/analyses'
 import { ApiError } from '../../api/client'
-import type { AnalysisResponse, AnalysisScoreResponse, FindingResponse, QuestionResponse } from '../../types/api'
+import type {
+  AnalysisResponse,
+  AnalysisScoreResponse,
+  FindingResponse,
+  QuestionResponse,
+} from '../../types/api'
 import { AnalysisResults } from './AnalysisResults'
 
 vi.mock('../../api/analyses')
 
 const ANALYSIS: AnalysisResponse = {
   id: 'analysis-1',
-  course: { id: 'course-1', code: 'CPIT-450', name: 'Software Engineering', department: null, program: null },
+  course: {
+    id: 'course-1',
+    code: 'CPIT-450',
+    name: 'Software Engineering',
+    department: null,
+    program: null,
+  },
   exam_type: 'Midterm',
   term: '2026 Spring',
   state: 'completed',
   owner_user_id: 'user-1',
   predecessor_analysis_id: null,
-  uploaded_files: [],
+  uploaded_files: [
+    {
+      id: 'file-1',
+      file_type: 'exam',
+      original_filename: 'exam.pdf',
+      mime_type: 'application/pdf',
+      size_bytes: 10,
+      sha256_hash: 'a'.repeat(64),
+      created_at: '2026-01-01T00:00:00Z',
+    },
+  ],
   exam_uploaded: true,
   tp153_uploaded: true,
   ready_for_analysis: true,
   created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-02T00:00:00Z',
 }
 
 const SCORE: AnalysisScoreResponse = {
@@ -75,97 +98,169 @@ function mockSuccessfulLoad(): void {
   vi.mocked(analysesApi.listQuestions).mockResolvedValue([QUESTION])
   vi.mocked(analysesApi.listClos).mockResolvedValue([])
   vi.mocked(analysesApi.listTopics).mockResolvedValue([])
+  vi.mocked(analysesApi.listAssessmentRecords).mockResolvedValue([])
   vi.mocked(analysesApi.listFindings).mockResolvedValue([FINDING])
   vi.mocked(analysesApi.getAnalysisScore).mockResolvedValue(SCORE)
   vi.mocked(analysesApi.listRecommendations).mockResolvedValue([])
   vi.mocked(analysesApi.listReports).mockResolvedValue([])
 }
 
+function resultsTree(element: ReactElement) {
+  return <MemoryRouter>{element}</MemoryRouter>
+}
+
 beforeEach(() => {
-  vi.mocked(analysesApi.listQuestions).mockReset()
-  vi.mocked(analysesApi.listClos).mockReset()
-  vi.mocked(analysesApi.listTopics).mockReset()
-  vi.mocked(analysesApi.listFindings).mockReset()
-  vi.mocked(analysesApi.getAnalysisScore).mockReset()
-  vi.mocked(analysesApi.listRecommendations).mockReset()
-  vi.mocked(analysesApi.listReports).mockReset()
+  vi.clearAllMocks()
+  mockSuccessfulLoad()
 })
 
 describe('AnalysisResults', () => {
-  it('shows a loading state and then the Overview section by default', async () => {
-    mockSuccessfulLoad()
-    render(<AnalysisResults analysis={ANALYSIS} />)
+  it('shows the real header immediately and independently loads Overview score data', async () => {
+    render(resultsTree(<AnalysisResults analysis={ANALYSIS} />))
 
-    expect(screen.getByText(/loading results/i)).toBeInTheDocument()
-    expect(await screen.findByText('100.00')).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute(
-      'aria-selected',
-      'true',
+    expect(screen.getByRole('heading', { level: 1, name: 'Software Engineering' }))
+      .toBeInTheDocument()
+    expect(screen.getByText('exam.pdf')).toBeInTheDocument()
+    expect(screen.getByText(/^loading score…$/i)).toBeInTheDocument()
+    expect(
+      (
+        await screen.findAllByText('100.00%', {
+          selector: '.ui-score-ring-value',
+        })
+      ).length,
+    ).toBeGreaterThan(0)
+  })
+
+  it('keeps questions available when the score endpoint fails', async () => {
+    vi.mocked(analysesApi.getAnalysisScore).mockRejectedValue(
+      new ApiError(503, 'Score unavailable.'),
+    )
+    render(
+      resultsTree(<AnalysisResults analysis={ANALYSIS} section="questions" />),
+    )
+
+    expect(await screen.findByText('Explain a stack.')).toBeInTheDocument()
+    expect(screen.getByText(/score unavailable/i)).toBeInTheDocument()
+  })
+
+  it('keeps score and unrelated tabs available when questions fail', async () => {
+    vi.mocked(analysesApi.listQuestions).mockRejectedValue(
+      new ApiError(503, 'Questions unavailable.'),
+    )
+    render(resultsTree(<AnalysisResults analysis={ANALYSIS} />))
+
+    expect(
+      (
+        await screen.findAllByText('100.00%', {
+          selector: '.ui-score-ring-value',
+        })
+      ).length,
+    ).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('tab', { name: 'Questions' }))
+    expect(await screen.findByText(/questions unavailable/i)).toBeInTheDocument()
+  })
+
+  it('retries only the failed resource', async () => {
+    vi.mocked(analysesApi.listQuestions)
+      .mockRejectedValueOnce(new ApiError(503, 'Questions unavailable.'))
+      .mockResolvedValueOnce([QUESTION])
+    render(
+      resultsTree(<AnalysisResults analysis={ANALYSIS} section="questions" />),
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry' }))
+    expect(await screen.findByText('Explain a stack.')).toBeInTheDocument()
+    expect(analysesApi.listQuestions).toHaveBeenCalledTimes(2)
+    expect(analysesApi.getAnalysisScore).toHaveBeenCalledTimes(1)
+    expect(analysesApi.listFindings).toHaveBeenCalledTimes(1)
+  })
+
+  it('deduplicates in-flight resource requests during a Strict Mode remount', async () => {
+    render(
+      resultsTree(
+      <StrictMode>
+        <AnalysisResults analysis={ANALYSIS} />
+      </StrictMode>,
+      ),
+    )
+
+    expect(
+      (
+        await screen.findAllByText('100.00%', {
+          selector: '.ui-score-ring-value',
+        })
+      ).length,
+    ).toBeGreaterThan(0)
+    expect(analysesApi.listQuestions).toHaveBeenCalledTimes(1)
+    expect(analysesApi.listAssessmentRecords).toHaveBeenCalledTimes(1)
+    expect(analysesApi.getAnalysisScore).toHaveBeenCalledTimes(1)
+    expect(analysesApi.listReports).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores a stale response after the analysis id changes', async () => {
+    let resolveOldQuestions: ((questions: QuestionResponse[]) => void) | undefined
+    vi.mocked(analysesApi.listQuestions).mockImplementation((analysisId) => {
+      if (analysisId === 'analysis-1') {
+        return new Promise((resolve) => {
+          resolveOldQuestions = resolve
+        })
+      }
+      return Promise.resolve([
+        {
+          ...QUESTION,
+          id: 'q-2',
+          analysis_id: 'analysis-2',
+          number_label: 'Q2',
+          question_text: 'Explain a queue.',
+        },
+      ])
+    })
+    const { rerender } = render(
+      resultsTree(
+        <AnalysisResults analysis={ANALYSIS} section="questions" />,
+      ),
+    )
+    rerender(
+      resultsTree(
+        <AnalysisResults
+          analysis={{ ...ANALYSIS, id: 'analysis-2' }}
+          section="questions"
+        />,
+      ),
+    )
+
+    expect(await screen.findByText('Explain a queue.')).toBeInTheDocument()
+    resolveOldQuestions?.([QUESTION])
+    await waitFor(() =>
+      expect(screen.queryByText('Explain a stack.')).not.toBeInTheDocument(),
     )
   })
 
-  it('switches sections when a nav button is clicked', async () => {
-    mockSuccessfulLoad()
-    render(<AnalysisResults analysis={ANALYSIS} />)
-    await screen.findByText('100.00')
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Questions' }))
-
-    expect(screen.getByText('Explain a stack.')).toBeInTheDocument()
-    expect(screen.queryByText('100.00')).not.toBeInTheDocument()
-  })
-
-  it('shows the Report section with a Generate Report action and an honest empty state', async () => {
-    mockSuccessfulLoad()
-    render(<AnalysisResults analysis={ANALYSIS} />)
-    await screen.findByText('100.00')
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Report' }))
-
-    expect(screen.getByRole('button', { name: /generate report/i })).toBeInTheDocument()
-    expect(screen.getByText(/no reports have been generated yet/i)).toBeInTheDocument()
-  })
-
-  it('labels semantic findings and displays the faculty advisory notice', async () => {
-    mockSuccessfulLoad()
+  it('shows existing AI provenance without presenting numeric confidence', async () => {
     vi.mocked(analysesApi.listFindings).mockResolvedValue([
       {
         ...FINDING,
-        requirement_id: 'REQ002',
-        rule_id: 'RULE002',
-        requirement_name: 'CLO Relevance',
         evaluator_type: 'semantic_ai',
         confidence: 0.84,
         ai_provider: 'fake',
         ai_model: 'fake-semantic-v1',
-        prompt_template_version: 'semantic-rule002-v1',
+        prompt_template_version: 'semantic-rule-v1',
         kb_version: '1.0.0',
       },
     ])
-    render(<AnalysisResults analysis={ANALYSIS} />)
+    render(
+      resultsTree(
+        <AnalysisResults
+          analysis={ANALYSIS}
+          section="findings-recommendations"
+        />,
+      ),
+    )
 
-    expect(
-      await screen.findByText(/this ai evaluation is advisory/i),
-    ).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('tab', { name: 'Findings & Recommendations' }))
-    expect(screen.getByText('AI-Assisted')).toBeInTheDocument()
-    expect(screen.getByText(/confidence: 84%/i)).toBeInTheDocument()
-    expect(screen.getByText(/provider: fake/i)).toBeInTheDocument()
-    expect(screen.getByText(/prompt: semantic-rule002-v1/i)).toBeInTheDocument()
-    expect(screen.getByText(/kb: 1.0.0/i)).toBeInTheDocument()
-  })
-
-  it('shows an error message instead of a partial or broken view when a fetch fails', async () => {
-    vi.mocked(analysesApi.listQuestions).mockRejectedValue(new ApiError(500, 'Server unavailable.'))
-    vi.mocked(analysesApi.listClos).mockResolvedValue([])
-    vi.mocked(analysesApi.listTopics).mockResolvedValue([])
-    vi.mocked(analysesApi.listFindings).mockResolvedValue([])
-    vi.mocked(analysesApi.getAnalysisScore).mockResolvedValue(SCORE)
-    vi.mocked(analysesApi.listRecommendations).mockResolvedValue([])
-    vi.mocked(analysesApi.listReports).mockResolvedValue([])
-
-    render(<AnalysisResults analysis={ANALYSIS} />)
-
-    expect(await screen.findByText(/server unavailable/i)).toBeInTheDocument()
+    expect(await screen.findByText('AI-Assisted')).toBeInTheDocument()
+    expect(screen.getByText(/provider:/i)).toHaveTextContent('fake')
+    expect(screen.getByText(/model:/i)).toHaveTextContent('fake-semantic-v1')
+    expect(screen.queryByText(/confidence:/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/84%/i)).not.toBeInTheDocument()
   })
 })

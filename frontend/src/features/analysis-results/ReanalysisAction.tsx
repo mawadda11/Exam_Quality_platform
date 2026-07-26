@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { createReanalysis } from '../../api/analyses'
 import { ApiError } from '../../api/client'
+import { Alert } from '../../components/ui/Alert'
+import { Button } from '../../components/ui/Button'
+import { Card } from '../../components/ui/Card'
 import type { AnalysisResponse } from '../../types/api'
 
 interface ReanalysisActionProps {
@@ -31,11 +34,11 @@ export function ReanalysisAction({ analysisId, onCreated }: ReanalysisActionProp
   }
 
   return (
-    <div className="reanalysis-action">
-      <h4>Revised Exam?</h4>
+    <Card as="section" className="reanalysis-action">
+      <h2>Analyze a revised exam</h2>
       <p>
-        Create a linked reanalysis for a revised examination. This analysis and its report(s)
-        stay exactly as they are.
+        Create a reanalysis linked to analysis <bdi>{analysisId}</bdi>. This analysis and its
+        reports remain unchanged.
       </p>
       <label className="reanalysis-reuse-option">
         <input
@@ -45,14 +48,18 @@ export function ReanalysisAction({ analysisId, onCreated }: ReanalysisActionProp
         />
         Reuse the previous TP-153 (uncheck to upload a new one)
       </label>
-      <button type="button" onClick={() => void handleCreate()} disabled={isCreating}>
-        {isCreating ? 'Creating…' : 'Create Reanalysis'}
-      </button>
+      <Button
+        onClick={() => void handleCreate()}
+        isLoading={isCreating}
+        loadingLabel="Creating…"
+      >
+        Create Reanalysis
+      </Button>
       {error && (
-        <p className="field-error" role="alert">
+        <Alert variant="error" title="Could not create reanalysis">
           {error}
-        </p>
+        </Alert>
       )}
-    </div>
+    </Card>
   )
 }

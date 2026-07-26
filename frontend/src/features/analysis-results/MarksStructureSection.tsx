@@ -1,25 +1,43 @@
 import type { FindingResponse } from '../../types/api'
 import { MARKS_STRUCTURE_DIMENSIONS } from './dimensions'
+import type { EvidenceLookupKind } from './EvidenceDrillDown'
 import { FindingCard } from './FindingCard'
 import type { EvidenceLookups } from './lookups'
 
 interface MarksStructureSectionProps {
   findings: FindingResponse[]
   lookups: EvidenceLookups
+  unavailableLookups?: ReadonlySet<EvidenceLookupKind>
 }
 
-export function MarksStructureSection({ findings, lookups }: MarksStructureSectionProps) {
+export function MarksStructureSection({
+  findings,
+  lookups,
+  unavailableLookups,
+}: MarksStructureSectionProps) {
   const relevant = findings.filter((finding) => MARKS_STRUCTURE_DIMENSIONS.has(finding.dimension))
 
   return (
-    <div className="marks-structure-section">
-      <h3>Marks & Structure</h3>
+    <div className="marks-structure-section results-section-stack">
+      <div className="results-section-heading">
+        <div>
+          <h2>Marks &amp; Structure</h2>
+          <p>Governed findings returned by the existing evaluation pipeline.</p>
+        </div>
+      </div>
       {relevant.length === 0 ? (
-        <p className="notice">No marks or structure findings are available yet.</p>
+        <p className="results-empty-state">
+          No marks or structure findings are available.
+        </p>
       ) : (
         <ul className="finding-list">
           {relevant.map((finding) => (
-            <FindingCard key={finding.id} finding={finding} lookups={lookups} />
+            <FindingCard
+              key={finding.id}
+              finding={finding}
+              lookups={lookups}
+              unavailableLookups={unavailableLookups}
+            />
           ))}
         </ul>
       )}

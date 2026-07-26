@@ -1,8 +1,18 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
-import type { CloResponse, FindingResponse, TopicResponse } from '../../types/api'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import type {
+  AssessmentRecordResponse,
+  CloResponse,
+  FindingResponse,
+  TopicResponse,
+} from '../../types/api'
 import { AlignmentCoverageSection } from './AlignmentCoverageSection'
 import { buildLookups } from './lookups'
+import type { ResultResource } from './useAnalysisResultsData'
+
+function ready<T>(data: T): ResultResource<T> {
+  return { status: 'ready', data }
+}
 
 function finding(overrides: Partial<FindingResponse>): FindingResponse {
   return {
@@ -44,44 +54,84 @@ const CLOS: CloResponse[] = [
 ]
 
 const TOPICS: TopicResponse[] = []
+const ASSESSMENTS: AssessmentRecordResponse[] = [
+  {
+    id: 'assessment-1',
+    analysis_id: 'analysis-1',
+    method: 'Written examination',
+    activity: 'Midterm',
+    percentage: 30,
+    page_number: 4,
+    confidence: 1,
+    geometry: null,
+    created_at: '2026-01-01T00:00:00Z',
+  },
+]
+
+function renderSection(
+  overrides: Partial<React.ComponentProps<typeof AlignmentCoverageSection>> = {},
+) {
+  const onRetry = vi.fn()
+  render(
+    <AlignmentCoverageSection
+      findings={ready([])}
+      clos={ready(CLOS)}
+      topics={ready(TOPICS)}
+      assessmentRecords={ready(ASSESSMENTS)}
+      lookups={buildLookups(CLOS, TOPICS, [])}
+      unavailableLookups={new Set()}
+      onRetry={onRetry}
+      {...overrides}
+    />,
+  )
+  return onRetry
+}
 
 describe('AlignmentCoverageSection', () => {
-  it('only shows findings whose dimension belongs to Alignment & Coverage', () => {
-    const findings = [
-      finding({ id: 'f-clo', dimension: 'CLO Alignment', requirement_name: 'Question-to-CLO Mapping' }),
-      finding({ id: 'f-marks', dimension: 'Marks and Totals', requirement_name: 'Correct Total Marks' }),
-    ]
-    render(
-      <AlignmentCoverageSection
-        findings={findings}
-        clos={CLOS}
-        topics={TOPICS}
-        lookups={buildLookups(CLOS, TOPICS, [])}
-      />,
-    )
+  it('shows only alignment findings and source-faithful extracted entities', () => {
+    renderSection({
+      findings: ready([
+        finding({ id: 'f-clo', dimension: 'CLO Alignment' }),
+        finding({
+          id: 'f-marks',
+          dimension: 'Marks and Totals',
+          requirement_name: 'Correct Total Marks',
+        }),
+      ]),
+    })
 
     expect(screen.getByText('Question-to-CLO Mapping')).toBeInTheDocument()
     expect(screen.queryByText('Correct Total Marks')).not.toBeInTheDocument()
-  })
-
-  it('shows the honest empty state when no alignment/coverage findings exist yet', () => {
-    render(
-      <AlignmentCoverageSection findings={[]} clos={[]} topics={[]} lookups={buildLookups([], [], [])} />,
-    )
-    expect(screen.getByText(/no alignment or coverage findings/i)).toBeInTheDocument()
-  })
-
-  it('always shows the raw CLO/topic reference lists alongside the findings', () => {
-    render(
-      <AlignmentCoverageSection
-        findings={[]}
-        clos={CLOS}
-        topics={TOPICS}
-        lookups={buildLookups(CLOS, TOPICS, [])}
-      />,
-    )
     expect(screen.getByText('CLO1')).toBeInTheDocument()
-    expect(screen.getByText('Explain core concepts.')).toBeInTheDocument()
+    expect(screen.getByText('Written examination')).toBeInTheDocument()
+    expect(screen.getByText(/source evidence only/i)).toBeInTheDocument()
+  })
+
+  it('keeps successful subsections visible when assessment records fail and retries only them', () => {
+    const onRetry = renderSection({
+      assessmentRecords: {
+        status: 'error',
+        message: 'Assessment records unavailable.',
+      },
+    })
+
+    expect(screen.getByText('CLO1')).toBeInTheDocument()
+    expect(screen.getByText(/assessment records unavailable/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(onRetry).toHaveBeenCalledWith('assessmentRecords')
+  })
+
+  it('shows independent empty states without inventing mappings', () => {
+    renderSection({
+      findings: ready([]),
+      clos: ready([]),
+      topics: ready([]),
+      assessmentRecords: ready([]),
+    })
+
+    expect(screen.getByText(/no alignment or coverage findings/i)).toBeInTheDocument()
+    expect(screen.getByText(/no clos were extracted/i)).toBeInTheDocument()
     expect(screen.getByText(/no topics were extracted/i)).toBeInTheDocument()
+    expect(screen.getByText(/no assessment records were extracted/i)).toBeInTheDocument()
   })
 })

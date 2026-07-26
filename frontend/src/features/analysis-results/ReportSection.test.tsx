@@ -27,79 +27,87 @@ function report(overrides: Partial<ReportResponse> = {}): ReportResponse {
   }
 }
 
+function renderSection(
+  reports: React.ComponentProps<typeof ReportSection>['reports'] = {
+    status: 'ready',
+    data: [],
+  },
+  onRefreshReports = vi.fn().mockResolvedValue([]),
+) {
+  const onRetryReports = vi.fn()
+  render(
+    <ReportSection
+      analysisId="analysis-1"
+      reports={reports}
+      onRetryReports={onRetryReports}
+      onRefreshReports={onRefreshReports}
+    />,
+  )
+  return { onRetryReports, onRefreshReports }
+}
+
 beforeEach(() => {
-  vi.mocked(analysesApi.generateReport).mockReset()
-  vi.mocked(analysesApi.listReports).mockReset()
-  vi.mocked(analysesApi.downloadReportFile).mockReset()
-  vi.mocked(analysesApi.downloadBlob).mockReset()
+  vi.clearAllMocks()
 })
 
 describe('ReportSection', () => {
-  it('shows an honest empty state when no reports exist yet', () => {
-    render(<ReportSection analysisId="analysis-1" initialReports={[]} />)
-    expect(screen.getByText(/no reports have been generated yet/i)).toBeInTheDocument()
+  it('keeps Generate Report usable when report history failed', () => {
+    const { onRetryReports } = renderSection({
+      status: 'error',
+      message: 'Report history unavailable.',
+    })
+
+    expect(screen.getByRole('button', { name: /generate report/i })).toBeEnabled()
+    expect(screen.getByText(/report history unavailable/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /retry report history/i }))
+    expect(onRetryReports).toHaveBeenCalled()
   })
 
-  it('shows the reports passed in immediately, without waiting on a network call', () => {
-    render(<ReportSection analysisId="analysis-1" initialReports={[report()]} />)
-    expect(screen.getByText(/75\.00/)).toBeInTheDocument()
-    expect(screen.getByText(/kb version 1\.0/i)).toBeInTheDocument()
-  })
+  it('generates for the current analysis and refreshes only report history', async () => {
+    vi.mocked(analysesApi.generateReport).mockResolvedValue(report())
+    const onRefreshReports = vi.fn().mockResolvedValue([report()])
+    renderSection({ status: 'ready', data: [] }, onRefreshReports)
 
-  it('generates a report and refreshes the list to include it', async () => {
-    vi.mocked(analysesApi.generateReport).mockResolvedValue(report({ id: 'report-new' }))
-    vi.mocked(analysesApi.listReports).mockResolvedValue([report({ id: 'report-new' })])
-
-    render(<ReportSection analysisId="analysis-1" initialReports={[]} />)
     fireEvent.click(screen.getByRole('button', { name: /generate report/i }))
 
-    expect(await screen.findByText(/75\.00/)).toBeInTheDocument()
+    await vi.waitFor(() => expect(onRefreshReports).toHaveBeenCalledTimes(1))
     expect(analysesApi.generateReport).toHaveBeenCalledWith('analysis-1')
-    expect(analysesApi.listReports).toHaveBeenCalledWith('analysis-1')
+    expect(analysesApi.listReports).not.toHaveBeenCalled()
   })
 
-  it('shows an error message when report generation fails', async () => {
-    vi.mocked(analysesApi.generateReport).mockRejectedValue(
-      new ApiError(409, 'A report can only be generated for a completed analysis.'),
+  it('shows generation and history-refresh failures distinctly', async () => {
+    vi.mocked(analysesApi.generateReport).mockResolvedValue(report())
+    renderSection(
+      { status: 'ready', data: [] },
+      vi.fn().mockRejectedValue(new ApiError(503, 'History unavailable.')),
     )
 
-    render(<ReportSection analysisId="analysis-1" initialReports={[]} />)
     fireEvent.click(screen.getByRole('button', { name: /generate report/i }))
-
-    expect(await screen.findByText(/can only be generated for a completed analysis/i)).toBeInTheDocument()
+    expect(await screen.findByText(/report was generated, but report history/i))
+      .toBeInTheDocument()
   })
 
-  it('downloads a report by fetching the blob and triggering a save', async () => {
+  it('downloads an analysis-scoped report', async () => {
     const blob = new Blob(['%PDF-1.4'], { type: 'application/pdf' })
     vi.mocked(analysesApi.downloadReportFile).mockResolvedValue(blob)
+    renderSection({ status: 'ready', data: [report()] })
 
-    render(<ReportSection analysisId="analysis-1" initialReports={[report()]} />)
-    fireEvent.click(screen.getByRole('button', { name: /download/i }))
+    fireEvent.click(screen.getByRole('button', { name: /download pdf/i }))
 
-    await vi.waitFor(() => {
-      expect(analysesApi.downloadReportFile).toHaveBeenCalledWith('report-1')
+    await vi.waitFor(() =>
+      expect(analysesApi.downloadReportFile).toHaveBeenCalledWith('report-1'),
+    )
+    expect(analysesApi.downloadBlob).toHaveBeenCalledWith(
+      blob,
+      'report-report-1.pdf',
+    )
+  })
+
+  it('shows Insufficient Evidence from an existing report record', () => {
+    renderSection({
+      status: 'ready',
+      data: [report({ score: null, score_label: 'Insufficient Evidence' })],
     })
-    expect(analysesApi.downloadBlob).toHaveBeenCalledWith(blob, 'report-report-1.pdf')
-  })
-
-  it('shows an error message when the download fails', async () => {
-    vi.mocked(analysesApi.downloadReportFile).mockRejectedValue(
-      new ApiError(404, 'Report not found.'),
-    )
-
-    render(<ReportSection analysisId="analysis-1" initialReports={[report()]} />)
-    fireEvent.click(screen.getByRole('button', { name: /download/i }))
-
-    expect(await screen.findByText(/report not found/i)).toBeInTheDocument()
-  })
-
-  it('shows Insufficient Evidence for a report with no numeric score', () => {
-    render(
-      <ReportSection
-        analysisId="analysis-1"
-        initialReports={[report({ score: null, score_label: 'Insufficient Evidence' })]}
-      />,
-    )
     expect(screen.getByText(/insufficient evidence/i)).toBeInTheDocument()
   })
 })

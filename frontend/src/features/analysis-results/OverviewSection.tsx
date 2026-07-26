@@ -1,4 +1,11 @@
-import type { AnalysisResponse, AnalysisScoreResponse } from '../../types/api'
+import { Card } from '../../components/ui/Card'
+import { ScoreRing } from '../../components/ui/ScoreRing'
+import { StatusBadge } from '../../components/ui/StatusBadge'
+import type {
+  AcademicStatus,
+  AnalysisResponse,
+  AnalysisScoreResponse,
+} from '../../types/api'
 import { ReanalysisAction } from './ReanalysisAction'
 
 interface OverviewSectionProps {
@@ -7,43 +14,55 @@ interface OverviewSectionProps {
   onReanalysisCreated?: (reanalysis: AnalysisResponse) => void
 }
 
-export function OverviewSection({ analysis, score, onReanalysisCreated }: OverviewSectionProps) {
+function statusCounts(score: AnalysisScoreResponse): [AcademicStatus, number][] {
+  return [
+    ['Satisfied', score.satisfied_count],
+    ['Partially Satisfied', score.partially_satisfied_count],
+    ['Not Satisfied', score.not_satisfied_count],
+    ['Not Verified', score.not_verified_count],
+    ['Not Applicable', score.not_applicable_count],
+  ]
+}
+
+export function OverviewSection({
+  analysis,
+  score,
+  onReanalysisCreated,
+}: OverviewSectionProps) {
   return (
-    <div className="overview-section">
-      <h3>Overview</h3>
-      <p>
-        {analysis.course.code} — {analysis.exam_type} ({analysis.term})
-      </p>
-      {analysis.predecessor_analysis_id && (
-        <p className="notice">
-          This is a reanalysis linked to a previous analysis - the earlier results and any of its
-          reports remain unchanged and available.
-        </p>
-      )}
+    <div className="overview-section results-section-stack">
+      <div className="results-section-heading">
+        <div>
+          <h2>Overview</h2>
+          <p>Backend score and approved academic-status distribution.</p>
+        </div>
+      </div>
 
-      <div className="score-panel">
-        {score.score !== null ? (
-          <p className="overall-score">
-            Overall Exam Quality Score: <strong>{score.score}</strong>
-            <span className="score-denominator">
-              {' '}
-              (based on {score.denominator} verified applicable rule
-              {score.denominator === 1 ? '' : 's'})
-            </span>
-          </p>
-        ) : (
-          <p className="overall-score overall-score-insufficient" role="status">
-            {score.label ?? 'Insufficient Evidence'}
-          </p>
-        )}
+      <div className="overview-score-layout">
+        <Card as="section" className="overview-score-card">
+          <ScoreRing
+            score={score.score}
+            denominator={score.denominator}
+            emptyLabel={score.label ?? 'Insufficient Evidence'}
+          />
+        </Card>
 
-        <ul className="status-counts">
-          <li>Satisfied: {score.satisfied_count}</li>
-          <li>Partially Satisfied: {score.partially_satisfied_count}</li>
-          <li>Not Satisfied: {score.not_satisfied_count}</li>
-          <li>Not Verified: {score.not_verified_count}</li>
-          <li>Not Applicable: {score.not_applicable_count}</li>
-        </ul>
+        <Card as="section" className="overview-status-card">
+          <h3>Academic-status counts</h3>
+          <ul className="status-count-grid">
+            {statusCounts(score).map(([status, count]) => (
+              <li key={status}>
+                <strong>{count}</strong>
+                <StatusBadge status={status} />
+              </li>
+            ))}
+          </ul>
+          <p className="results-supporting-text">
+            The score denominator contains {score.denominator} verified applicable{' '}
+            {score.denominator === 1 ? 'rule' : 'rules'}. Not Verified and Not Applicable
+            remain visible but are excluded from scoring.
+          </p>
+        </Card>
       </div>
 
       {onReanalysisCreated && (
