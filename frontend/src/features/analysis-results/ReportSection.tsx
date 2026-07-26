@@ -39,10 +39,12 @@ export function ReportSection({
   const [isGenerating, setIsGenerating] = useState(false)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   async function handleGenerate(): Promise<void> {
     setIsGenerating(true)
     setError(null)
+    setSuccessMessage(null)
     try {
       await generateReport(analysisId)
     } catch (generateError) {
@@ -57,6 +59,7 @@ export function ReportSection({
 
     try {
       await onRefreshReports()
+      setSuccessMessage('The report was generated and report history was refreshed.')
     } catch {
       setError(
         'The report was generated, but report history could not be refreshed. Retry the history request.',
@@ -104,6 +107,11 @@ export function ReportSection({
       {error && (
         <Alert variant="error" title="Report action could not be completed">
           {error}
+        </Alert>
+      )}
+      {successMessage && (
+        <Alert variant="success" title="Report generated">
+          {successMessage}
         </Alert>
       )}
 

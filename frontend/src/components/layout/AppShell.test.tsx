@@ -22,6 +22,11 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: 'Analyses' })).not.toHaveAttribute('aria-current')
     expect(screen.getByRole('link', { name: 'New Analysis' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Dashboard content' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Skip to main content' })).toHaveAttribute(
+      'href',
+      '#main-content',
+    )
+    expect(screen.getByRole('main')).toHaveAttribute('tabindex', '-1')
   })
 
   it('keeps the temporary development identity explicit without auth controls', () => {

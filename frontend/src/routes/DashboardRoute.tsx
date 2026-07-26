@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { Button } from '../components/ui/Button'
 import { PageHeader } from '../components/ui/PageHeader'
 import { PageState } from '../components/ui/PageState'
 import { AnalysisHistoryTable } from '../features/analysis-history/AnalysisHistoryTable'
@@ -28,7 +29,16 @@ export function DashboardRoute() {
         <PageState state="loading" title="Loading dashboard" message="Retrieving your analyses…" />
       )}
       {state.status === 'error' && (
-        <PageState state="error" title="Could not load dashboard" message={state.message} />
+        <PageState
+          state="error"
+          title="Could not load dashboard"
+          message={state.message}
+          action={
+            <Button variant="secondary" onClick={state.retry}>
+              Retry dashboard
+            </Button>
+          }
+        />
       )}
       {state.status === 'ready' && (
         <>

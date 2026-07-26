@@ -3,6 +3,24 @@
   background: var(--color-canvas);
 }
 
+.skip-link {
+  position: fixed;
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-2);
+  z-index: 100;
+  padding: var(--space-2) var(--space-4);
+  color: var(--color-text-inverse);
+  font-weight: 700;
+  text-decoration: none;
+  background: var(--color-brand-navy);
+  border-radius: var(--radius-md);
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
 .app-sidebar {
   position: fixed;
   inset-block: 0;
@@ -200,6 +218,7 @@
   .mobile-navigation {
     display: block;
   }
+
 }
 
 @media (max-width: 36rem) {

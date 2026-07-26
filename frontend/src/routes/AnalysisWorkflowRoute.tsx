@@ -8,6 +8,7 @@ import {
 } from 'react-router-dom'
 import { getAnalysis } from '../api/analyses'
 import { ApiError } from '../api/client'
+import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { PageHeader } from '../components/ui/PageHeader'
 import { PageState } from '../components/ui/PageState'
@@ -68,6 +69,22 @@ export function AnalysisRouteLayout() {
     )
   }, [])
 
+  async function retryAnalysisLoad(): Promise<void> {
+    if (!analysisId || state.status !== 'error') return
+    setState({ status: 'loading' })
+    try {
+      const analysis = await getAnalysis(analysisId)
+      setState({ status: 'ready', analysis })
+    } catch (error) {
+      setState({
+        status: 'error',
+        analysisId,
+        message:
+          error instanceof ApiError ? error.detail : 'Could not load this analysis.',
+      })
+    }
+  }
+
   if (!analysisId) {
     return (
       <div className="route-content-compact">
@@ -105,9 +122,14 @@ export function AnalysisRouteLayout() {
           title="Could not open analysis"
           message={state.message}
           action={
-            <Link className="ui-button ui-button--secondary" to="/analyses">
-              Return to Analyses
-            </Link>
+            <div className="route-actions">
+              <Button variant="secondary" onClick={() => void retryAnalysisLoad()}>
+                Retry analysis
+              </Button>
+              <Link className="ui-button ui-button--secondary" to="/analyses">
+                Return to Analyses
+              </Link>
+            </div>
           }
         />
       </div>

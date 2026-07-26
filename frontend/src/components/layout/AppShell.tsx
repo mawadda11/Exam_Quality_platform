@@ -3,12 +3,16 @@ import { DevIdentityBar } from '../DevIdentityBar'
 import { BrandMark } from '../ui/BrandMark'
 import { MobileNavigation } from './MobileNavigation'
 import { PrimaryNavigation } from './PrimaryNavigation'
+import { RouteFocusManager } from './RouteFocusManager'
 
 export function AppShell() {
   const location = useLocation()
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">
+        Skip to main content
+      </a>
       <aside className="app-sidebar">
         <BrandMark />
         <PrimaryNavigation />
@@ -19,7 +23,8 @@ export function AppShell() {
         <MobileNavigation key={location.pathname} />
       </header>
 
-      <main className="app-workspace" id="main-content">
+      <main className="app-workspace" id="main-content" tabIndex={-1}>
+        <RouteFocusManager />
         <DevIdentityBar />
         <div className="app-route-content">
           <Outlet />

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { listAnalyses } from '../../api/analyses'
 import { ApiError } from '../../api/client'
 import type { AnalysisResponse } from '../../types/api'
@@ -26,26 +26,46 @@ function loadAnalysesOnce(): Promise<AnalysisResponse[]> {
   return request
 }
 
-export function useAnalyses(): AnalysesLoadState {
-  const [state, setState] = useState<AnalysesLoadState>({ status: 'loading' })
+export type AnalysesLoadResult = AnalysesLoadState & { retry: () => void }
 
-  useEffect(() => {
-    let cancelled = false
-    loadAnalysesOnce()
+export function useAnalyses(): AnalysesLoadResult {
+  const [state, setState] = useState<AnalysesLoadState>({ status: 'loading' })
+  const mountedRef = useRef(false)
+  const requestTokenRef = useRef(0)
+
+  const load = useCallback((): void => {
+    const token = requestTokenRef.current + 1
+    requestTokenRef.current = token
+
+    void loadAnalysesOnce()
       .then((analyses) => {
-        if (!cancelled) setState({ status: 'ready', analyses })
+        if (mountedRef.current && requestTokenRef.current === token) {
+          setState({ status: 'ready', analyses })
+        }
       })
       .catch((error: unknown) => {
-        if (cancelled) return
-        setState({
-          status: 'error',
-          message: error instanceof ApiError ? error.detail : 'Could not load analyses.',
-        })
+        if (mountedRef.current && requestTokenRef.current === token) {
+          setState({
+            status: 'error',
+            message: error instanceof ApiError ? error.detail : 'Could not load analyses.',
+          })
+        }
       })
-    return () => {
-      cancelled = true
-    }
   }, [])
 
-  return state
+  useEffect(() => {
+    mountedRef.current = true
+    load()
+    return () => {
+      mountedRef.current = false
+    }
+  }, [load])
+
+  const retry = useCallback((): void => {
+    if (state.status !== 'error') return
+    setState({ status: 'loading' })
+    load()
+  }, [load, state.status])
+
+  return { ...state, retry }
 }

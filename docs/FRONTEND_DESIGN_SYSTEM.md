@@ -28,6 +28,11 @@ resource states, client-side finding filters, assessment-record source evidence,
 refresh, and contextual reanalysis. It does not add mappings, derived totals, score thresholds,
 semantic evaluators, or Extraction Review behavior.
 
+Phase 6 completes frontend alignment through a six-viewport live audit, keyboard and focus
+acceptance, scoped retry coverage, and final responsive/accessibility corrections. It does not
+change application workflow, APIs, packages, academic behavior, or the M3-M5 Extraction Review
+contract.
+
 The design system exists so future Codex and Claude Code sessions can extend the interface without
 reinterpreting screenshots, inventing business behavior, or creating inconsistent component
 variants.
@@ -530,7 +535,56 @@ resource is refreshed. Report generation remains available when history cannot b
 history failure shown independently. Reanalysis remains a contextual action for the current
 analysis and uses the existing API.
 
-### Currently implemented after Phase 5
+### Phase 6 acceptance audit
+
+The live frontend was inspected in Microsoft Edge at:
+
+- `360 × 800`;
+- `390 × 844`;
+- `768 × 1024`;
+- `1024 × 768`;
+- `1440 × 1000`;
+- `1920 × 1080`.
+
+Dashboard, New Analysis, completed-analysis Overview, and Findings & Recommendations were captured
+at every viewport using the local API and safe existing test data. The remaining workflow,
+component, failure, retry, upload, processing, report, and reanalysis states were exercised through
+focused React Testing Library coverage and the complete frontend regression suite.
+
+No audited viewport produced unintended page-level horizontal overflow. At widths through
+`64rem` (including `1024px`), the desktop sidebar is replaced by the mobile header and
+keyboard-operable navigation drawer. At `1440px` and `1920px`, the fixed desktop sidebar and wide
+workspace remain active. Forms, summaries, upload cards, result metadata, filters, and status
+counts collapse to one column where required. Wide native tables and result tabs retain deliberate,
+labelled horizontal scrolling rather than shrinking or changing their data semantics.
+
+The audit verified and corrected:
+
+- a missing skip link and missing focus movement after page-level route changes;
+- potential focus theft during result-tab URL changes;
+- missing in-place retry actions for dashboard, history, and shared analysis-load failures;
+- result tabs being hidden beneath the `4.5rem` sticky mobile header while scrolling;
+- missing accessible success feedback after report generation and report-history refresh.
+
+Page-level route changes now focus the new page's `h1` without scrolling or focusing on the first
+render. URLs differing only by the result-tab segment are treated as the same page, so click and
+Arrow/Home/End tab interaction retains tab focus. The skip link targets the focusable main
+landmark. Retry controls are exposed only after their request fails and repeat only that failed
+list or analysis request. Successful dashboard metrics and result resources are not re-requested
+by those retries.
+
+Keyboard coverage includes desktop and mobile primary navigation, visible focus, the mobile modal
+focus boundary, Escape dismissal and focus return, result tabs, validation-summary focus, native
+file inputs, upload/retry actions, report/reanalysis actions, and focusable labelled table regions.
+Alerts and loading states retain their existing live-region semantics; successful report
+generation now has an explicit polite status announcement.
+
+Mixed Arabic/English source content continues to use `dir="auto"`, while course codes, question
+labels, filenames, analysis/rule/requirement identifiers, evidence references, and version values
+use bidi isolation. New Phase 6 CSS uses logical properties and does not introduce a global RTL
+interface or translate source content.
+
+### Currently implemented after Phase 6
 
 - Central visual tokens and shared base/component CSS.
 - Eleven shared UI primitives documented above.
@@ -562,10 +616,29 @@ analysis and uses the existing API.
 - Client-side finding filters, structured evidence expansion, and conditional existing provenance.
 - Analysis-scoped report history and generation with reports-only refresh.
 - Contextual reanalysis presentation for the current analysis.
+- Keyboard skip link and page-level route focus management that excludes result-tab-only changes.
+- Scoped dashboard, history, and analysis-load retry without repeating successful requests.
+- Mobile-header-aware sticky result tabs.
+- Accessible report-generation success feedback.
+- Six-viewport responsive and overflow acceptance.
 
 ### Planned frontend-alignment work
 
-- Phase 6 final frontend accessibility, responsive, documentation, and acceptance-test polish.
+Frontend Alignment Phases 1-6 are complete. No additional frontend workflow is authorized before
+its documented backend milestone, except a separately approved defect fix.
+
+### Known Version 1 frontend limitations
+
+- Development identity is a temporary header adapter, not authentication.
+- Option A can leave an abandoned queued record when a user does not complete both uploads.
+- Browser-selected files that have not been uploaded do not survive refresh.
+- Uploaded files cannot be replaced or deleted because the current API has no such contract.
+- Narrow screens preserve complex tables and result tabs through horizontal scrolling.
+- The application interface remains English; Arabic support preserves extracted source content and
+  mixed-direction display rather than providing full interface localization.
+- Responsive acceptance is supported by automated semantic/behavior tests plus a documented manual
+  browser viewport matrix; no additional browser-automation package was introduced.
+- Extraction Review and its review-specific states remain reserved for M3-M5.
 
 ### M3-M5 reserved states - not implemented
 

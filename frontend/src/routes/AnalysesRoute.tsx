@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { Button } from '../components/ui/Button'
 import { PageHeader } from '../components/ui/PageHeader'
 import { PageState } from '../components/ui/PageState'
 import { AnalysisHistoryTable } from '../features/analysis-history/AnalysisHistoryTable'
@@ -22,7 +23,16 @@ export function AnalysesRoute() {
         <PageState state="loading" title="Loading analyses" message="Retrieving your analyses…" />
       )}
       {state.status === 'error' && (
-        <PageState state="error" title="Could not load analyses" message={state.message} />
+        <PageState
+          state="error"
+          title="Could not load analyses"
+          message={state.message}
+          action={
+            <Button variant="secondary" onClick={state.retry}>
+              Retry analyses
+            </Button>
+          }
+        />
       )}
       {state.status === 'ready' && state.analyses.length === 0 && (
         <PageState

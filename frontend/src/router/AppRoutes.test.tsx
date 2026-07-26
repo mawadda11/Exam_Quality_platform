@@ -179,15 +179,41 @@ describe('AppRoutes', () => {
   })
 
   it('shows an API-derived dashboard error without requesting metric details', async () => {
-    vi.mocked(analysesApi.listAnalyses).mockRejectedValue(
-      new ApiError(503, 'Analysis history is temporarily unavailable.'),
-    )
+    vi.mocked(analysesApi.listAnalyses)
+      .mockRejectedValueOnce(
+        new ApiError(503, 'Analysis history is temporarily unavailable.'),
+      )
+      .mockResolvedValueOnce([COMPLETED_ANALYSIS])
 
     renderAt('/dashboard')
 
     expect(await screen.findByText('Analysis history is temporarily unavailable.'))
       .toBeInTheDocument()
     expect(analysesApi.listAnalyses).toHaveBeenCalledTimes(1)
+    expect(analysesApi.getAnalysis).not.toHaveBeenCalled()
+    expect(analysesApi.getAnalysisScore).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry dashboard' }))
+    expect(await screen.findByRole('heading', { name: 'Total analyses' }))
+      .toBeInTheDocument()
+    expect(analysesApi.listAnalyses).toHaveBeenCalledTimes(2)
+    expect(analysesApi.getAnalysis).not.toHaveBeenCalled()
+    expect(analysesApi.getAnalysisScore).not.toHaveBeenCalled()
+  })
+
+  it('retries only a failed analysis-history request', async () => {
+    vi.mocked(analysesApi.listAnalyses)
+      .mockRejectedValueOnce(new ApiError(503, 'History unavailable.'))
+      .mockResolvedValueOnce([QUEUED_ANALYSIS])
+
+    renderAt('/analyses')
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Retry analyses' }),
+    )
+
+    expect(await screen.findByText('CPIT-450')).toBeInTheDocument()
+    expect(analysesApi.listAnalyses).toHaveBeenCalledTimes(2)
     expect(analysesApi.getAnalysis).not.toHaveBeenCalled()
     expect(analysesApi.getAnalysisScore).not.toHaveBeenCalled()
   })
@@ -235,6 +261,24 @@ describe('AppRoutes', () => {
     expect(screen.getByRole('tab', { name: 'Report' })).toHaveAttribute(
       'aria-selected',
       'true',
+    )
+  })
+
+  it('preserves result-tab focus while the tab URL changes', async () => {
+    vi.mocked(analysesApi.getAnalysis).mockResolvedValue(COMPLETED_ANALYSIS)
+    renderAt('/analyses/analysis-1/results/questions')
+    await screen.findByText('Explain a stack.')
+
+    const questionsTab = screen.getByRole('tab', { name: 'Questions' })
+    questionsTab.focus()
+    fireEvent.keyDown(questionsTab, { key: 'ArrowRight' })
+
+    const alignmentTab = screen.getByRole('tab', {
+      name: 'Alignment & Coverage',
+    })
+    await waitFor(() => expect(alignmentTab).toHaveFocus())
+    expect(screen.getByLabelText('Current route')).toHaveTextContent(
+      '/analyses/analysis-1/results/alignment-coverage',
     )
   })
 
@@ -371,6 +415,23 @@ describe('AppRoutes', () => {
 
     expect(await screen.findByText('Analysis not found.')).toBeInTheDocument()
     expect(screen.queryByText('100.00%')).not.toBeInTheDocument()
+  })
+
+  it('retries only a failed shared analysis request', async () => {
+    vi.mocked(analysesApi.getAnalysis)
+      .mockRejectedValueOnce(new ApiError(503, 'Analysis temporarily unavailable.'))
+      .mockResolvedValueOnce(COMPLETED_ANALYSIS)
+
+    renderAt('/analyses/analysis-1/results/overview')
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Retry analysis' }),
+    )
+
+    expect(
+      await screen.findByRole('heading', { name: 'Software Engineering' }),
+    ).toBeInTheDocument()
+    expect(analysesApi.getAnalysis).toHaveBeenCalledTimes(2)
   })
 
   it('shows a safe fallback for an unknown application route', () => {

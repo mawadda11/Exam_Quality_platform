@@ -71,6 +71,8 @@ describe('ReportSection', () => {
     fireEvent.click(screen.getByRole('button', { name: /generate report/i }))
 
     await vi.waitFor(() => expect(onRefreshReports).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText(/report history was refreshed/i))
+      .toBeInTheDocument()
     expect(analysesApi.generateReport).toHaveBeenCalledWith('analysis-1')
     expect(analysesApi.listReports).not.toHaveBeenCalled()
   })

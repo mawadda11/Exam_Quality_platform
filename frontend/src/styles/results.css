@@ -452,6 +452,12 @@
   }
 }
 
+@media (max-width: 64rem) {
+  .analysis-results > .ui-tabs {
+    inset-block-start: 4.5rem;
+  }
+}
+
 @media (max-width: 48rem) {
   .results-header,
   .results-content-card,
