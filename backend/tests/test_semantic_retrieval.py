@@ -207,7 +207,7 @@ def test_chroma_rebuild_deletes_same_version_then_upserts_with_filtered_query(
     collection = _FakeCollection()
     client = _FakeChromaClient(collection)
     monkeypatch.setattr(
-        "app.services.knowledge_base.vector_store.chromadb.HttpClient",
+        "app.services.knowledge_base.vector_store._build_chroma_http_client",
         lambda *, host, port: client,
     )
     store = ChromaVectorStore(host="chromadb", port=8000)

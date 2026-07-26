@@ -152,9 +152,7 @@ def _assert_immutable_fields(
     for candidate in candidate_items:
         original = original_by_id[candidate.source_record_id]
         changed = [
-            field
-            for field in fields
-            if getattr(candidate, field) != getattr(original, field)
+            field for field in fields if getattr(candidate, field) != getattr(original, field)
         ]
         if changed:
             raise ExtractionReviewSourceFaithfulnessError(
@@ -523,9 +521,7 @@ def _apply_confirmed_snapshot(
     excluded_questions: list[ExtractionReviewQuestion] = []
 
     for question_item in snapshot.questions:
-        target_questions = (
-            included_questions if question_item.included else excluded_questions
-        )
+        target_questions = included_questions if question_item.included else excluded_questions
         target_questions.append(question_item)
 
     for question_item in included_questions:

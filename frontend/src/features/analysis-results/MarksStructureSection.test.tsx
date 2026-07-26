@@ -14,6 +14,8 @@ function finding(dimension: string, name: string): FindingResponse {
     status: 'Satisfied',
     explanation: 'Existing backend explanation.',
     confidence: 1,
+    confidence_level: null,
+    evaluation_details: null,
     evaluator_type: 'deterministic_rule',
     ai_provider: null,
     ai_model: null,

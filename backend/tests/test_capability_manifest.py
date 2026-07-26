@@ -176,12 +176,24 @@ def test_unsupported_entries_are_not_in_runtime_rule_identifiers() -> None:
     assert unsupported_ids.isdisjoint(actual_runtime_ids)
 
 
-def test_currently_implemented_semantic_rules_are_supported() -> None:
+def test_m6_m9_semantic_rules_are_supported_with_milestone_provenance() -> None:
     by_rule_id = {e.rule_id: e for e in CAPABILITY_MANIFEST}
-    for rule_id in ("RULE002", "RULE004", "RULE008"):
+    expected = {
+        "RULE001": "M7",
+        "RULE002": "M6",
+        "RULE003": "M8",
+        "RULE004": "M6",
+        "RULE007": "M7",
+        "RULE008": "M6",
+        "RULE011": "M9",
+        "RULE012": "M9",
+        "RULE013": "M9",
+        "RULE021": "M8",
+    }
+    for rule_id, milestone in expected.items():
         entry = by_rule_id[rule_id]
         assert entry.support_status is SupportStatus.SUPPORTED
-        assert entry.implemented_milestone == "Semantic AI/RAG"
+        assert entry.implemented_milestone == milestone
 
 
 def test_rule006_is_partially_supported_with_both_branches_documented() -> None:
@@ -203,23 +215,7 @@ def test_only_approved_planned_rules_name_an_implementation_dependency() -> None
         for entry in CAPABILITY_MANIFEST
         if entry.planned_milestone_or_dependency is not None
     }
-    assert planned == {
-        "RULE001",
-        "RULE002",
-        "RULE003",
-        "RULE004",
-        "RULE005",
-        "RULE007",
-        "RULE008",
-        "RULE009",
-        "RULE011",
-        "RULE012",
-        "RULE013",
-        "RULE014",
-        "RULE016",
-        "RULE021",
-        "RULE022",
-    }
+    assert planned == {"RULE014", "RULE016", "RULE022"}
 
 
 def test_criteria_blocked_rules_remain_explicitly_deferred() -> None:
@@ -309,26 +305,26 @@ def test_manifest_contains_every_exam_facing_rule_with_frozen_status() -> None:
     assert by_status[SupportStatus.SUPPORTED] == {
         "RULE001",
         "RULE002",
+        "RULE003",
         "RULE004",
         "RULE005",
         "RULE007",
         "RULE008",
         "RULE009",
-        "RULE018",
-        "RULE019",
-    }
-    assert by_status[SupportStatus.PARTIALLY_SUPPORTED] == {"RULE006"}
-    assert by_status[SupportStatus.UNSUPPORTED] == {
-        "RULE003",
         "RULE011",
         "RULE012",
         "RULE013",
+        "RULE018",
+        "RULE019",
+        "RULE021",
+    }
+    assert by_status[SupportStatus.PARTIALLY_SUPPORTED] == {"RULE006"}
+    assert by_status[SupportStatus.UNSUPPORTED] == {
         "RULE014",
         "RULE015",
         "RULE016",
         "RULE017",
         "RULE020",
-        "RULE021",
         "RULE022",
     }
     assert len(CAPABILITY_MANIFEST) == 21

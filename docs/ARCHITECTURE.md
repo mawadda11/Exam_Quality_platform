@@ -10,8 +10,8 @@ The design-authorized target architecture is evidence-gated:
 Milestone M1 freezes this target. M2 implements its persistence and strict internal schema
 foundation. M3 creates immutable revision 1 and pauses new analyses at `review_ready`. M4-M5 now
 implement source-faithful review revisions, exact-revision confirmation, guarded continuation, and
-the review workspace. Categorical-confidence runtime behavior and expanded semantic evaluators
-remain planned.
+the review workspace. M6-M9 now add backend-derived categorical confidence, all ten governed
+semantic/hybrid evaluators, deterministic mapping coverage, and complete rule-capability auditing.
 
 ## Components
 - React frontend: upload, progress, results, evidence drill-down, history, report download.
@@ -43,8 +43,9 @@ The initial runner stops at `review_ready`. The review API appends immutable rev
 atomically binds the exact latest revision to `analyses.confirmed_review_id`. Only then does a
 separate continuation worker run `building_evidence`, `retrieving_knowledge`, `applying_rules`,
 and `generating_report`; duplicate or mismatched continuation tasks are ignored. The existing
-downstream semantic implementation still contains RULE002,
-RULE004, and RULE008. Numeric semantic confidence is still stored and displayed. M6 will migrate
+downstream semantic implementation contains the complete ten-rule target. Numeric confidence is
+retained only as a derived compatibility field; categorical confidence is authoritative. M10 will
+refine presentation of
 that runtime contract.
 
 ## Design-authorized target processing flow
@@ -78,3 +79,11 @@ mappings. Explicit source mappings remain separate from labeled AI-derived relat
 
 See `docs/DESIGN_DECISIONS.md` for alternatives, technical justification, academic justification,
 consequences, and limitations.
+
+
+## M9 runtime coverage boundary
+
+The rule-coverage service compares persisted Findings with the governed capability manifest for all
+21 exam-facing rules. It exposes implementation disposition separately from academic status, making
+unsupported/deferred rules and unexpected supported-rule omissions visible without contaminating
+scoring.

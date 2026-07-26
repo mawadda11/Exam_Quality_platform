@@ -257,3 +257,126 @@ def test_coverage_distribution_never_returns_satisfied_partial_or_not_satisfied(
         result = evaluate_clo_coverage_distribution(evidence, clos)
         assert result is not None
         assert result.status in (AcademicStatus.NOT_APPLICABLE, AcademicStatus.NOT_VERIFIED)
+
+
+# --- M7 semantic relationship aggregation -----------------------------------
+
+
+def _semantic_mapping(
+    *,
+    rule_id: str,
+    requirement_id: str,
+    rule_name: str,
+    source: Evidence,
+    targets: list[Evidence],
+    status: AcademicStatus,
+    item_status: AcademicStatus,
+    selected_targets: list[Evidence],
+):
+    from app.core.domain import SemanticConfidenceLevel
+    from app.services.rules.identifiers import RuleIdentifier
+    from app.services.rules.semantic_evaluators import SemanticRuleEvaluation
+    from app.services.rules.semantic_types import SemanticItemJudgment
+
+    cited = [source.id, *(item.id for item in selected_targets)]
+    return SemanticRuleEvaluation(
+        identifier=RuleIdentifier(requirement_id, rule_id, rule_name),
+        status=status,
+        confidence_level=SemanticConfidenceLevel.HIGH,
+        confidence=1.0,
+        evidence_ids=cited,
+        explanation="Validated semantic mapping.",
+        recommendation_id=None,
+        evaluator_type="local_semantic_baseline",
+        provider="local",
+        model="local-governed-baseline-v1",
+        prompt_template_version="test",
+        kb_version="1.0.0",
+        items=(
+            SemanticItemJudgment(
+                source_evidence_id=source.id,
+                target_evidence_ids=[item.id for item in selected_targets],
+                status=item_status,
+                reasoning="Evidence-grounded mapping.",
+            ),
+        ),
+        confidence_basis=("Complete source coverage.",),
+    )
+
+
+def test_semantic_clo_coverage_uses_validated_relationships_without_code_citations() -> None:
+    from app.services.rules.clo_topic_coverage import (
+        evaluate_applicable_clo_coverage_from_relationships,
+    )
+
+    question = _question("Q1", "Explain cohesion and coupling.")
+    source = _text_evidence(question)
+    clo = _clo("CLO1")
+    target = _clo_evidence(clo)
+    mapping = _semantic_mapping(
+        rule_id="RULE001",
+        requirement_id="REQ001",
+        rule_name="Question-to-CLO Mapping",
+        source=source,
+        targets=[target],
+        status=AcademicStatus.SATISFIED,
+        item_status=AcademicStatus.SATISFIED,
+        selected_targets=[target],
+    )
+
+    result = evaluate_applicable_clo_coverage_from_relationships([source, target], mapping)
+
+    assert result.status is AcademicStatus.SATISFIED
+    assert set(result.evidence_ids) == {source.id, target.id}
+
+
+def test_semantic_coverage_marks_missing_target_not_satisfied_when_mapping_is_complete() -> None:
+    from app.services.rules.clo_topic_coverage import (
+        evaluate_applicable_clo_coverage_from_relationships,
+    )
+
+    question = _question("Q1", "Explain cohesion.")
+    source = _text_evidence(question)
+    first = _clo_evidence(_clo("CLO1"))
+    second = _clo_evidence(_clo("CLO2"))
+    mapping = _semantic_mapping(
+        rule_id="RULE001",
+        requirement_id="REQ001",
+        rule_name="Question-to-CLO Mapping",
+        source=source,
+        targets=[first, second],
+        status=AcademicStatus.SATISFIED,
+        item_status=AcademicStatus.SATISFIED,
+        selected_targets=[first],
+    )
+
+    result = evaluate_applicable_clo_coverage_from_relationships([source, first, second], mapping)
+
+    assert result.status is AcademicStatus.NOT_SATISFIED
+    assert "CLO2" in result.explanation
+    assert second.id in result.evidence_ids
+
+
+def test_semantic_coverage_preserves_limited_support_as_partial() -> None:
+    from app.services.rules.clo_topic_coverage import (
+        evaluate_applicable_topic_coverage_from_relationships,
+    )
+
+    question = _question("Q1", "Discuss a related design topic.")
+    source = _text_evidence(question)
+    target = _topic_evidence(_topic("T1"))
+    mapping = _semantic_mapping(
+        rule_id="RULE007",
+        requirement_id="REQ007",
+        rule_name="Question-to-Topic Alignment",
+        source=source,
+        targets=[target],
+        status=AcademicStatus.PARTIALLY_SATISFIED,
+        item_status=AcademicStatus.PARTIALLY_SATISFIED,
+        selected_targets=[target],
+    )
+
+    result = evaluate_applicable_topic_coverage_from_relationships([source, target], mapping)
+
+    assert result.status is AcademicStatus.PARTIALLY_SATISFIED
+    assert "limited" in result.explanation.lower()

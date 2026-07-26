@@ -311,10 +311,10 @@ Current score behavior is unchanged:
 - Not Verified and Not Applicable are excluded;
 - no verified applicable findings produces `Insufficient Evidence`.
 
-Phase 5 does not present the legacy numeric semantic-confidence value as the approved confidence
-model. The approved future categorical semantic-confidence contract (`High`, `Medium`, `Low`)
-remains planned for M6 and must use the backend's authoritative enum when implemented. Existing
-backend confidence data and API contracts remain unchanged.
+The M6-M9 API exposes backend-derived categorical semantic confidence (`High`, `Medium`, `Low`)
+plus structured evaluation details. Existing results components must treat that categorical enum as
+authoritative. M10 owns full mapping, confidence-basis, denominator, and coverage-audit
+presentation; the legacy numeric field is compatibility data only.
 
 Numeric OCR/extraction confidence must be labelled extraction confidence and must never be converted
 to semantic confidence.

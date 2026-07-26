@@ -83,6 +83,8 @@ export interface ProgressResponse {
   updated_at: string
 }
 
+export type SemanticConfidenceLevel = 'High' | 'Medium' | 'Low'
+
 export type AcademicStatus =
   | 'Satisfied'
   | 'Partially Satisfied'
@@ -153,6 +155,7 @@ export type KnownEvidenceType =
   | 'topic'
   | 'assessment_record'
   | 'missing_section'
+  | 'exam_metadata'
 
 export interface FindingEvidenceRef {
   id: string
@@ -160,6 +163,24 @@ export interface FindingEvidenceRef {
   evidence_type: string
   page_number: number
   item_reference: string
+}
+
+export interface FindingItemJudgmentDetails {
+  source_evidence_id: string
+  target_evidence_ids: string[]
+  status: AcademicStatus
+  reasoning: string
+}
+
+export interface FindingEvaluationDetails {
+  schema_version: 1
+  decision: AcademicStatus
+  evidence_used: string[]
+  reasoning: string
+  recommendation: string | null
+  confidence_basis: string[]
+  item_judgments: FindingItemJudgmentDetails[]
+  retrieved_knowledge_ids: string[]
 }
 
 export interface FindingResponse {
@@ -171,6 +192,8 @@ export interface FindingResponse {
   status: AcademicStatus
   explanation: string
   confidence: number
+  confidence_level: SemanticConfidenceLevel | null
+  evaluation_details: FindingEvaluationDetails | null
   evaluator_type: string
   ai_provider: string | null
   ai_model: string | null
@@ -182,6 +205,40 @@ export interface FindingResponse {
   dimension: string
   source_type: string
   officiality: string
+}
+
+export type RuleRuntimeDisposition =
+  | 'evaluated'
+  | 'conditional_capability_gap'
+  | 'unsupported'
+  | 'not_run'
+
+export interface RuleCoverageEntryResponse {
+  requirement_id: string
+  rule_id: string
+  requirement_name: string
+  rule_name: string
+  support_status: 'supported' | 'partially_supported' | 'unsupported'
+  evaluation_mode: 'deterministic' | 'semantic_or_hybrid' | 'no_authorized_method'
+  design_disposition: 'design_authorized' | 'deferred'
+  runtime_disposition: RuleRuntimeDisposition
+  finding_status: AcademicStatus | null
+  evaluator_type: string | null
+  implemented_milestone: string | null
+  reason: string | null
+  planned_milestone_or_dependency: string | null
+}
+
+export interface RuleCoverageAuditResponse {
+  analysis_id: string
+  scope: 'exam_facing_rules'
+  total_rules: number
+  evaluated_rules: number
+  conditional_capability_gap_rules: number
+  unsupported_rules: number
+  not_run_rules: number
+  runtime_integrity_ok: boolean
+  entries: RuleCoverageEntryResponse[]
 }
 
 export interface AnalysisScoreResponse {

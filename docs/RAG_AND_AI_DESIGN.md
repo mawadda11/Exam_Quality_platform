@@ -9,8 +9,9 @@ This document distinguishes the approved target design from current runtime capa
 - **Planned**: design-authorized but not yet operational.
 - **Deferred**: prohibited until a missing criterion, policy, or artifact is approved.
 
-Milestone M1 changes this design contract only. It does not implement Extraction Review,
-categorical-confidence persistence, expanded evaluators, or new API/UI behavior.
+M1 froze this design contract. M2-M5 implemented Extraction Review and persistence; M6-M9 now
+implement the governed semantic contract, all ten design-authorized semantic/hybrid evaluators,
+deterministic relationship coverage, and runtime capability accounting. M10-M11 remain planned.
 
 ## KB ingestion
 
@@ -62,10 +63,10 @@ The design-authorized Version 1 order is:
 - `RULE013` / `REQ013` - Complete Question Information.
 - `RULE021` / `REQ021` - Complete Instructions.
 
-The currently implemented RAG-backed semantic runtime remains limited to `RULE002`, `RULE004`, and
-`RULE008`. The other design-authorized semantic behaviors are planned and must not be reported as
-operational until their later milestones and tests are complete. `RULE001` and `RULE007` currently
-have deterministic exact-citation behavior; their AI-derived mapping behavior is planned.
+The currently implemented governed semantic runtime includes all ten rules above. RULE001 and
+RULE007 persist derived item-level mappings to controlled CLO/topic evidence; RULE005 and RULE009
+then aggregate those validated mappings deterministically. RULE002/003/004/008/011/012/013/021
+produce bounded item judgments under the same validation and categorical-confidence contract.
 
 ### Deterministic final decisions and aggregation
 
@@ -114,7 +115,7 @@ An explicit source mapping and an AI-derived relationship remain separate:
 - evidence and concise reasoning are mandatory; and
 - source evidence is never overwritten.
 
-The future semantic finding contract exposes Decision, Evidence Used, Concise Reasoning,
+The implemented semantic finding contract exposes Decision, Evidence Used, Concise Reasoning,
 categorical Confidence, and an optional controlled Recommendation. Reasoning is not private model
 chain-of-thought; private chain-of-thought must not be requested, stored, or displayed.
 
@@ -133,15 +134,18 @@ and exclusion from the score denominator. Confidence is not a percentage, severi
 quality score, readiness label, or scoring weight. Numeric OCR and extraction confidence remain
 separate technical metadata and are never converted into semantic confidence.
 
-The current semantic provider schema still uses numeric confidence. Replacing that runtime contract
-and the frontend percentage display is planned for later milestones; M1 does not silently change
-runtime behavior.
+The semantic provider schema does not supply confidence. The backend derives the authoritative
+categorical level from validated item coverage and controlled evidence. The legacy numeric database
+field is populated only as a compatibility projection; M10 will remove percentage-oriented
+presentation.
 
 `RULE006` remains the existing partial deterministic evaluator: zero and one applicable CLO
 branches are supported, while two-or-more CLOs produce no `RULE006` finding because the KB defines
 no concentration threshold. It is not a semantic evaluator.
 
-`AI_PROVIDER=fake` is the safe local/test default and performs no network calls. The provider
+`AI_PROVIDER=local` is the safe native-development default and performs no network calls. It is a
+transparent evidence-grounded demonstration baseline and is blocked in production.
+`AI_PROVIDER=fake` is reserved for scripted schema/failure tests. The provider
 factory also supports the Anthropic adapter for optional manual use. Evaluators depend only on the
 provider interface; no evaluator contains vendor-specific code.
 
@@ -149,8 +153,7 @@ provider interface; no evaluator contains vendor-specific code.
 
 - JSON/schema validation with exactly one output object and no unknown fields.
 - Approved rule, requirement, and academic-status validation.
-- Categorical-confidence evidence conditions and duplicate-evidence rejection in the planned
-  contract. Current numeric validation remains implemented until its planned replacement.
+- Categorical-confidence evidence conditions, item completeness, and duplicate-evidence rejection.
 - Evidence ID existence, analysis ownership, evaluator compatibility, and source-document checks.
 - Question/CLO/topic evidence must match a confirmed domain row from the same analysis once
   Extraction Review is implemented.

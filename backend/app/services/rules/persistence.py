@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models.evidence import Evidence
 from app.models.finding import Finding, FindingEvidence
+from app.schemas.finding import FindingEvaluationDetails, FindingItemJudgmentDetails
 from app.services.rules.identifiers import RuleIdentifier
 from app.services.rules.semantic_evaluators import SemanticRuleEvaluation
 from app.services.rules.types import RuleFindingResult
@@ -97,6 +98,24 @@ def persist_semantic_finding(
                 "Semantic finding evidence must exist and belong to the same analysis."
             )
 
+    details = FindingEvaluationDetails(
+        schema_version=1,
+        decision=evaluation.status,
+        evidence_used=evidence_ids,
+        reasoning=evaluation.explanation,
+        recommendation=evaluation.recommendation_id,
+        confidence_basis=list(evaluation.confidence_basis),
+        item_judgments=[
+            FindingItemJudgmentDetails(
+                source_evidence_id=item.source_evidence_id,
+                target_evidence_ids=item.target_evidence_ids,
+                status=item.status,
+                reasoning=item.reasoning,
+            )
+            for item in evaluation.items
+        ],
+        retrieved_knowledge_ids=list(evaluation.retrieved_knowledge_ids),
+    )
     finding = Finding(
         analysis_id=analysis_id,
         requirement_id=evaluation.identifier.requirement_id,
@@ -104,6 +123,8 @@ def persist_semantic_finding(
         status=evaluation.status,
         explanation=evaluation.explanation,
         confidence=evaluation.confidence,
+        confidence_level=evaluation.confidence_level,
+        evaluation_details=details.model_dump(mode="json"),
         evaluator_type=evaluation.evaluator_type,
         recommendation_id=evaluation.recommendation_id,
         ai_provider=evaluation.provider,

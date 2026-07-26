@@ -1,12 +1,4 @@
-"""Official Requirement_ID/Rule_ID pairs referenced by the deterministic
-rule modules, sourced directly from the approved knowledge base:
-- knowledge_base/source/04_requirements.xlsx
-- knowledge_base/source/07_evaluation_rules.xlsx
-
-Centralized here so no other module hardcodes these strings. See
-tests/test_rule_identifiers_kb_alignment.py for the check that these values
-still exist in, and match, the current KB workbooks.
-"""
+"""Controlled Requirement_ID/Rule_ID pairs from the versioned knowledge base."""
 
 from __future__ import annotations
 
@@ -20,33 +12,18 @@ class RuleIdentifier:
     rule_name: str
 
 
-MARKS_AND_TOTAL = RuleIdentifier(
-    requirement_id="REQ018", rule_id="RULE018", rule_name="Correct Total Marks"
-)
-NUMBERING = RuleIdentifier(
-    requirement_id="REQ019", rule_id="RULE019", rule_name="Consistent Numbering"
-)
-QUESTION_TO_CLO_MAPPING = RuleIdentifier(
-    requirement_id="REQ001", rule_id="RULE001", rule_name="Question-to-CLO Mapping"
-)
-APPLICABLE_CLO_COVERAGE = RuleIdentifier(
-    requirement_id="REQ005", rule_id="RULE005", rule_name="Applicable CLO Coverage"
-)
-QUESTION_TO_TOPIC_ALIGNMENT = RuleIdentifier(
-    requirement_id="REQ007", rule_id="RULE007", rule_name="Question-to-Topic Alignment"
-)
-APPLICABLE_TOPIC_COVERAGE = RuleIdentifier(
-    requirement_id="REQ009", rule_id="RULE009", rule_name="Applicable Topic Coverage"
-)
-CLO_COVERAGE_DISTRIBUTION = RuleIdentifier(
-    requirement_id="REQ006", rule_id="RULE006", rule_name="CLO Coverage Distribution"
-)
-CLO_RELEVANCE = RuleIdentifier(
-    requirement_id="REQ002", rule_id="RULE002", rule_name="CLO Relevance"
-)
-QUESTION_FORMAT_SUITABILITY = RuleIdentifier(
-    requirement_id="REQ004", rule_id="RULE004", rule_name="Question Format Suitability"
-)
-OUT_OF_SCOPE_CONTENT = RuleIdentifier(
-    requirement_id="REQ008", rule_id="RULE008", rule_name="Out-of-Scope Content"
-)
+QUESTION_TO_CLO_MAPPING = RuleIdentifier("REQ001", "RULE001", "Question-to-CLO Mapping")
+CLO_RELEVANCE = RuleIdentifier("REQ002", "RULE002", "CLO Relevance")
+ASSESSMENT_METHOD_CONSISTENCY = RuleIdentifier("REQ003", "RULE003", "Assessment Method Consistency")
+QUESTION_FORMAT_SUITABILITY = RuleIdentifier("REQ004", "RULE004", "Question Format Suitability")
+APPLICABLE_CLO_COVERAGE = RuleIdentifier("REQ005", "RULE005", "Applicable CLO Coverage")
+CLO_COVERAGE_DISTRIBUTION = RuleIdentifier("REQ006", "RULE006", "CLO Coverage Distribution")
+QUESTION_TO_TOPIC_ALIGNMENT = RuleIdentifier("REQ007", "RULE007", "Question-to-Topic Alignment")
+OUT_OF_SCOPE_CONTENT = RuleIdentifier("REQ008", "RULE008", "Out-of-Scope Content")
+APPLICABLE_TOPIC_COVERAGE = RuleIdentifier("REQ009", "RULE009", "Applicable Topic Coverage")
+CLEAR_TASK_STATEMENT = RuleIdentifier("REQ011", "RULE011", "Clear Task Statement")
+UNAMBIGUOUS_WORDING = RuleIdentifier("REQ012", "RULE012", "Unambiguous Wording")
+COMPLETE_QUESTION_INFORMATION = RuleIdentifier("REQ013", "RULE013", "Complete Question Information")
+MARKS_AND_TOTAL = RuleIdentifier("REQ018", "RULE018", "Correct Total Marks")
+NUMBERING = RuleIdentifier("REQ019", "RULE019", "Consistent Numbering")
+COMPLETE_INSTRUCTIONS = RuleIdentifier("REQ021", "RULE021", "Complete Instructions")

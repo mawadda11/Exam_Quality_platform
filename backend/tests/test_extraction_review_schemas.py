@@ -158,6 +158,9 @@ def test_evaluation_details_has_the_versioned_governed_core_contract() -> None:
         "evidence_used",
         "reasoning",
         "recommendation",
+        "confidence_basis",
+        "item_judgments",
+        "retrieved_knowledge_ids",
     }
 
 

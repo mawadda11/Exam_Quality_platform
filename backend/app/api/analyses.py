@@ -41,6 +41,7 @@ from app.schemas.progress import ProgressResponse
 from app.schemas.question import QuestionResponse
 from app.schemas.recommendation import RecommendationResponse
 from app.schemas.report import ReportResponse
+from app.schemas.rule_coverage import RuleCoverageAuditResponse
 from app.schemas.score import AnalysisScoreResponse
 from app.schemas.topic import TopicResponse
 from app.schemas.uploaded_file import UploadedFileResponse
@@ -65,6 +66,7 @@ from app.services.processing.runner import (
 from app.services.reporting.content import assemble_report_content
 from app.services.reporting.pdf import render_report_pdf
 from app.services.reporting.storage import store_report_pdf
+from app.services.rules.coverage_audit import build_rule_coverage_audit
 from app.services.storage.files import UploadTooLargeError, stream_validate_and_store
 from app.services.storage.keys import generate_storage_key, resolve_storage_path
 from app.services.storage.validation import UploadValidationError
@@ -510,6 +512,20 @@ def list_analysis_findings(
         )
         for finding in findings
     ]
+
+
+@router.get("/{analysis_id}/rule-coverage", response_model=RuleCoverageAuditResponse)
+def get_analysis_rule_coverage(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+) -> RuleCoverageAuditResponse:
+    """Return implementation coverage for every governed exam-facing rule.
+
+    This endpoint deliberately separates operational capability gaps from the
+    five academic statuses used by Findings.
+    """
+
+    return build_rule_coverage_audit(analysis.id, _load_findings(db, analysis.id))
 
 
 @router.get("/{analysis_id}/score", response_model=AnalysisScoreResponse)

@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from app.core.domain import AcademicStatus
 from app.models.clo import Clo
@@ -47,6 +48,9 @@ from app.models.topic import Topic
 from app.services.rules.question_hierarchy import scorable_leaves
 from app.services.rules.references import find_cited_codes
 from app.services.rules.types import RuleFindingResult
+
+if TYPE_CHECKING:
+    from app.services.rules.semantic_evaluators import SemanticRuleEvaluation
 
 _NO_QUESTIONS_EXPLANATION = "No scorable questions were extracted from the exam."
 
@@ -196,3 +200,129 @@ def evaluate_clo_coverage_distribution(
             evidence_ids=clo_evidence_ids,
         )
     return None
+
+
+def _evaluate_relationship_coverage(
+    target_evidence: Sequence[Evidence],
+    mapping: SemanticRuleEvaluation,
+    *,
+    target_noun: str,
+    no_targets_status: AcademicStatus,
+    no_targets_explanation: str,
+) -> RuleFindingResult:
+    """Aggregate validated item relationships using the controlled rule wording.
+
+    Coverage is not a percentage threshold. A target with a Satisfied mapping
+    has full support; a target with only Partially Satisfied mappings has
+    limited support; a target with no mapping has no support. If unresolved
+    source judgments could still change an uncovered target, coverage remains
+    Not Verified rather than being guessed.
+    """
+
+    trace_ids = list(dict.fromkeys([*mapping.evidence_ids, *(item.id for item in target_evidence)]))
+    if not target_evidence:
+        return RuleFindingResult(
+            status=no_targets_status,
+            explanation=no_targets_explanation,
+            confidence=1.0 if no_targets_status is AcademicStatus.NOT_APPLICABLE else 0.0,
+            evidence_ids=trace_ids,
+        )
+
+    target_ids = {item.id for item in target_evidence}
+    statuses_by_target: dict[uuid.UUID, set[AcademicStatus]] = {
+        target_id: set() for target_id in target_ids
+    }
+    unresolved_source = False
+    for item in mapping.items:
+        if item.status is AcademicStatus.NOT_VERIFIED:
+            unresolved_source = True
+        for target_id in item.target_evidence_ids:
+            if target_id in statuses_by_target:
+                statuses_by_target[target_id].add(item.status)
+
+    fully_supported = {
+        target_id
+        for target_id, statuses in statuses_by_target.items()
+        if AcademicStatus.SATISFIED in statuses
+    }
+    limited_support = {
+        target_id
+        for target_id, statuses in statuses_by_target.items()
+        if target_id not in fully_supported and AcademicStatus.PARTIALLY_SATISFIED in statuses
+    }
+    unsupported = target_ids - fully_supported - limited_support
+    references = {item.id: item.item_reference for item in target_evidence}
+
+    if unsupported and unresolved_source:
+        missing = ", ".join(sorted(references[item] for item in unsupported))
+        return RuleFindingResult(
+            status=AcademicStatus.NOT_VERIFIED,
+            explanation=(
+                f"Coverage for {target_noun}(s) {missing} remains unresolved because at least "
+                "one confirmed question could not be semantically judged."
+            ),
+            confidence=0.0,
+            evidence_ids=trace_ids,
+        )
+    if unsupported:
+        missing = ", ".join(sorted(references[item] for item in unsupported))
+        return RuleFindingResult(
+            status=AcademicStatus.NOT_SATISFIED,
+            explanation=(
+                f"At least one applicable {target_noun} has no supporting validated question "
+                f"evidence: {missing}."
+            ),
+            confidence=mapping.confidence,
+            evidence_ids=trace_ids,
+        )
+    if limited_support:
+        limited = ", ".join(sorted(references[item] for item in limited_support))
+        return RuleFindingResult(
+            status=AcademicStatus.PARTIALLY_SATISFIED,
+            explanation=(
+                f"Every applicable {target_noun} has evidence, but support is limited for: "
+                f"{limited}."
+            ),
+            confidence=mapping.confidence,
+            evidence_ids=trace_ids,
+        )
+    return RuleFindingResult(
+        status=AcademicStatus.SATISFIED,
+        explanation=f"Every applicable {target_noun} has supporting validated question evidence.",
+        confidence=mapping.confidence,
+        evidence_ids=trace_ids,
+    )
+
+
+def evaluate_applicable_clo_coverage_from_relationships(
+    evidence: Sequence[Evidence], mapping: SemanticRuleEvaluation
+) -> RuleFindingResult:
+    from app.services.rules.semantic_evaluators import SemanticRuleEvaluation
+
+    if not isinstance(mapping, SemanticRuleEvaluation):
+        raise TypeError("mapping must be a SemanticRuleEvaluation")
+    targets = [item for item in evidence if item.evidence_type == "clo"]
+    return _evaluate_relationship_coverage(
+        targets,
+        mapping,
+        target_noun="CLO",
+        no_targets_status=AcademicStatus.NOT_VERIFIED,
+        no_targets_explanation="No applicable CLO evidence was available from the TP-153.",
+    )
+
+
+def evaluate_applicable_topic_coverage_from_relationships(
+    evidence: Sequence[Evidence], mapping: SemanticRuleEvaluation
+) -> RuleFindingResult:
+    from app.services.rules.semantic_evaluators import SemanticRuleEvaluation
+
+    if not isinstance(mapping, SemanticRuleEvaluation):
+        raise TypeError("mapping must be a SemanticRuleEvaluation")
+    targets = [item for item in evidence if item.evidence_type == "topic"]
+    return _evaluate_relationship_coverage(
+        targets,
+        mapping,
+        target_noun="topic",
+        no_targets_status=AcademicStatus.NOT_APPLICABLE,
+        no_targets_explanation="No topic set is designated for the uploaded exam.",
+    )

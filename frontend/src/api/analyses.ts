@@ -14,6 +14,7 @@ import type {
   ReanalysisCreateRequest,
   RecommendationResponse,
   ReportResponse,
+  RuleCoverageAuditResponse,
   TopicResponse,
   UploadedFileResponse,
   UploadedFileType,
@@ -108,6 +109,13 @@ function isFindingResponse(value: unknown): value is FindingResponse {
     typeof finding.status === 'string' &&
     typeof finding.explanation === 'string' &&
     typeof finding.confidence === 'number' &&
+    (finding.confidence_level === null ||
+      finding.confidence_level === 'High' ||
+      finding.confidence_level === 'Medium' ||
+      finding.confidence_level === 'Low') &&
+    (finding.evaluation_details === null ||
+      (typeof finding.evaluation_details === 'object' &&
+        finding.evaluation_details !== null)) &&
     typeof finding.evaluator_type === 'string' &&
     isNullableString(finding.ai_provider) &&
     isNullableString(finding.ai_model) &&
@@ -127,6 +135,10 @@ export function parseFindingResponses(value: unknown): FindingResponse[] {
 export async function listFindings(analysisId: string): Promise<FindingResponse[]> {
   const response = await apiGet<unknown>(`/analyses/${analysisId}/findings`)
   return parseFindingResponses(response)
+}
+
+export function getRuleCoverage(analysisId: string): Promise<RuleCoverageAuditResponse> {
+  return apiGet<RuleCoverageAuditResponse>(`/analyses/${analysisId}/rule-coverage`)
 }
 
 export function getAnalysisScore(analysisId: string): Promise<AnalysisScoreResponse> {

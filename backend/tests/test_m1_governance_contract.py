@@ -1,8 +1,8 @@
 """Guards the M1 hybrid-evaluation governance and traceability freeze.
 
-These tests intentionally validate stable contract terms and exact controlled rule
-sets. M2 persistence/internal contracts are implemented; they do not claim
-that planned M3-M10 runtime behavior is implemented.
+These tests validate the stable hybrid-evaluation governance and the exact
+controlled rule sets. Runtime capability assertions are updated only when a
+milestone implements the governed contract without changing the target design.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ DETERMINISTIC_TARGET = {
     "RULE022",
 }
 DEFERRED_TARGET = {"RULE015", "RULE017", "RULE020"}
-CURRENT_SEMANTIC_RUNTIME = {"RULE002", "RULE004", "RULE008"}
+CURRENT_SEMANTIC_RUNTIME = SEMANTIC_TARGET
 
 
 def _read(relative_path: str) -> str:
@@ -123,7 +123,7 @@ def test_manifest_separates_target_method_from_current_runtime_support() -> None
         if entry.support_status is SupportStatus.SUPPORTED
     }
     assert CURRENT_SEMANTIC_RUNTIME.issubset(currently_supported)
-    assert {"RULE003", "RULE011", "RULE012", "RULE013", "RULE021"}.isdisjoint(currently_supported)
+    assert CURRENT_SEMANTIC_RUNTIME == SEMANTIC_TARGET
 
 
 def test_system_governance_gates_are_unscored_and_separate() -> None:
@@ -222,14 +222,14 @@ def test_traceability_maps_every_design_decision_and_planned_requirement() -> No
     assert "EV021" in traceability
 
 
-def test_current_numeric_semantic_runtime_is_documented_as_a_planned_gap() -> None:
+def test_categorical_runtime_and_legacy_numeric_compatibility_are_documented() -> None:
     rag_design = _read("docs/RAG_AND_AI_DESIGN.md")
     architecture = _read("docs/ARCHITECTURE.md")
     api = _read("docs/API_SPECIFICATION.md")
 
-    assert "current semantic provider schema still uses numeric confidence" in rag_design
-    assert "Numeric semantic confidence is still stored and displayed." in architecture
-    assert "current API still returns numeric finding confidence" in api
+    assert "provider schema does not supply confidence" in rag_design
+    assert "categorical confidence is authoritative" in architecture
+    assert "derived compatibility field" in api
 
 
 def test_m1_governance_and_m2_m3_implementation_status_are_explicit() -> None:

@@ -30,8 +30,8 @@ class Settings(BaseSettings):
     chroma_host: str = "localhost"
     chroma_port: int = 8001
     vector_store_provider: str = "memory"
-    ai_provider: str = "fake"
-    ai_model: str = "fake-semantic-v1"
+    ai_provider: str = "local"
+    ai_model: str = "local-governed-baseline-v1"
     ai_api_key: str = ""
     ai_validation_retries: int = Field(default=1, ge=0, le=2)
 

@@ -3,7 +3,8 @@
 This file lists the currently implemented schema. Milestone M2 added the minimum durable
 Extraction Review foundation in migration `0008`. M3 creates revision 1 and pauses processing.
 M4-M5 reuse the same schema to append immutable review revisions, bind the exact confirmed revision,
-and continue processing; no additional migration or categorical semantic behavior is introduced.
+and continue processing. M6-M9 reuse the same nullable semantic columns and populate them; no new
+database migration is required.
 
 ## Core tables
 - `users`: Faculty Member identity, institution, and department. Version 1 does not require multi-role authorization.
@@ -80,19 +81,23 @@ record. Excluded false-positive rows are removed only from the canonical post-co
   basis.
 
 `SemanticConfidenceLevel` in `app.core.domain` is the single authoritative `High`/`Medium`/`Low`
-enum for ORM, Pydantic, API, and future AI logic. Alternative semantic-confidence enums are
-prohibited. The existing numeric `findings.confidence` is retained temporarily for compatibility
-but must not be threshold-converted into categories.
+enum for ORM, Pydantic, API, and AI validation. Alternative semantic-confidence enums are
+prohibited. The existing numeric `findings.confidence` is retained temporarily as a categorical
+compatibility projection (High=1, Medium=.5, Low=0); it is never provider-supplied and must not be
+threshold-converted into categories.
 
 `evaluation_details` remains null and unused in M2. Its version 1 internal core contract is:
 
 - `decision`: one approved academic status;
 - `evidence_used`: unique evidence UUIDs;
 - `reasoning`: concise evidence-to-rule reasoning, never private chain-of-thought; and
-- `recommendation`: a controlled KB recommendation ID or null.
+- `recommendation`: a controlled KB recommendation ID or null;
+- `confidence_basis`: backend-observed reasons for the categorical level;
+- `item_judgments`: source-to-controlled-target judgments; and
+- `retrieved_knowledge_ids`: governed KB records retrieved for the evaluation.
 
-The JSON also carries `schema_version = 1`. Future rule-specific schemas may extend this core
-contract without replacing or renaming its required fields.
+The JSON carries `schema_version = 1`. M6-M9 populate this contract for semantic findings while
+deterministic findings may keep both semantic fields null.
 
 ### Explicitly rejected Version 1 schema additions
 

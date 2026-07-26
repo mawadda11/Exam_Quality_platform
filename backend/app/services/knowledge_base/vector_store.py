@@ -10,9 +10,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol
-
-import chromadb
+from typing import Any, Protocol
 
 _COLLECTION_NAME = "knowledge_base"
 
@@ -136,11 +134,23 @@ def _from_result(
     )
 
 
+def _build_chroma_http_client(*, host: str, port: int) -> Any:
+    """Import the optional Chroma dependency only when it is selected."""
+
+    try:
+        import chromadb
+    except ImportError as exc:  # pragma: no cover - exercised in deployment images
+        raise RuntimeError(
+            "The chromadb package is required when VECTOR_STORE_PROVIDER=chroma."
+        ) from exc
+    return chromadb.HttpClient(host=host, port=port)
+
+
 class ChromaVectorStore:
     """HTTP-backed Chroma implementation using its bundled local embeddings."""
 
     def __init__(self, *, host: str, port: int) -> None:
-        self._client = chromadb.HttpClient(host=host, port=port)
+        self._client = _build_chroma_http_client(host=host, port=port)
         self._collection = self._client.get_or_create_collection(_COLLECTION_NAME)
 
     def replace_version(self, records: Sequence[EmbeddableRecord], *, kb_version: str) -> None:
@@ -178,7 +188,7 @@ class ChromaVectorStore:
         results = self._collection.query(
             query_texts=[text],
             n_results=n_results,
-            where=where,  # type: ignore[arg-type]
+            where=where,
         )
         ids = results["ids"][0]
         documents = results["documents"][0] if results["documents"] else []

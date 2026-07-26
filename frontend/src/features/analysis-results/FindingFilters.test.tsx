@@ -17,6 +17,8 @@ function finding(overrides: Partial<FindingResponse>): FindingResponse {
     status: 'Satisfied',
     explanation: 'Explanation',
     confidence: 1,
+    confidence_level: null,
+    evaluation_details: null,
     evaluator_type: 'deterministic_rule',
     ai_provider: null,
     ai_model: null,

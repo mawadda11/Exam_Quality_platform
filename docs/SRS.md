@@ -34,12 +34,16 @@ controlled Recommendation for semantic findings.
 FR-027 Keep coverage, marks totals, numbering outcomes, and score aggregation deterministic.
 FR-028 Prohibit manual or AI creation of official CLOs, topics, assessment records, mappings,
 institutional policies, and rule thresholds.
+FR-029 Account for every governed exam-facing rule separately from academic status and expose any
+supported rule that failed to run as an operational coverage gap.
 
 FR-019 through FR-028 are design-authorized in M1. M2 implements the
 revision/categorical-confidence persistence and strict internal schema foundation. M3 implements
 the initial revision, `review_ready` pause, and no-pre-confirmation-processing guard. M4-M5
 implement source-faithful review editing, immutable saves, exact confirmation, guarded
-continuation, and the review workspace. Semantic runtime changes remain planned for M6 and later.
+continuation, and the review workspace. M6-M9 implement the ten-rule semantic/hybrid runtime,
+backend-derived categorical confidence, deterministic mapping coverage, and complete exam-facing
+rule capability accounting. M10-M11 remain planned.
 
 ## Non-functional requirements
 - Accuracy: unsupported claims are prohibited; insufficient evidence becomes Not Verified.

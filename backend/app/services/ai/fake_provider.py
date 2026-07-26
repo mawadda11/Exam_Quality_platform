@@ -1,4 +1,4 @@
-"""Deterministic AI provider for tests and safe local development."""
+"""Deterministic scripted AI provider for tests."""
 
 from __future__ import annotations
 
@@ -7,21 +7,16 @@ from collections import deque
 from collections.abc import Sequence
 from typing import Any
 
-from app.services.ai.anthropic_provider import AiProviderError
+from app.services.ai.provider import AiProviderError
 
 
 class FakeAiProvider:
-    """Returns scripted outputs, or a conservative Not Verified response.
-
-    The default response is derived only from trusted prompt-envelope fields
-    created by the application. It never attempts a semantic conclusion and
-    never performs network I/O.
-    """
+    """Returns scripted outputs, or a conservative complete Not Verified response."""
 
     def __init__(
         self,
         *,
-        model: str = "fake-semantic-v1",
+        model: str = "fake-semantic-v2",
         responses: Sequence[str | Exception] = (),
     ) -> None:
         self._model = model
@@ -46,19 +41,29 @@ class FakeAiProvider:
 
         try:
             envelope = json.loads(prompt)
-            evidence_ids = [item["id"] for item in envelope.get("evidence", [])]
+            source_ids = [str(value) for value in envelope["required_source_evidence_ids"]]
+            items = [
+                {
+                    "source_evidence_id": evidence_id,
+                    "target_evidence_ids": [],
+                    "status": "Not Verified",
+                    "reasoning": (
+                        "The scripted test provider does not make an academic semantic judgment."
+                    ),
+                }
+                for evidence_id in source_ids
+            ]
             return json.dumps(
                 {
                     "rule_id": envelope["rule_id"],
                     "requirement_id": envelope["requirement_id"],
                     "status": "Not Verified",
-                    "confidence": 0.0,
-                    "evidence_ids": evidence_ids,
+                    "evidence_ids": source_ids,
                     "explanation": (
-                        "The deterministic local test provider does not make an academic "
-                        "semantic judgment."
+                        "The deterministic test provider returned a complete conservative result."
                     ),
                     "recommendation_id": None,
+                    "items": items,
                     "provider": self.provider_name,
                     "model": self.model_name,
                     "prompt_template_version": envelope["prompt_template_version"],

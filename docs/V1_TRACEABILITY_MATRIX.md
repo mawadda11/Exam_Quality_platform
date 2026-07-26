@@ -53,7 +53,7 @@ are included with the capability they constrain.
 | PRD-08 | Tables, images, diagrams, code, and supporting assets | Retained | No runtime structured extraction yet | Add only evidence needed by retained RULE014, RULE016, and RULE022 |
 | PRD-09 | Extract TP-153 CLOs, topics, methods, activities, hours, and percentages | Complete in backend | TP-153 extraction, persistence, and read endpoint tests | Present assessment records in UI and report |
 | PRD-10 | Versioned KB validation and retrieval | Complete | KB validation/normalization/provenance and semantic retrieval suites | Add repeatable startup/readiness verification |
-| PRD-11 | Deterministic and semantic rule evaluation | Partial; hybrid redesign Design-authorized | Nine fully supported rules and partial RULE006; current RAG-backed runtime is RULE002/004/008 | Implement the planned ten-rule semantic/hybrid target without changing deterministic aggregation or deferrals |
+| PRD-11 | Deterministic and semantic rule evaluation | Complete for M6-M9 supported scope | Fourteen unconditional supported runtime rules, ten semantic/hybrid evaluators, deterministic coverage, and partial RULE006 | Preserve deferrals and complete M10-M11 presentation/acceptance |
 | PRD-12 | Exactly five academic statuses | Complete | Domain enum, persistence, scoring, and semantic-output validation tests | Extend the same validation to retained evaluators |
 | PRD-13 | Missing or insufficient evidence becomes Not Verified | Complete for implemented evaluators | Rule, pipeline, and semantic governance tests | Extend evidence-conditioned behavior to retained rules |
 | PRD-14 | Exact deterministic scoring and Insufficient Evidence | Complete | Scoring, API, UI, and report tests | No formula changes |
@@ -61,8 +61,8 @@ are included with the capability they constrain.
 | PRD-16 | Controlled actionable recommendations | Complete for current findings | Exact KB lookup and recommendation API tests | Reuse existing KB recommendation IDs for retained rules |
 | PRD-17 | Background progress and safe failure states | Complete for M3-M5 review flow | Runner, progress, rollback, revision-idempotency, exact-confirmation continuation, duplicate-task guard, and safe-failure tests | M11 integrated acceptance remains planned |
 | PRD-18 | Six-section results interface | Complete structurally | Results component suites | Add mappings, assessments, retained findings, navigation, and retry |
-| PRD-19 | Explicit and derived question-to-CLO/topic relationships | Design-authorized / Planned | Existing citation rules produce evidence but no structured pair output | Preserve explicit mappings as source facts; expose separately labeled AI-derived relationships referencing confirmed IDs |
-| PRD-20 | Assessment-method consistency | Retained | TP-153 assessment data is already extracted | Implement RULE003 and present assessment evidence |
+| PRD-19 | Explicit and derived question-to-CLO/topic relationships | Runtime complete M7; presentation partial | RULE001/RULE007 persist governed item-level relationships against confirmed IDs | M10 presents relationship detail without relabeling derived mappings as source facts |
+| PRD-20 | Assessment-method consistency | Runtime complete M8; presentation partial | RULE003 evaluates confirmed exam metadata against TP-153 assessment evidence | M10 presents the structured judgment and evidence trace |
 | PRD-21 | Missing-evidence display and evidence drill-down | Complete for current findings | Results UI tests | Extend for retained evidence types |
 | PRD-22 | Downloadable report | Complete | On-demand report generation, ownership, content, PDF, API, and UI tests | Add retained mappings and assessment content |
 | PRD-23 | Analysis history | Complete with limited navigation | History API and UI tests | Add normal return-to-history and new-analysis actions |
@@ -71,9 +71,9 @@ are included with the capability they constrain.
 | PRD-26 | Download TP-153 completion guide | Retained | No guide artifact or route exists | Build only from approved fields and required sections |
 | PRD-27 | View required TP-153 sections | Retained | Extractor already names CLO, topic, and assessment sections | Add API/UI reference |
 | PRD-28 | Guidance for missing, incomplete, unreadable, or invalid TP-153 | Partial | Upload errors and missing-section evidence exist | Add pre-upload and processing guidance without inferring content |
-| PRD-29 | No manual official CLO/topic/assessment/mapping entry or inferred course data | Complete for the M4-M5 review boundary; later AI enforcement Planned | Source-record-set validation, immutable-anchor rejection, controlled review UI, and governance tests | Preserve through M6-M11 semantic validation |
+| PRD-29 | No manual official CLO/topic/assessment/mapping entry or inferred course data | Complete through M9 supported scope | Review source-set controls plus semantic allowlists, same-analysis provenance, controlled-target validation, and invention-rejection tests | Preserve through M10-M11 presentation and release validation |
 | PRD-30 | Reports and reanalyses never overwrite prior results | Complete | Immutable report and predecessor tests | Preserve |
-| PRD-31 | Advisory scope and documented exclusions | Complete | Prompt, report, UI, and governance disclaimers | Preserve fake provider as default |
+| PRD-31 | Advisory scope and documented exclusions | Complete | Prompt, report, UI, provider-production guards, and governance disclaimers | Preserve local/fake development restrictions and approved-provider requirements |
 
 ## SRS functional traceability
 
@@ -100,13 +100,13 @@ are included with the capability they constrain.
 | FR-019 Durable extraction review before semantic analysis | Complete for M2-M5 | Migration `0008`, immutable revisions, revision 1, `review_ready`, GET/PUT/confirm API, controlled workspace, and focused tests | M11 integrated acceptance remains planned |
 | FR-020 Source-faithful review operations only | Complete for M4-M5 | Complete-snapshot validation, immutable anchors, stale/fabricated-row rejection, controlled UI, restoration/exclusion, and audit tests | No source-authoring controls are authorized |
 | FR-021 No AI before extraction confirmation | Complete for M3-M5 | Provider non-invocation, centralized guards, exact confirmation claim, continuation-stage, duplicate-task, and no-pre-confirmation-Finding tests | Preserve through M6-M11 |
-| FR-022 Separate source mappings from derived relationships | Design-authorized / Planned M6-M7 | M1 manifest/traceability tests | Add labeled typed derived details without overwriting Evidence |
-| FR-023 Derived relationships reference confirmed IDs and evidence | Design-authorized / Planned M6-M7 | M1 manifest/traceability tests | Add candidate-ID and same-analysis validation |
-| FR-024 Backend-derived High/Medium/Low semantic confidence | Partial: M2 enum/persistence implemented; M6 behavior planned | Shared authoritative `SemanticConfidenceLevel`, nullable Finding column, and contract tests; current runtime remains numeric | Add backend evidence-condition derivation and Low-to-Not-Verified enforcement |
-| FR-025 Low confidence becomes Not Verified and is excluded | Design-authorized / Planned M6-M7 | Existing Not Verified scoring exclusion is implemented | Add Low-to-Not-Verified and coverage-exclusion tests |
-| FR-026 Semantic Decision/Evidence/Reasoning/Confidence/Recommendation | Partial: M2 internal core contract implemented; M6-M10 runtime/presentation planned | Versioned `decision`/`evidence_used`/`reasoning`/`recommendation` schema; current findings still expose numeric confidence | Populate validated details, expose categorical contract, and present concise reasoning without chain-of-thought |
+| FR-022 Separate source mappings from derived relationships | Complete M6-M7 | Item-level derived details reference controlled evidence and never overwrite Evidence | Present mapping labels in M10 |
+| FR-023 Derived relationships reference confirmed IDs and evidence | Complete M6-M7 | Candidate allowlists, same-analysis ownership, source-type and confirmed-row provenance validation | Preserve in M10-M11 |
+| FR-024 Backend-derived High/Medium/Low semantic confidence | Complete M6 | Backend derives exact categorical confidence from required-item and controlled-evidence validation | M10 presentation refinement |
+| FR-025 Low confidence becomes Not Verified and is excluded | Complete M6-M7 | Low-to-Not-Verified validation, score exclusion, and mapping-coverage exclusion tests | Preserve in M10-M11 |
+| FR-026 Semantic Decision/Evidence/Reasoning/Confidence/Recommendation | Runtime complete M6-M9; presentation partial | Versioned details include decision, evidence, reasoning, recommendation, item judgments, confidence basis, and retrieved KB IDs | M10 UI/report presentation |
 | FR-027 Deterministic coverage, totals, numbering, and score | Complete for current rules; planned mapping inputs | Existing rule/scoring suites | Keep deterministic while consuming validated non-Low mappings |
-| FR-028 No manual/AI source facts, policies, mappings, or thresholds | Manual review enforcement Complete; AI-output enforcement Planned | M4-M5 source-record-set, immutable-anchor, owner, controlled-UI, and governance tests | Add M6 AI allowlist and invented-ID rejection tests |
+| FR-028 No manual/AI source facts, policies, mappings, or thresholds | Complete M4-M9 | Review source-set controls plus AI allowlist, invented-ID, cross-analysis, wrong-source, and prompt-injection rejection tests | Preserve in M10-M11 |
 
 ## Exam-facing Knowledge Base rule coverage
 
@@ -117,18 +117,18 @@ design-authorized target classification and is tested directly against `04_requi
 
 | Rule | Requirement | Approved target method | Current implementation | Redesign status |
 |---|---|---|---|---|
-| RULE001 | Question-to-CLO Mapping | Semantic/hybrid with exact-citation fast path | Deterministic exact citation | Design-authorized / Planned M7 |
-| RULE002 | CLO Relevance | Semantic/hybrid | Governed semantic evaluator with numeric confidence | Currently implemented; categorical migration Planned M6 |
-| RULE003 | Assessment Method Consistency | Semantic/hybrid with deterministic exact comparison | No evaluator | Design-authorized / Planned M8 |
-| RULE004 | Question Format Suitability | Semantic/hybrid | Governed semantic evaluator with numeric confidence | Currently implemented; categorical/mapping migration Planned M6-M7 |
-| RULE005 | Applicable CLO Coverage | Deterministic aggregation | Deterministic evaluator | Currently implemented; confirmed semantic inputs Planned M7 |
+| RULE001 | Question-to-CLO Mapping | Semantic/hybrid | Governed item-level semantic relationship evaluator | Currently implemented M7 |
+| RULE002 | CLO Relevance | Semantic/hybrid | Governed item-level evaluator with backend categorical confidence | Currently implemented M6 |
+| RULE003 | Assessment Method Consistency | Semantic/hybrid with exact comparison support | Governed semantic evaluator over exam metadata and TP-153 assessment evidence | Currently implemented M8 |
+| RULE004 | Question Format Suitability | Semantic/hybrid | Governed item-level evaluator with controlled CLO targets and categorical confidence | Currently implemented M6 |
+| RULE005 | Applicable CLO Coverage | Deterministic aggregation | Aggregates validated RULE001 item relationships | Currently implemented M7 |
 | RULE006 | CLO Coverage Distribution | Deterministic governed branches | Zero-CLO and one-CLO branches only | Partial; two-or-more branch Deferred |
-| RULE007 | Question-to-Topic Alignment | Semantic/hybrid with exact-citation fast path | Deterministic exact citation | Design-authorized / Planned M7 |
-| RULE008 | Out-of-Scope Content | Semantic/hybrid | Governed semantic evaluator with numeric confidence | Currently implemented; categorical/confirmed-scope migration Planned M6-M7 |
-| RULE009 | Applicable Topic Coverage | Deterministic aggregation | Deterministic evaluator | Currently implemented; confirmed semantic inputs Planned M7 |
-| RULE011 | Clear Task Statement | Semantic/hybrid | No evaluator | Design-authorized / Planned M9 |
-| RULE012 | Unambiguous Wording | Semantic/hybrid | No evaluator | Design-authorized / Planned M9 |
-| RULE013 | Complete Question Information | Semantic/hybrid | No evaluator | Design-authorized / Planned M9 |
+| RULE007 | Question-to-Topic Alignment | Semantic/hybrid | Governed item-level semantic relationship evaluator | Currently implemented M7 |
+| RULE008 | Out-of-Scope Content | Semantic/hybrid | Governed evaluator against controlled documented topics with categorical confidence | Currently implemented M6 |
+| RULE009 | Applicable Topic Coverage | Deterministic aggregation | Aggregates validated RULE007 item relationships | Currently implemented M7 |
+| RULE011 | Clear Task Statement | Semantic/hybrid | Governed question-level semantic evaluator | Currently implemented M9 |
+| RULE012 | Unambiguous Wording | Semantic/hybrid | Governed question-level semantic evaluator | Currently implemented M9 |
+| RULE013 | Complete Question Information | Semantic/hybrid | Governed question/context evaluator | Currently implemented M9 |
 | RULE014 | Referenced Material Availability | Deterministic | No evaluator; structured asset evidence incomplete | Design-authorized / Planned retained implementation |
 | RULE015 | Supporting Material Legibility | No authorized method | No evaluator | Deferred - no governed visual threshold/evaluator |
 | RULE016 | Supporting Material Association | Deterministic | No evaluator; structured layout evidence incomplete | Design-authorized / Planned retained implementation |
@@ -136,7 +136,7 @@ design-authorized target classification and is tested directly against `04_requi
 | RULE018 | Correct Total Marks | Deterministic | Deterministic evaluator | Currently implemented |
 | RULE019 | Consistent Numbering | Deterministic | Deterministic evaluator | Currently implemented |
 | RULE020 | Exam Identification | No authorized method | No evaluator | Deferred - required/essential field set undefined |
-| RULE021 | Complete Instructions | Semantic/hybrid | No evaluator | Design-authorized / Planned M8 |
+| RULE021 | Complete Instructions | Semantic/hybrid | Governed instruction/applicability evaluator | Currently implemented M8 |
 | RULE022 | Resolvable Cross-References | Deterministic | No evaluator; structured reference evidence incomplete | Design-authorized / Planned retained implementation |
 
 ## System and governance rule disposition
@@ -165,18 +165,18 @@ types. Listing a planned component does not claim runtime support.
 
 | Decision | Requirement mapping | Rule mapping | Evidence mapping | Planned component | Planned test | Status |
 |---|---|---|---|---|---|---|
-| DD-001 Evidence-gated hybrid architecture | PRD-11, FR-010-FR-014, FR-021, FR-027 | Semantic/hybrid RULE001/002/003/004/007/008/011/012/013/021; deterministic RULE005/006/009/014/016/018/019/022 | EV002, EV003, EV004, EV005, EV012, EV014, EV015, EV018, EV021, EV022, EV024 | M3-M10 processing, evidence preparation, rule evaluators, scoring | Pipeline order, no pre-confirm AI, rule classification, deterministic aggregation | M3-M5 review gate, confirmation, and governed continuation implemented; expanded evaluators Planned |
+| DD-001 Evidence-gated hybrid architecture | PRD-11, FR-010-FR-014, FR-021, FR-027 | Semantic/hybrid RULE001/002/003/004/007/008/011/012/013/021; deterministic RULE005/006/009/014/016/018/019/022 | EV002, EV003, EV004, EV005, EV012, EV014, EV015, EV018, EV021, EV022, EV024 | M3-M10 processing, evidence preparation, rule evaluators, scoring | Pipeline order, no pre-confirm AI, rule classification, deterministic aggregation | M3-M9 implemented for fourteen unconditional rules plus the governed RULE006 branches; retained structured-extraction gaps remain explicit |
 | DD-002 Extraction Review before AI | PRD-03, PRD-15, PRD-17, FR-019-FR-021 | RULE010, RULE023-RULE026, RULE030 | EV018, EV019, EV020, EV023 | M2 review revision; M3 pause; M4 API; M5 UI | Revision fidelity, provider non-invocation, ownership, stale revision, confirmation race | M2-M5 currently implemented |
-| DD-003 Source evidence versus derived relationships | PRD-15, PRD-19, FR-022-FR-023 | RULE001, RULE007, RULE010, RULE030 | EV002, EV012, EV015, EV018, EV021, EV024 | M6 typed details/validation; M7 derived mappings; M10 labels/report | Candidate allowlist, same-analysis evidence, source/derived label, no Evidence overwrite | Design-authorized / Planned |
-| DD-004 Categorical semantic confidence | PRD-12-PRD-14, FR-024-FR-026 | RULE029, RULE030 | EV018, EV019, EV020, EV021, EV024 | M2 persistence; M6 semantic contract; M10 UI/report | Exact High/Medium/Low enum, no numeric conversion, no percentage display | M2 enum/persistence implemented; numeric runtime currently implemented |
-| DD-005 Backend-derived confidence | PRD-11-PRD-13, FR-023-FR-025 | RULE010, RULE029, RULE030 | EV018, EV019, EV020, EV021, EV024 | M6 validation and persistence | Model cannot elevate confidence; server evidence gates and downgrade tests | Design-authorized / Planned |
-| DD-006 Low confidence becomes Not Verified | PRD-12-PRD-14, FR-012, FR-014, FR-025 | RULE005, RULE009, RULE029, RULE030 | EV021, EV024 | M6 validation; M7 coverage; existing scoring | Low-to-Not-Verified, score-denominator exclusion, mapping coverage exclusion | Design-authorized / Planned; Not Verified scoring exclusion currently implemented |
-| DD-007 Deterministic coverage and scoring | PRD-14, FR-014, FR-027 | RULE005, RULE006, RULE009, RULE018, RULE019 | EV003, EV004, EV005, EV012, EV015, EV021, EV022, EV024 | Existing pure rules/scoring; M7 validated mapping inputs | Repeatable coverage/totals/numbering/score; confidence has no weight | Currently implemented for current inputs; confirmed semantic inputs Planned |
+| DD-003 Source evidence versus derived relationships | PRD-15, PRD-19, FR-022-FR-023 | RULE001, RULE007, RULE010, RULE030 | EV002, EV012, EV015, EV018, EV021, EV024 | M6 typed details/validation; M7 derived mappings; M10 labels/report | Candidate allowlist, same-analysis evidence, source/derived label, no Evidence overwrite | Runtime complete M6-M7; M10 presentation refinement remains |
+| DD-004 Categorical semantic confidence | PRD-12-PRD-14, FR-024-FR-026 | RULE029, RULE030 | EV018, EV019, EV020, EV021, EV024 | M2 persistence; M6 semantic contract; M10 UI/report | Exact High/Medium/Low enum, backend derivation, no percentage display | Runtime complete M6; legacy numeric field is compatibility-only and non-authoritative |
+| DD-005 Backend-derived confidence | PRD-11-PRD-13, FR-023-FR-025 | RULE010, RULE029, RULE030 | EV018, EV019, EV020, EV021, EV024 | M6 validation and persistence | Model cannot elevate confidence; server evidence gates and downgrade tests | Runtime complete M6 |
+| DD-006 Low confidence becomes Not Verified | PRD-12-PRD-14, FR-012, FR-014, FR-025 | RULE005, RULE009, RULE029, RULE030 | EV021, EV024 | M6 validation; M7 coverage; existing scoring | Low-to-Not-Verified, score-denominator exclusion, mapping coverage exclusion | Runtime complete M6-M7 |
+| DD-007 Deterministic coverage and scoring | PRD-14, FR-014, FR-027 | RULE005, RULE006, RULE009, RULE018, RULE019 | EV003, EV004, EV005, EV012, EV015, EV021, EV022, EV024 | Existing pure rules/scoring; M7 validated mapping inputs | Repeatable coverage/totals/numbering/score; confidence has no weight | Runtime complete for RULE005/009/018/019 and the governed zero/one-CLO RULE006 branches |
 | DD-008 No manual creation of official evidence | PRD-29, FR-020, FR-028 | RULE024-RULE026, RULE028 | EV012, EV014, EV015, EV017, EV023 | M4 review validation; M5 controlled UI | Reject new CLO/topic/assessment/mapping records; allow correction/restoration/exclusion | M4-M5 currently implemented |
-| DD-009 No AI-generated source facts | PRD-13, PRD-29, FR-023, FR-028 | RULE010, RULE024-RULE026, RULE028, RULE030 | EV002, EV004, EV012, EV014, EV015, EV017, EV018, EV021, EV023 | M6 schema/allowlists; M7-M9 evaluators | Unknown ID, invented page/text/mark/source record, prompt-injection rejection | Design-authorized / Planned; current validators partially enforce |
+| DD-009 No AI-generated source facts | PRD-13, PRD-29, FR-023, FR-028 | RULE010, RULE024-RULE026, RULE028, RULE030 | EV002, EV004, EV012, EV014, EV015, EV017, EV018, EV021, EV023 | M6 schema/allowlists; M7-M9 evaluators | Unknown ID, invented page/text/mark/source record, prompt-injection rejection | Runtime complete through M9 supported scope |
 | DD-010 Unsupported rules remain deferred | PRD-11, PRD-13, FR-011-FR-012 | RULE006 two-or-more branch, RULE015, RULE017, RULE020 | EV004, EV008, EV009, EV010, EV012, EV019, EV020, EV023 | Capability manifest and traceability only until governed dependency exists | No runtime identifier/finding; reasons remain explicit | Deferred |
-| DD-011 Decision-support scope | PRD-31, FR-013, FR-028 | RULE028 | EV024 | M6-M10 prompts, validation, UI, report | Reject accreditation/attainment/compliance claims; preserve disclaimer | Current advisory scope implemented; expanded-rule preservation Planned |
-| DD-012 Concise reasoning, not chain-of-thought | PRD-13, PRD-15, FR-013, FR-026 | RULE027, RULE030 | EV018, EV024, EV025 | M6 output contract; M10 API/UI/report | Evidence-to-rule explanation, controlled recommendation, no private chain-of-thought | M2 internal details core implemented; runtime/presentation Planned |
+| DD-011 Decision-support scope | PRD-31, FR-013, FR-028 | RULE028 | EV024 | M6-M10 prompts, validation, UI, report | Reject accreditation/attainment/compliance claims; preserve disclaimer | Runtime preserved in M6-M9 prompts, validation, and provider guards; M10 report presentation remains |
+| DD-012 Concise reasoning, not chain-of-thought | PRD-13, PRD-15, FR-013, FR-026 | RULE027, RULE030 | EV018, EV024, EV025 | M6 output contract; M10 API/UI/report | Evidence-to-rule explanation, controlled recommendation, no private chain-of-thought | Runtime complete M6-M9; M10 presentation remains |
 
 ## Production-only deferrals
 

@@ -30,7 +30,10 @@
   processing and ignores duplicate/mismatched continuation tasks.
 - Implemented: review correction/restoration/exclusion preserves source-record identity and
   immutable anchors, rejects stale or fabricated rows, and closes writes after confirmation.
-- Planned: a Low or Not Verified semantic mapping does not contribute to deterministic coverage.
+- Implemented: Low or Not Verified semantic mappings do not contribute positive deterministic
+  coverage; complete negative mappings produce Not Satisfied rather than default Not Verified.
+- Implemented: all 21 exam-facing rules are accounted for by the runtime coverage audit and a
+  supported rule that fails to run is exposed as an operational gap.
 
 ## Contract tests
 - OCR, AI provider, vector store, and file storage adapters.
@@ -39,7 +42,8 @@
 - Implemented M2 contracts: strict source-faithful review snapshot shape, empty collection
   behavior, internal reference validation, immutable revision metadata, and the versioned
   `decision`/`evidence_used`/`reasoning`/`recommendation` evaluation-details core.
-- Planned categorical semantic-output runtime schemas.
+- Implemented categorical semantic-output runtime schemas, item-level relationship contracts, and
+  rule-coverage response contract.
 
 ## Security tests
 - Unauthorized access and IDOR.
@@ -66,5 +70,7 @@ Add governed semantic cases for:
 - retained RULE015, RULE017, RULE020, and RULE006 two-or-more-CLO deferrals; and
 - decision-support disclaimers that prohibit accreditation and attainment claims.
 
-Automated tests use the fake provider by default. Passing fake-provider tests proves orchestration,
-schema, validation, and reproducibility; it does not by itself prove academic semantic validity.
+Automated schema/failure tests use the fake provider. M6-M9 integration tests use the offline local
+baseline to prove complete governed execution without network I/O. Neither provider proves
+institutional academic validity; production semantic validity requires an approved provider/model
+and external academic validation.

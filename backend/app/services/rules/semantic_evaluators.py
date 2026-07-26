@@ -1,4 +1,4 @@
-"""Independent RAG-backed evaluators for RULE002, RULE004, and RULE008."""
+"""Governed RAG-backed evaluators for the Version 1 semantic rule set."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.domain import AcademicStatus
+from app.core.domain import AcademicStatus, SemanticConfidenceLevel
 from app.models.analysis import Analysis
 from app.models.assessment_record import AssessmentRecord
 from app.models.clo import Clo
@@ -23,18 +23,21 @@ from app.services.knowledge_base.reference_data import get_recommendations_for
 from app.services.knowledge_base.runtime import SemanticRuntime
 from app.services.knowledge_base.vector_store import RetrievedRecord
 from app.services.rules.identifiers import (
+    ASSESSMENT_METHOD_CONSISTENCY,
+    CLEAR_TASK_STATEMENT,
     CLO_RELEVANCE,
+    COMPLETE_INSTRUCTIONS,
+    COMPLETE_QUESTION_INFORMATION,
     OUT_OF_SCOPE_CONTENT,
     QUESTION_FORMAT_SUITABILITY,
+    QUESTION_TO_CLO_MAPPING,
+    QUESTION_TO_TOPIC_ALIGNMENT,
+    UNAMBIGUOUS_WORDING,
     RuleIdentifier,
 )
 from app.services.rules.question_hierarchy import scorable_leaves
-from app.services.rules.references import find_cited_codes
-from app.services.rules.semantic_governance import (
-    SemanticRuleSpec,
-    load_semantic_rule_spec,
-)
-from app.services.rules.semantic_types import SemanticValidationContext
+from app.services.rules.semantic_governance import SemanticRuleSpec, load_semantic_rule_spec
+from app.services.rules.semantic_types import SemanticItemJudgment, SemanticValidationContext
 from app.services.rules.semantic_validation import (
     SemanticOutputValidationError,
     semantic_output_schema,
@@ -56,12 +59,16 @@ class PreparedSemanticEvaluation:
     evidence: tuple[Evidence, ...]
     query_text: str
     allowed_evidence_types: frozenset[str]
+    required_source_evidence_ids: frozenset[uuid.UUID]
+    allowed_target_evidence_ids: frozenset[uuid.UUID]
+    relationship_required: bool = False
 
 
 @dataclass(frozen=True)
 class SemanticRuleEvaluation:
     identifier: RuleIdentifier
     status: AcademicStatus
+    confidence_level: SemanticConfidenceLevel
     confidence: float
     evidence_ids: list[uuid.UUID]
     explanation: str
@@ -71,6 +78,9 @@ class SemanticRuleEvaluation:
     model: str | None
     prompt_template_version: str
     kb_version: str
+    items: tuple[SemanticItemJudgment, ...] = ()
+    confidence_basis: tuple[str, ...] = ()
+    retrieved_knowledge_ids: tuple[str, ...] = ()
 
 
 def load_semantic_inputs(session: Session, analysis_id: uuid.UUID) -> SemanticInputs:
@@ -109,8 +119,18 @@ def load_semantic_inputs(session: Session, analysis_id: uuid.UUID) -> SemanticIn
     )
 
 
-def _evidence_by_type(evidence: Sequence[Evidence], evidence_type: str) -> dict[str, Evidence]:
-    return {item.item_reference: item for item in evidence if item.evidence_type == evidence_type}
+def _evidence_of_type(inputs: SemanticInputs, evidence_type: str) -> list[Evidence]:
+    return [item for item in inputs.evidence if item.evidence_type == evidence_type]
+
+
+def _question_evidence(inputs: SemanticInputs) -> list[Evidence]:
+    leaves = scorable_leaves(inputs.questions)
+    by_question_id = {
+        item.question_id: item
+        for item in inputs.evidence
+        if item.evidence_type == "question_text" and item.question_id is not None
+    }
+    return [by_question_id[leaf.id] for leaf in leaves if leaf.id in by_question_id]
 
 
 def _missing_traces(inputs: SemanticInputs, *references: str) -> list[Evidence]:
@@ -131,11 +151,11 @@ def _not_verified(
     evidence: Sequence[Evidence],
 ) -> SemanticRuleEvaluation:
     unique = list(dict.fromkeys(item.id for item in evidence))
-    confidence = min((item.confidence for item in evidence), default=0.0)
     return SemanticRuleEvaluation(
         identifier=identifier,
         status=AcademicStatus.NOT_VERIFIED,
-        confidence=confidence,
+        confidence_level=SemanticConfidenceLevel.LOW,
+        confidence=0.0,
         evidence_ids=unique,
         explanation=explanation,
         recommendation_id=None,
@@ -144,124 +164,144 @@ def _not_verified(
         model=None,
         prompt_template_version=template.version,
         kb_version=runtime.snapshot.version,
+        confidence_basis=("Required confirmed semantic evidence was unavailable.",),
     )
 
 
-def _precondition_evidence(
-    identifier: RuleIdentifier,
-    inputs: SemanticInputs,
-) -> list[Evidence]:
-    traces = _missing_traces(
-        inputs,
-        "questions",
-        "clos",
-        "topics",
-        "assessment_records",
-    )
-    if traces:
-        return traces
-    if identifier == OUT_OF_SCOPE_CONTENT:
-        allowed_types = {"question_text", "topic"}
-    elif identifier == QUESTION_FORMAT_SUITABILITY:
-        allowed_types = {"question_text", "clo", "assessment_record"}
-    else:
-        allowed_types = {"question_text", "clo"}
-    return [item for item in inputs.evidence if item.evidence_type in allowed_types]
-
-
-def _prepare_clo_comparison(
+def _question_target_preparation(
     inputs: SemanticInputs,
     *,
-    include_assessment: bool,
+    target_type: str,
+    target_name: str,
+    extra_context_types: frozenset[str] = frozenset(),
+    relationship_required: bool = True,
 ) -> PreparedSemanticEvaluation | str:
-    leaves = scorable_leaves(inputs.questions)
-    if not leaves:
-        return "No readable scorable questions were extracted from the exam."
-    if not inputs.clos:
-        return "No usable CLO evidence was extracted from the TP-153."
-
-    question_evidence = _evidence_by_type(inputs.evidence, "question_text")
-    clo_evidence = _evidence_by_type(inputs.evidence, "clo")
-    codes = [clo.code for clo in inputs.clos]
-    selected: list[Evidence] = []
-    cited_pairs: list[str] = []
-    for question in leaves:
-        cited = find_cited_codes(question.question_text, codes)
-        if not cited:
-            continue
-        question_row = question_evidence.get(question.number_label)
-        if question_row is not None:
-            selected.append(question_row)
-        for code in sorted(cited):
-            clo_row = clo_evidence.get(code)
-            if clo_row is not None:
-                selected.append(clo_row)
-                cited_pairs.append(f"{question.number_label}->{code}")
-
-    if not cited_pairs:
-        return (
-            "No explicit question-to-CLO reference establishes which CLO evidence is intended; "
-            "semantic relevance or format suitability cannot be verified safely."
-        )
-    if include_assessment:
-        selected.extend(
-            item for item in inputs.evidence if item.evidence_type == "assessment_record"
-        )
+    sources = _question_evidence(inputs)
+    if not sources:
+        return "No readable scorable question evidence was available from the confirmed exam."
+    targets = _evidence_of_type(inputs, target_type)
+    if not targets:
+        return f"No usable {target_name} evidence was available from the confirmed TP-153."
+    context = [item for item in inputs.evidence if item.evidence_type in extra_context_types]
+    evidence = tuple(dict.fromkeys([*sources, *targets, *context]))
     return PreparedSemanticEvaluation(
-        evidence=tuple(dict.fromkeys(selected)),
-        query_text=" ".join(
-            [
-                "question CLO relevance format suitability",
-                *cited_pairs,
-                *(item.extracted_text for item in selected),
-            ]
-        ),
-        allowed_evidence_types=frozenset(
-            {"question_text", "clo", "assessment_record"}
-            if include_assessment
-            else {"question_text", "clo"}
-        ),
+        evidence=evidence,
+        query_text=" ".join(item.extracted_text for item in evidence),
+        allowed_evidence_types=frozenset({"question_text", target_type, *extra_context_types}),
+        required_source_evidence_ids=frozenset(item.id for item in sources),
+        allowed_target_evidence_ids=frozenset(item.id for item in [*targets, *context]),
+        relationship_required=relationship_required,
     )
+
+
+def prepare_question_to_clo_mapping(inputs: SemanticInputs) -> PreparedSemanticEvaluation | str:
+    return _question_target_preparation(inputs, target_type="clo", target_name="CLO")
 
 
 def prepare_clo_relevance(inputs: SemanticInputs) -> PreparedSemanticEvaluation | str:
-    return _prepare_clo_comparison(inputs, include_assessment=False)
+    return _question_target_preparation(inputs, target_type="clo", target_name="CLO")
 
 
 def prepare_question_format_suitability(
     inputs: SemanticInputs,
 ) -> PreparedSemanticEvaluation | str:
-    return _prepare_clo_comparison(inputs, include_assessment=True)
+    return _question_target_preparation(
+        inputs,
+        target_type="clo",
+        target_name="CLO",
+        extra_context_types=frozenset({"assessment_record"}),
+    )
+
+
+def prepare_question_to_topic_alignment(
+    inputs: SemanticInputs,
+) -> PreparedSemanticEvaluation | str:
+    return _question_target_preparation(inputs, target_type="topic", target_name="course-topic")
 
 
 def prepare_out_of_scope_content(
     inputs: SemanticInputs,
 ) -> PreparedSemanticEvaluation | str:
-    leaves = scorable_leaves(inputs.questions)
-    if not leaves:
-        return "No readable scorable questions were extracted from the exam."
-    if not inputs.topics:
-        return "No usable course-topic evidence was extracted from the TP-153."
-    question_evidence = _evidence_by_type(inputs.evidence, "question_text")
-    topic_evidence = [item for item in inputs.evidence if item.evidence_type == "topic"]
-    selected = [
-        question_evidence[question.number_label]
-        for question in leaves
-        if question.number_label in question_evidence
-    ]
-    selected.extend(topic_evidence)
-    if not selected or not topic_evidence:
-        return "Question and topic source evidence could not be assembled safely."
+    return _question_target_preparation(inputs, target_type="topic", target_name="course-topic")
+
+
+def prepare_assessment_method_consistency(
+    inputs: SemanticInputs,
+) -> PreparedSemanticEvaluation | str:
+    sources = _evidence_of_type(inputs, "exam_metadata")
+    if not sources:
+        return "The uploaded exam type could not be assembled as confirmed exam metadata evidence."
+    targets = _evidence_of_type(inputs, "assessment_record")
+    if not targets:
+        return "No usable assessment-method or assessment-activity evidence was extracted."
+    evidence = tuple(dict.fromkeys([*sources, *targets]))
     return PreparedSemanticEvaluation(
-        evidence=tuple(dict.fromkeys(selected)),
-        query_text=" ".join(
-            [
-                "out of scope course topic assessed content",
-                *(item.extracted_text for item in selected),
-            ]
-        ),
-        allowed_evidence_types=frozenset({"question_text", "topic"}),
+        evidence=evidence,
+        query_text="assessment method consistency "
+        + " ".join(item.extracted_text for item in evidence),
+        allowed_evidence_types=frozenset({"exam_metadata", "assessment_record"}),
+        required_source_evidence_ids=frozenset(item.id for item in sources),
+        allowed_target_evidence_ids=frozenset(item.id for item in targets),
+        relationship_required=True,
     )
+
+
+def _question_text_preparation(
+    inputs: SemanticInputs,
+    *,
+    include_instructions: bool = False,
+) -> PreparedSemanticEvaluation | str:
+    sources = _question_evidence(inputs)
+    if not sources:
+        return "No readable scorable question evidence was available from the confirmed exam."
+    instructions = _evidence_of_type(inputs, "instructions") if include_instructions else []
+    evidence = tuple(dict.fromkeys([*sources, *instructions]))
+    return PreparedSemanticEvaluation(
+        evidence=evidence,
+        query_text=" ".join(item.extracted_text for item in evidence),
+        allowed_evidence_types=frozenset(
+            {"question_text", "instructions"} if include_instructions else {"question_text"}
+        ),
+        required_source_evidence_ids=frozenset(item.id for item in sources),
+        allowed_target_evidence_ids=frozenset(item.id for item in instructions),
+        relationship_required=False,
+    )
+
+
+def prepare_clear_task_statement(inputs: SemanticInputs) -> PreparedSemanticEvaluation | str:
+    return _question_text_preparation(inputs)
+
+
+def prepare_unambiguous_wording(inputs: SemanticInputs) -> PreparedSemanticEvaluation | str:
+    return _question_text_preparation(inputs)
+
+
+def prepare_complete_question_information(
+    inputs: SemanticInputs,
+) -> PreparedSemanticEvaluation | str:
+    return _question_text_preparation(inputs, include_instructions=True)
+
+
+def prepare_complete_instructions(inputs: SemanticInputs) -> PreparedSemanticEvaluation | str:
+    return _question_text_preparation(inputs, include_instructions=True)
+
+
+def _precondition_evidence(identifier: RuleIdentifier, inputs: SemanticInputs) -> list[Evidence]:
+    references = ["questions"]
+    if identifier in {
+        QUESTION_TO_CLO_MAPPING,
+        CLO_RELEVANCE,
+        QUESTION_FORMAT_SUITABILITY,
+    }:
+        references.append("clos")
+    if identifier in {QUESTION_TO_TOPIC_ALIGNMENT, OUT_OF_SCOPE_CONTENT}:
+        references.append("topics")
+    if identifier is ASSESSMENT_METHOD_CONSISTENCY:
+        references.append("assessment_records")
+    traces = _missing_traces(inputs, *references)
+    if traces:
+        return traces
+    return list(inputs.evidence)
 
 
 def _retrieved_payload(records: Sequence[RetrievedRecord]) -> list[dict[str, object]]:
@@ -301,6 +341,8 @@ def _prompt_envelope(
                 kb_source_dir.resolve(), spec.identifier.rule_id, status
             )
         ]
+    source_ids = prepared.required_source_evidence_ids
+    target_ids = prepared.allowed_target_evidence_ids
     payload = {
         "rule_id": spec.identifier.rule_id,
         "requirement_id": spec.identifier.requirement_id,
@@ -319,15 +361,28 @@ def _prompt_envelope(
             "Not Applicable": spec.not_applicable_condition,
         },
         "controlled_recommendations": recommendation_options,
+        "required_source_evidence_ids": sorted(str(item) for item in source_ids),
+        "allowed_target_evidence_ids": sorted(str(item) for item in target_ids),
+        "relationship_required": prepared.relationship_required,
+        "item_contract": (
+            "Return exactly one item per required source evidence ID. Cite only allowed target "
+            "evidence IDs. Keep reasoning concise and evidence-to-rule focused."
+        ),
         "evidence": [
             {
                 "id": str(item.id),
+                "role": (
+                    "source"
+                    if item.id in source_ids
+                    else "target"
+                    if item.id in target_ids
+                    else "context"
+                ),
                 "source_document": item.source_document.value,
                 "evidence_type": item.evidence_type,
                 "page_number": item.page_number,
                 "item_reference": item.item_reference,
                 "text": item.extracted_text,
-                "confidence": item.confidence,
             }
             for item in prepared.evidence
         ],
@@ -393,12 +448,15 @@ def _evaluate(
         )
     prepared = prepared_or_reason
 
+    retrieval_query = (
+        f"{identifier.rule_id} {identifier.rule_name} {spec.dimension} {prepared.query_text}"
+    )
     retrieved = runtime.vector_store.query(
-        prepared.query_text,
+        retrieval_query,
         kb_version=runtime.snapshot.version,
         dimension=spec.dimension,
         requirement_id=identifier.requirement_id,
-        n_results=5,
+        n_results=8,
     )
     if not retrieved:
         return _not_verified(
@@ -425,6 +483,9 @@ def _evaluate(
         kb_version=runtime.snapshot.version,
         allowed_evidence_ids=frozenset(item.id for item in prepared.evidence),
         allowed_evidence_types=prepared.allowed_evidence_types,
+        required_source_evidence_ids=prepared.required_source_evidence_ids,
+        allowed_target_evidence_ids=prepared.allowed_target_evidence_ids,
+        relationship_required=prepared.relationship_required,
     )
     attempts = validation_retries + 1
     last_error: SemanticOutputValidationError | None = None
@@ -442,23 +503,170 @@ def _evaluate(
                 provider=runtime.provider,
                 kb_source_dir=kb_source_dir,
             )
+            evaluator_type = (
+                "local_semantic_baseline"
+                if runtime.provider.provider_name == "local"
+                else "semantic_ai"
+            )
             return SemanticRuleEvaluation(
                 identifier=identifier,
                 status=result.status,
-                confidence=result.confidence,
+                confidence_level=result.confidence_level,
+                confidence=result.legacy_confidence,
                 evidence_ids=result.evidence_ids,
                 explanation=result.explanation,
                 recommendation_id=result.recommendation_id,
-                evaluator_type="semantic_ai",
+                evaluator_type=evaluator_type,
                 provider=result.provider,
                 model=result.model,
                 prompt_template_version=result.prompt_template_version,
                 kb_version=result.kb_version,
+                items=result.items,
+                confidence_basis=result.confidence_basis,
+                retrieved_knowledge_ids=tuple(item.official_id for item in retrieved),
             )
         except SemanticOutputValidationError as exc:
             last_error = exc
     assert last_error is not None
     raise last_error
+
+
+def _evaluate_named(
+    identifier: RuleIdentifier,
+    prepare: Callable[[SemanticInputs], PreparedSemanticEvaluation | str],
+    analysis: Analysis,
+    session: Session,
+    runtime: SemanticRuntime,
+    kb_source_dir: Path,
+    inputs: SemanticInputs,
+    validation_retries: int,
+) -> SemanticRuleEvaluation:
+    return _evaluate(
+        analysis=analysis,
+        session=session,
+        runtime=runtime,
+        kb_source_dir=kb_source_dir,
+        identifier=identifier,
+        inputs=inputs,
+        prepare=prepare,
+        validation_retries=validation_retries,
+    )
+
+
+def evaluate_semantic_relationship_rules(
+    analysis: Analysis,
+    session: Session,
+    runtime: SemanticRuntime,
+    kb_source_dir: Path,
+    *,
+    validation_retries: int,
+) -> tuple[SemanticRuleEvaluation, SemanticRuleEvaluation]:
+    inputs = load_semantic_inputs(session, analysis.id)
+    return (
+        _evaluate_named(
+            QUESTION_TO_CLO_MAPPING,
+            prepare_question_to_clo_mapping,
+            analysis,
+            session,
+            runtime,
+            kb_source_dir,
+            inputs,
+            validation_retries,
+        ),
+        _evaluate_named(
+            QUESTION_TO_TOPIC_ALIGNMENT,
+            prepare_question_to_topic_alignment,
+            analysis,
+            session,
+            runtime,
+            kb_source_dir,
+            inputs,
+            validation_retries,
+        ),
+    )
+
+
+def evaluate_semantic_judgment_rules(
+    analysis: Analysis,
+    session: Session,
+    runtime: SemanticRuntime,
+    kb_source_dir: Path,
+    *,
+    validation_retries: int,
+) -> tuple[SemanticRuleEvaluation, ...]:
+    inputs = load_semantic_inputs(session, analysis.id)
+    definitions = (
+        (CLO_RELEVANCE, prepare_clo_relevance),
+        (ASSESSMENT_METHOD_CONSISTENCY, prepare_assessment_method_consistency),
+        (QUESTION_FORMAT_SUITABILITY, prepare_question_format_suitability),
+        (OUT_OF_SCOPE_CONTENT, prepare_out_of_scope_content),
+        (CLEAR_TASK_STATEMENT, prepare_clear_task_statement),
+        (UNAMBIGUOUS_WORDING, prepare_unambiguous_wording),
+        (COMPLETE_QUESTION_INFORMATION, prepare_complete_question_information),
+        (COMPLETE_INSTRUCTIONS, prepare_complete_instructions),
+    )
+    return tuple(
+        _evaluate_named(
+            identifier,
+            prepare,
+            analysis,
+            session,
+            runtime,
+            kb_source_dir,
+            inputs,
+            validation_retries,
+        )
+        for identifier, prepare in definitions
+    )
+
+
+def evaluate_approved_semantic_rules(
+    analysis: Analysis,
+    session: Session,
+    runtime: SemanticRuntime,
+    kb_source_dir: Path,
+    *,
+    validation_retries: int,
+) -> tuple[SemanticRuleEvaluation, ...]:
+    """Compatibility wrapper returning the complete M6-M9 semantic scope."""
+
+    relationships = evaluate_semantic_relationship_rules(
+        analysis,
+        session,
+        runtime,
+        kb_source_dir,
+        validation_retries=validation_retries,
+    )
+    judgments = evaluate_semantic_judgment_rules(
+        analysis,
+        session,
+        runtime,
+        kb_source_dir,
+        validation_retries=validation_retries,
+    )
+    return (*relationships, *judgments)
+
+
+# Public one-rule wrappers retained for focused tests and provider integrations.
+def evaluate_question_to_clo_mapping(
+    analysis: Analysis,
+    session: Session,
+    runtime: SemanticRuntime,
+    kb_source_dir: Path,
+    inputs: SemanticInputs,
+    *,
+    validation_retries: int,
+) -> SemanticRuleEvaluation:
+    return _evaluate_named(
+        QUESTION_TO_CLO_MAPPING,
+        prepare_question_to_clo_mapping,
+        analysis,
+        session,
+        runtime,
+        kb_source_dir,
+        inputs,
+        validation_retries,
+    )
 
 
 def evaluate_clo_relevance(
@@ -470,15 +678,36 @@ def evaluate_clo_relevance(
     *,
     validation_retries: int,
 ) -> SemanticRuleEvaluation:
-    return _evaluate(
-        analysis=analysis,
-        session=session,
-        runtime=runtime,
-        kb_source_dir=kb_source_dir,
-        identifier=CLO_RELEVANCE,
-        inputs=inputs,
-        prepare=prepare_clo_relevance,
-        validation_retries=validation_retries,
+    return _evaluate_named(
+        CLO_RELEVANCE,
+        prepare_clo_relevance,
+        analysis,
+        session,
+        runtime,
+        kb_source_dir,
+        inputs,
+        validation_retries,
+    )
+
+
+def evaluate_assessment_method_consistency(
+    analysis: Analysis,
+    session: Session,
+    runtime: SemanticRuntime,
+    kb_source_dir: Path,
+    inputs: SemanticInputs,
+    *,
+    validation_retries: int,
+) -> SemanticRuleEvaluation:
+    return _evaluate_named(
+        ASSESSMENT_METHOD_CONSISTENCY,
+        prepare_assessment_method_consistency,
+        analysis,
+        session,
+        runtime,
+        kb_source_dir,
+        inputs,
+        validation_retries,
     )
 
 
@@ -491,15 +720,36 @@ def evaluate_question_format_suitability(
     *,
     validation_retries: int,
 ) -> SemanticRuleEvaluation:
-    return _evaluate(
-        analysis=analysis,
-        session=session,
-        runtime=runtime,
-        kb_source_dir=kb_source_dir,
-        identifier=QUESTION_FORMAT_SUITABILITY,
-        inputs=inputs,
-        prepare=prepare_question_format_suitability,
-        validation_retries=validation_retries,
+    return _evaluate_named(
+        QUESTION_FORMAT_SUITABILITY,
+        prepare_question_format_suitability,
+        analysis,
+        session,
+        runtime,
+        kb_source_dir,
+        inputs,
+        validation_retries,
+    )
+
+
+def evaluate_question_to_topic_alignment(
+    analysis: Analysis,
+    session: Session,
+    runtime: SemanticRuntime,
+    kb_source_dir: Path,
+    inputs: SemanticInputs,
+    *,
+    validation_retries: int,
+) -> SemanticRuleEvaluation:
+    return _evaluate_named(
+        QUESTION_TO_TOPIC_ALIGNMENT,
+        prepare_question_to_topic_alignment,
+        analysis,
+        session,
+        runtime,
+        kb_source_dir,
+        inputs,
+        validation_retries,
     )
 
 
@@ -512,50 +762,97 @@ def evaluate_out_of_scope_content(
     *,
     validation_retries: int,
 ) -> SemanticRuleEvaluation:
-    return _evaluate(
-        analysis=analysis,
-        session=session,
-        runtime=runtime,
-        kb_source_dir=kb_source_dir,
-        identifier=OUT_OF_SCOPE_CONTENT,
-        inputs=inputs,
-        prepare=prepare_out_of_scope_content,
-        validation_retries=validation_retries,
+    return _evaluate_named(
+        OUT_OF_SCOPE_CONTENT,
+        prepare_out_of_scope_content,
+        analysis,
+        session,
+        runtime,
+        kb_source_dir,
+        inputs,
+        validation_retries,
     )
 
 
-def evaluate_approved_semantic_rules(
+def evaluate_clear_task_statement(
     analysis: Analysis,
     session: Session,
     runtime: SemanticRuntime,
     kb_source_dir: Path,
+    inputs: SemanticInputs,
     *,
     validation_retries: int,
-) -> tuple[SemanticRuleEvaluation, ...]:
-    inputs = load_semantic_inputs(session, analysis.id)
-    return (
-        evaluate_clo_relevance(
-            analysis,
-            session,
-            runtime,
-            kb_source_dir,
-            inputs,
-            validation_retries=validation_retries,
-        ),
-        evaluate_question_format_suitability(
-            analysis,
-            session,
-            runtime,
-            kb_source_dir,
-            inputs,
-            validation_retries=validation_retries,
-        ),
-        evaluate_out_of_scope_content(
-            analysis,
-            session,
-            runtime,
-            kb_source_dir,
-            inputs,
-            validation_retries=validation_retries,
-        ),
+) -> SemanticRuleEvaluation:
+    return _evaluate_named(
+        CLEAR_TASK_STATEMENT,
+        prepare_clear_task_statement,
+        analysis,
+        session,
+        runtime,
+        kb_source_dir,
+        inputs,
+        validation_retries,
+    )
+
+
+def evaluate_unambiguous_wording(
+    analysis: Analysis,
+    session: Session,
+    runtime: SemanticRuntime,
+    kb_source_dir: Path,
+    inputs: SemanticInputs,
+    *,
+    validation_retries: int,
+) -> SemanticRuleEvaluation:
+    return _evaluate_named(
+        UNAMBIGUOUS_WORDING,
+        prepare_unambiguous_wording,
+        analysis,
+        session,
+        runtime,
+        kb_source_dir,
+        inputs,
+        validation_retries,
+    )
+
+
+def evaluate_complete_question_information(
+    analysis: Analysis,
+    session: Session,
+    runtime: SemanticRuntime,
+    kb_source_dir: Path,
+    inputs: SemanticInputs,
+    *,
+    validation_retries: int,
+) -> SemanticRuleEvaluation:
+    return _evaluate_named(
+        COMPLETE_QUESTION_INFORMATION,
+        prepare_complete_question_information,
+        analysis,
+        session,
+        runtime,
+        kb_source_dir,
+        inputs,
+        validation_retries,
+    )
+
+
+def evaluate_complete_instructions(
+    analysis: Analysis,
+    session: Session,
+    runtime: SemanticRuntime,
+    kb_source_dir: Path,
+    inputs: SemanticInputs,
+    *,
+    validation_retries: int,
+) -> SemanticRuleEvaluation:
+    return _evaluate_named(
+        COMPLETE_INSTRUCTIONS,
+        prepare_complete_instructions,
+        analysis,
+        session,
+        runtime,
+        kb_source_dir,
+        inputs,
+        validation_retries,
     )

@@ -24,6 +24,10 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 
+class AiProviderError(RuntimeError):
+    """Provider integration failure; never an academic evaluation status."""
+
+
 class AiProvider(Protocol):
     @property
     def provider_name(self) -> str: ...

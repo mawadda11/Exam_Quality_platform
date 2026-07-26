@@ -17,8 +17,8 @@ Milestone M1 changes governance and planning contracts only. M2 implements the m
 and strict internal schemas for Extraction Review and categorical semantic confidence. M3 creates
 revision 1 and pauses at `review_ready`. M4-M5 implement owner-authorized immutable review
 revisions, exact-revision confirmation, guarded continuation, and the review workspace.
-Categorical-confidence evaluation and expanded semantic evaluators remain planned for M6 and later
-milestones.
+M6-M9 implement categorical-confidence evaluation, the complete ten-rule semantic/hybrid target,
+deterministic mapping coverage, and explicit capability accounting. M10-M11 remain planned.
 
 ## DD-001 - Evidence-gated hybrid architecture
 
@@ -208,8 +208,9 @@ precision.
 
 **Consequences and limitations**
 
-The current runtime still stores and displays numeric semantic confidence. Replacement is planned
-for M6 and M10; M1 does not change runtime or frontend behavior.
+The current runtime derives categorical semantic confidence in the backend. The legacy numeric
+column is populated only as a compatibility projection; M10 still owns removal of
+percentage-oriented presentation.
 
 ## DD-005 - Backend-derived confidence
 
@@ -224,8 +225,8 @@ conditions.
 
 **Chosen approach**
 
-The future model contract will return evidence uses, concise reasoning, and a bounded inference
-basis. The backend will validate the evidence and derive or downgrade the final confidence level.
+The implemented semantic contract returns evidence uses, concise reasoning, and a bounded inference
+basis. The backend validates the evidence and derives or downgrades the final confidence level.
 
 **Alternatives considered**
 
@@ -507,7 +508,7 @@ status counts and evidence limitations.
 
 **Decision**
 
-Every future semantic finding exposes Decision, Evidence Used, Concise Reasoning, categorical
+Every implemented semantic finding exposes Decision, Evidence Used, Concise Reasoning, categorical
 Confidence, and an optional controlled Recommendation.
 
 **Problem addressed**

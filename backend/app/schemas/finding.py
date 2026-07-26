@@ -6,20 +6,31 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.core.domain import AcademicStatus, UploadedFileType
+from app.core.domain import AcademicStatus, SemanticConfidenceLevel, UploadedFileType
 
 if TYPE_CHECKING:
     from app.models.finding import Finding
     from app.services.knowledge_base.reference_data import RequirementDisplay
 
 
-class FindingEvaluationDetails(BaseModel):
-    """Versioned internal contract for future governed semantic findings.
+class FindingItemJudgmentDetails(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
 
-    M2 defines this contract but does not persist or expose it. Future
-    rule-specific schemas may extend it, while retaining these required core
-    fields and using the same schema version.
-    """
+    source_evidence_id: UUID
+    target_evidence_ids: list[UUID] = Field(default_factory=list)
+    status: AcademicStatus
+    reasoning: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("target_evidence_ids")
+    @classmethod
+    def target_ids_are_unique(cls, value: list[UUID]) -> list[UUID]:
+        if len(value) != len(set(value)):
+            raise ValueError("target_evidence_ids must not contain duplicates.")
+        return value
+
+
+class FindingEvaluationDetails(BaseModel):
+    """Versioned governed details persisted for semantic findings."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -28,6 +39,9 @@ class FindingEvaluationDetails(BaseModel):
     evidence_used: list[UUID]
     reasoning: str = Field(min_length=1, max_length=4000)
     recommendation: str | None
+    confidence_basis: list[str] = Field(default_factory=list)
+    item_judgments: list[FindingItemJudgmentDetails] = Field(default_factory=list)
+    retrieved_knowledge_ids: list[str] = Field(default_factory=list)
 
     @field_validator("evidence_used")
     @classmethod
@@ -52,6 +66,13 @@ class FindingEvaluationDetails(BaseModel):
             raise ValueError("recommendation must be a controlled recommendation ID or null.")
         return value.strip()
 
+    @field_validator("confidence_basis", "retrieved_knowledge_ids")
+    @classmethod
+    def list_strings_are_not_blank(cls, value: list[str]) -> list[str]:
+        if any(not item.strip() for item in value):
+            raise ValueError("List values must not be blank.")
+        return [item.strip() for item in value]
+
 
 class FindingEvidenceRefResponse(BaseModel):
     model_config = {"from_attributes": True}
@@ -73,6 +94,8 @@ class FindingResponse(BaseModel):
     status: AcademicStatus
     explanation: str
     confidence: float
+    confidence_level: SemanticConfidenceLevel | None
+    evaluation_details: FindingEvaluationDetails | None
     evaluator_type: str
     recommendation_id: str | None
     ai_provider: str | None
@@ -81,12 +104,6 @@ class FindingResponse(BaseModel):
     kb_version: str | None
     created_at: datetime
     evidence: list[FindingEvidenceRefResponse]
-    # M9 additions (additive-only - see docs/API_SPECIFICATION.md): sourced
-    # verbatim from 04_requirements.xlsx via the requirement_id this Finding
-    # already carries, so the Results UI can render a human-readable name,
-    # group by dimension, and honor CLAUDE.md's "do not present derived
-    # project rules as official quotations" without hardcoding a second copy
-    # of KB text in the frontend.
     requirement_name: str
     dimension: str
     source_type: str
@@ -96,6 +113,11 @@ class FindingResponse(BaseModel):
     def from_model(
         cls, finding: Finding, requirement_display: RequirementDisplay
     ) -> FindingResponse:
+        details = (
+            FindingEvaluationDetails.model_validate(finding.evaluation_details, strict=False)
+            if finding.evaluation_details is not None
+            else None
+        )
         return cls(
             id=finding.id,
             analysis_id=finding.analysis_id,
@@ -104,6 +126,8 @@ class FindingResponse(BaseModel):
             status=finding.status,
             explanation=finding.explanation,
             confidence=finding.confidence,
+            confidence_level=finding.confidence_level,
+            evaluation_details=details,
             evaluator_type=finding.evaluator_type,
             recommendation_id=finding.recommendation_id,
             ai_provider=finding.ai_provider,

@@ -1,17 +1,11 @@
-"""Per-stage pipeline handlers.
+"""Per-stage pipeline handlers for the reviewed hybrid workflow.
 
-The delivered baseline wired extraction, evidence, KB retrieval, deterministic
-rules, and the currently supported semantic evaluators. Hybrid-redesign M3
-splits those handlers into pre-review and post-confirmation groups. The initial
-runner stops after source-faithful extraction and revision materialization;
-every downstream handler shares the confirmation guard below.
-
-The M8 correction remains intact for deterministic evaluation:
-REQ006/RULE006 (CLO Coverage Distribution) is genuinely
-deterministic only for 0 or 1 applicable CLOs; evaluate_clo_coverage_distribution
-returns None for 2+, and this stage skips persistence in that case rather
-than inventing a judgment. The approved semantic continuation is limited to
-RULE002, RULE004, and RULE008; it does not release a RULE006 evaluator.
+M3-M5 split processing at the source-faithful review boundary. M6-M9 build
+confirmed evidence, retrieve governed KB context, execute ten constrained
+semantic evaluators, and deterministically aggregate CLO/topic coverage.
+RULE006 remains conservative: zero and one applicable CLO have governed
+outcomes; two or more applicable CLOs produce no Finding because the KB does
+not define a concentration threshold.
 """
 
 from __future__ import annotations
@@ -28,7 +22,6 @@ from app.models.analysis import Analysis
 from app.models.clo import Clo
 from app.models.evidence import Evidence
 from app.models.question import Question
-from app.models.topic import Topic
 from app.services.extraction.digital_pdf_extractor import PdfPlumberExamExtractor
 from app.services.extraction.digital_tp153_extractor import PdfPlumberTp153Extractor
 from app.services.extraction.persistence import persist_extraction_result
@@ -36,32 +29,36 @@ from app.services.extraction.review_snapshot import materialize_initial_review_r
 from app.services.extraction.tp153_persistence import persist_tp153_extraction_result
 from app.services.extraction.types import ExtractionError
 from app.services.knowledge_base.runtime import get_semantic_runtime
-from app.services.rules.clo_topic_alignment import (
-    evaluate_question_to_clo_mapping,
-    evaluate_question_to_topic_alignment,
-)
 from app.services.rules.clo_topic_coverage import (
-    evaluate_applicable_clo_coverage,
-    evaluate_applicable_topic_coverage,
+    evaluate_applicable_clo_coverage_from_relationships,
+    evaluate_applicable_topic_coverage_from_relationships,
     evaluate_clo_coverage_distribution,
 )
 from app.services.rules.identifiers import (
     APPLICABLE_CLO_COVERAGE,
     APPLICABLE_TOPIC_COVERAGE,
+    ASSESSMENT_METHOD_CONSISTENCY,
+    CLEAR_TASK_STATEMENT,
     CLO_COVERAGE_DISTRIBUTION,
     CLO_RELEVANCE,
+    COMPLETE_INSTRUCTIONS,
+    COMPLETE_QUESTION_INFORMATION,
     MARKS_AND_TOTAL,
     NUMBERING,
     OUT_OF_SCOPE_CONTENT,
     QUESTION_FORMAT_SUITABILITY,
     QUESTION_TO_CLO_MAPPING,
     QUESTION_TO_TOPIC_ALIGNMENT,
+    UNAMBIGUOUS_WORDING,
     RuleIdentifier,
 )
 from app.services.rules.marks_total import evaluate_marks_and_total
 from app.services.rules.numbering import evaluate_numbering
 from app.services.rules.persistence import persist_finding, persist_semantic_finding
-from app.services.rules.semantic_evaluators import evaluate_approved_semantic_rules
+from app.services.rules.semantic_evaluators import (
+    evaluate_semantic_judgment_rules,
+    evaluate_semantic_relationship_rules,
+)
 from app.services.storage.keys import resolve_storage_path
 
 # The RuleIdentifiers run_applying_rules actually evaluates at runtime.
@@ -77,8 +74,13 @@ RUNTIME_RULE_IDENTIFIERS: tuple[RuleIdentifier, ...] = (
     QUESTION_TO_TOPIC_ALIGNMENT,
     APPLICABLE_TOPIC_COVERAGE,
     CLO_RELEVANCE,
+    ASSESSMENT_METHOD_CONSISTENCY,
     QUESTION_FORMAT_SUITABILITY,
     OUT_OF_SCOPE_CONTENT,
+    CLEAR_TASK_STATEMENT,
+    UNAMBIGUOUS_WORDING,
+    COMPLETE_QUESTION_INFORMATION,
+    COMPLETE_INSTRUCTIONS,
 )
 
 
@@ -131,9 +133,32 @@ def run_extracting_tp153(analysis: Analysis, session: Session, settings: Setting
 
 
 def run_building_evidence(analysis: Analysis, session: Session, settings: Settings) -> None:
-    """Adds a traceable absence record when no exam question text was extracted."""
+    """Build deterministic post-confirmation evidence required by M6-M9."""
+
     require_confirmed_review(analysis)
-    existing = session.execute(
+
+    exam_type_evidence = session.execute(
+        select(Evidence).where(
+            Evidence.analysis_id == analysis.id,
+            Evidence.evidence_type == "exam_metadata",
+            Evidence.item_reference == "exam_type",
+        )
+    ).scalar_one_or_none()
+    if exam_type_evidence is None:
+        session.add(
+            Evidence(
+                analysis_id=analysis.id,
+                source_document=UploadedFileType.EXAM,
+                evidence_type="exam_metadata",
+                page_number=1,
+                item_reference="exam_type",
+                extracted_text=f"Exam type: {analysis.exam_type.value}",
+                geometry=None,
+                confidence=1.0,
+            )
+        )
+
+    existing_question = session.execute(
         select(Evidence)
         .where(
             Evidence.analysis_id == analysis.id,
@@ -141,29 +166,28 @@ def run_building_evidence(analysis: Analysis, session: Session, settings: Settin
         )
         .limit(1)
     ).scalar_one_or_none()
-    if existing is not None:
-        return
-    missing = session.execute(
-        select(Evidence).where(
-            Evidence.analysis_id == analysis.id,
-            Evidence.evidence_type == "missing_semantic_input",
-            Evidence.item_reference == "questions",
-        )
-    ).scalar_one_or_none()
-    if missing is None:
-        session.add(
-            Evidence(
-                analysis_id=analysis.id,
-                source_document=UploadedFileType.EXAM,
-                evidence_type="missing_semantic_input",
-                page_number=1,
-                item_reference="questions",
-                extracted_text="No readable question text was extracted from the exam.",
-                geometry=None,
-                confidence=0.0,
+    if existing_question is None:
+        missing = session.execute(
+            select(Evidence).where(
+                Evidence.analysis_id == analysis.id,
+                Evidence.evidence_type == "missing_semantic_input",
+                Evidence.item_reference == "questions",
             )
-        )
-        session.flush()
+        ).scalar_one_or_none()
+        if missing is None:
+            session.add(
+                Evidence(
+                    analysis_id=analysis.id,
+                    source_document=UploadedFileType.EXAM,
+                    evidence_type="missing_semantic_input",
+                    page_number=1,
+                    item_reference="questions",
+                    extracted_text="No readable question text was extracted from the exam.",
+                    geometry=None,
+                    confidence=0.0,
+                )
+            )
+    session.flush()
 
 
 def run_retrieving_knowledge(analysis: Analysis, session: Session, settings: Settings) -> None:
@@ -173,77 +197,66 @@ def run_retrieving_knowledge(analysis: Analysis, session: Session, settings: Set
 
 
 def run_applying_rules(analysis: Analysis, session: Session, settings: Settings) -> None:
-    """Runs the M6 deterministic, exam-internal rules (marks/total
-    arithmetic and numbering) and the M8 deterministic CLO/topic alignment
-    and coverage rules, followed by the three approved semantic evaluators.
-    It persists one Finding per rule that genuinely produces one - RULE006
-    persists no Finding at all when 2+ CLOs are applicable (see module
-    docstring). Report generation remains outside this rule stage."""
+    """Run the governed M6-M9 hybrid evaluation in approved order."""
+
     require_confirmed_review(analysis)
     questions = (
         session.execute(select(Question).where(Question.analysis_id == analysis.id)).scalars().all()
     )
-    exam_evidence = (
-        session.execute(
-            select(Evidence).where(
-                Evidence.analysis_id == analysis.id,
-                Evidence.source_document == UploadedFileType.EXAM,
-            )
-        )
-        .scalars()
-        .all()
+    evidence = (
+        session.execute(select(Evidence).where(Evidence.analysis_id == analysis.id)).scalars().all()
     )
 
-    marks_result = evaluate_marks_and_total(questions, exam_evidence)
-    persist_finding(session, analysis.id, MARKS_AND_TOTAL, marks_result)
-
-    numbering_result = evaluate_numbering(questions, exam_evidence)
-    persist_finding(session, analysis.id, NUMBERING, numbering_result)
-
-    tp153_evidence = (
-        session.execute(
-            select(Evidence).where(
-                Evidence.analysis_id == analysis.id,
-                Evidence.source_document == UploadedFileType.TP153,
-            )
-        )
-        .scalars()
-        .all()
+    persist_finding(
+        session,
+        analysis.id,
+        MARKS_AND_TOTAL,
+        evaluate_marks_and_total(questions, evidence),
     )
-    clos = session.execute(select(Clo).where(Clo.analysis_id == analysis.id)).scalars().all()
-    topics = session.execute(select(Topic).where(Topic.analysis_id == analysis.id)).scalars().all()
-
-    # Question text (exam evidence) and CLO/topic evidence (TP-153 evidence)
-    # are both needed - question_text rows only exist under EXAM.
-    combined_evidence = [*exam_evidence, *tp153_evidence]
-
-    clo_mapping_result = evaluate_question_to_clo_mapping(questions, combined_evidence, clos)
-    persist_finding(session, analysis.id, QUESTION_TO_CLO_MAPPING, clo_mapping_result)
-
-    clo_coverage_result = evaluate_applicable_clo_coverage(questions, combined_evidence, clos)
-    persist_finding(session, analysis.id, APPLICABLE_CLO_COVERAGE, clo_coverage_result)
-
-    topic_alignment_result = evaluate_question_to_topic_alignment(
-        questions, combined_evidence, topics
+    persist_finding(
+        session,
+        analysis.id,
+        NUMBERING,
+        evaluate_numbering(questions, evidence),
     )
-    persist_finding(session, analysis.id, QUESTION_TO_TOPIC_ALIGNMENT, topic_alignment_result)
-
-    topic_coverage_result = evaluate_applicable_topic_coverage(questions, combined_evidence, topics)
-    persist_finding(session, analysis.id, APPLICABLE_TOPIC_COVERAGE, topic_coverage_result)
-
-    # None (2+ applicable CLOs) means no genuine judgment is possible - skip
-    # persistence rather than record an unconditional Not Verified Finding.
-    clo_distribution_result = evaluate_clo_coverage_distribution(combined_evidence, clos)
-    if clo_distribution_result is not None:
-        persist_finding(session, analysis.id, CLO_COVERAGE_DISTRIBUTION, clo_distribution_result)
 
     runtime = get_semantic_runtime(settings)
     runtime.ensure_index()
-    semantic_results = evaluate_approved_semantic_rules(
+    kb_source_dir = Path(settings.kb_source_dir).resolve()
+
+    clo_mapping, topic_mapping = evaluate_semantic_relationship_rules(
         analysis,
         session,
         runtime,
-        Path(settings.kb_source_dir).resolve(),
+        kb_source_dir,
+        validation_retries=settings.ai_validation_retries,
+    )
+    persist_semantic_finding(session, analysis.id, clo_mapping)
+    persist_semantic_finding(session, analysis.id, topic_mapping)
+
+    persist_finding(
+        session,
+        analysis.id,
+        APPLICABLE_CLO_COVERAGE,
+        evaluate_applicable_clo_coverage_from_relationships(evidence, clo_mapping),
+    )
+    persist_finding(
+        session,
+        analysis.id,
+        APPLICABLE_TOPIC_COVERAGE,
+        evaluate_applicable_topic_coverage_from_relationships(evidence, topic_mapping),
+    )
+
+    clos = session.execute(select(Clo).where(Clo.analysis_id == analysis.id)).scalars().all()
+    clo_distribution_result = evaluate_clo_coverage_distribution(evidence, clos)
+    if clo_distribution_result is not None:
+        persist_finding(session, analysis.id, CLO_COVERAGE_DISTRIBUTION, clo_distribution_result)
+
+    semantic_results = evaluate_semantic_judgment_rules(
+        analysis,
+        session,
+        runtime,
+        kb_source_dir,
         validation_retries=settings.ai_validation_retries,
     )
     for result in semantic_results:

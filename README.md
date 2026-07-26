@@ -1,8 +1,7 @@
 # AI Exam Quality Platform
 
-Evidence-based Midterm and Final exam quality-analysis platform for Faculty Members. Deterministic
-rules and three advisory semantic evaluators produce traceable findings; the faculty member retains
-final academic responsibility.
+Evidence-based Midterm and Final exam quality-analysis platform for Faculty Members. Deterministic aggregation and ten governed advisory semantic/hybrid evaluators produce traceable
+findings; the faculty member retains final academic responsibility.
 
 ## Start with Claude Code
 1. Upload this repository to GitHub.
@@ -16,11 +15,11 @@ Claude Code automatically reads `CLAUDE.md` in the repository root.
 
 ## Current implementation status
 
-M1-M3 are committed through base commit `ff78686`. The `m4-m5-extraction-review` delivery adds the
-owner-authorized Extraction Review API, immutable review revisions, exact-revision confirmation,
-guarded post-confirmation continuation, and the dedicated review workspace. Read
-`docs/M4_M5_HANDOFF.md`, `docs/M4_M5_IMPLEMENTATION_REPORT.md`, and
-`docs/M4_M5_VERIFICATION.md` before committing or continuing to M6.
+M1-M5 are committed through base commit `cce3dc0`. The current
+`m6-m9-governed-semantic-evaluation` delivery adds confirmed evidence construction, categorical
+semantic confidence, the complete ten-rule semantic/hybrid target, deterministic CLO/topic
+coverage, and all-rule runtime accounting. Read `docs/M6_M9_HANDOFF.md`,
+`docs/M6_M9_IMPLEMENTATION_REPORT.md`, and `docs/M6_M9_VERIFICATION.md` before committing.
 
 ## Local development
 

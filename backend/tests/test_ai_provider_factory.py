@@ -5,6 +5,7 @@ import pytest
 from app.core.config import Settings
 from app.services.ai.factory import AiProviderConfigurationError, build_ai_provider
 from app.services.ai.fake_provider import FakeAiProvider
+from app.services.ai.local_provider import LocalSemanticProvider
 from app.services.knowledge_base.factory import (
     VectorStoreConfigurationError,
     build_vector_store,
@@ -29,6 +30,26 @@ def test_fake_provider_is_selected_without_network_io() -> None:
     assert isinstance(provider, FakeAiProvider)
     assert provider.provider_name == "fake"
     assert provider.model_name == "fake-semantic-v1"
+
+
+def test_local_provider_is_selected_for_offline_development() -> None:
+    provider = build_ai_provider(
+        _settings(ai_provider="local", ai_model="local-governed-baseline-v1")
+    )
+    assert isinstance(provider, LocalSemanticProvider)
+    assert provider.provider_name == "local"
+    assert provider.model_name == "local-governed-baseline-v1"
+
+
+def test_local_provider_is_rejected_in_production() -> None:
+    with pytest.raises(AiProviderConfigurationError, match="not permitted"):
+        build_ai_provider(
+            _settings(
+                app_env="production",
+                ai_provider="local",
+                ai_model="local-governed-baseline-v1",
+            )
+        )
 
 
 def test_fake_provider_is_rejected_in_production() -> None:

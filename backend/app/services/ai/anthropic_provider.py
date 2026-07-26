@@ -21,16 +21,10 @@ from typing import Any
 
 import anthropic
 
+from app.services.ai.provider import AiProviderError
+
 _TOOL_NAME = "submit_evaluation"
 _MAX_TOKENS = 1024
-
-
-class AiProviderError(RuntimeError):
-    """Raised when the provider responds but produces no usable structured
-    output (e.g. no tool_use block despite forced tool_choice) - a genuine
-    integration/infrastructure problem, not an academic judgment, so this
-    propagates to the same safe-failure pipeline path as any other
-    uncaught exception."""
 
 
 class AnthropicAiProvider:

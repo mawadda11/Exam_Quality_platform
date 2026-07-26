@@ -56,11 +56,13 @@ Processing failures are not academic statuses. Use separate processing states/er
 - Keep deterministic calculations deterministic.
 - Keep explicit source mappings separate from AI-derived semantic relationships. A derived
   relationship must reference confirmed source records and must never overwrite source evidence.
+- Keep implementation capability separate from academic status. Use the runtime rule-coverage audit
+  for unsupported or unexpectedly unexecuted rules; never disguise those gaps as Not Verified.
 - Do not call an AI evaluator before the uploaded-document extraction has been reviewed and
   confirmed. M3 enforces the `review_ready` pause; M4-M5 enforce exact-revision confirmation,
   source-faithful review, and guarded post-confirmation continuation.
-- Semantic confidence is categorical (`High`, `Medium`, or `Low`) and is eventually derived by the
-  backend from validated evidence conditions, never trusted as model self-assessment. Low
+- Semantic confidence is categorical (`High`, `Medium`, or `Low`) and is derived by the backend
+  from validated evidence conditions, never trusted as model self-assessment. Low
   confidence produces `Not Verified`.
 - `app.core.domain.SemanticConfidenceLevel` is the single authoritative categorical-confidence
   enum. ORM, Pydantic, API, and AI code must reuse it; do not define alternative confidence enums.

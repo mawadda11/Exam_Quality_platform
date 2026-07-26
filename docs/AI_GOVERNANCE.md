@@ -25,8 +25,8 @@ The design-authorized Version 1 evaluation order is:
 This contract is approved in M1. M2 implements review-revision and categorical-confidence
 persistence plus strict internal schemas. M3 creates revision 1 and pauses at `review_ready`.
 M4-M5 implement controlled review/edit/confirmation APIs, the review UI, and exact-revision guarded
-continuation. Categorical-confidence runtime behavior and expanded evaluators remain planned for
-M6 and later.
+continuation. M6-M9 implement categorical-confidence runtime behavior, the complete ten-rule
+semantic/hybrid target, deterministic relationship coverage, and explicit capability accounting.
 
 ## Extraction Review boundary
 
@@ -82,9 +82,13 @@ Confidence is not a percentage, academic status, severity, priority, quality sco
 or scoring weight. Numeric OCR and extraction confidence are separate technical metadata and must
 not be converted into semantic confidence.
 
+Implementation coverage is also separate from academic status. An unsupported capability or a
+supported rule that failed to run is reported by the rule-coverage audit; it must never be converted
+to academic `Not Verified`.
+
 ## Reasoning and recommendation
 
-A released semantic finding eventually exposes:
+A released semantic finding exposes:
 
 - Decision;
 - Evidence Used;

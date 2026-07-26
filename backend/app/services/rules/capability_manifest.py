@@ -110,8 +110,7 @@ CAPABILITY_MANIFEST: tuple[CapabilityEntry, ...] = (
         requirement_name="Question-to-CLO Mapping",
         support_status=SupportStatus.SUPPORTED,
         target_evaluation_mode=EvaluationMode.SEMANTIC_OR_HYBRID,
-        implemented_milestone="M8",
-        planned_milestone_or_dependency="M7 semantic relationship implementation",
+        implemented_milestone="M7",
     ),
     CapabilityEntry(
         requirement_id="REQ005",
@@ -119,8 +118,7 @@ CAPABILITY_MANIFEST: tuple[CapabilityEntry, ...] = (
         requirement_name="Applicable CLO Coverage",
         support_status=SupportStatus.SUPPORTED,
         target_evaluation_mode=EvaluationMode.DETERMINISTIC,
-        implemented_milestone="M8",
-        planned_milestone_or_dependency="M7 confirmed semantic relationship inputs",
+        implemented_milestone="M7",
     ),
     CapabilityEntry(
         requirement_id="REQ006",
@@ -144,8 +142,7 @@ CAPABILITY_MANIFEST: tuple[CapabilityEntry, ...] = (
         requirement_name="Question-to-Topic Alignment",
         support_status=SupportStatus.SUPPORTED,
         target_evaluation_mode=EvaluationMode.SEMANTIC_OR_HYBRID,
-        implemented_milestone="M8",
-        planned_milestone_or_dependency="M7 semantic relationship implementation",
+        implemented_milestone="M7",
     ),
     CapabilityEntry(
         requirement_id="REQ009",
@@ -153,8 +150,7 @@ CAPABILITY_MANIFEST: tuple[CapabilityEntry, ...] = (
         requirement_name="Applicable Topic Coverage",
         support_status=SupportStatus.SUPPORTED,
         target_evaluation_mode=EvaluationMode.DETERMINISTIC,
-        implemented_milestone="M8",
-        planned_milestone_or_dependency="M7 confirmed semantic relationship inputs",
+        implemented_milestone="M7",
     ),
     CapabilityEntry(
         requirement_id="REQ018",
@@ -178,8 +174,7 @@ CAPABILITY_MANIFEST: tuple[CapabilityEntry, ...] = (
         requirement_name="CLO Relevance",
         support_status=SupportStatus.SUPPORTED,
         target_evaluation_mode=EvaluationMode.SEMANTIC_OR_HYBRID,
-        implemented_milestone="Semantic AI/RAG",
-        planned_milestone_or_dependency="M6 categorical semantic contract",
+        implemented_milestone="M6",
     ),
     CapabilityEntry(
         requirement_id="REQ004",
@@ -187,8 +182,7 @@ CAPABILITY_MANIFEST: tuple[CapabilityEntry, ...] = (
         requirement_name="Question Format Suitability",
         support_status=SupportStatus.SUPPORTED,
         target_evaluation_mode=EvaluationMode.SEMANTIC_OR_HYBRID,
-        implemented_milestone="Semantic AI/RAG",
-        planned_milestone_or_dependency="M6-M7 categorical and mapping contract",
+        implemented_milestone="M6",
     ),
     CapabilityEntry(
         requirement_id="REQ008",
@@ -196,58 +190,40 @@ CAPABILITY_MANIFEST: tuple[CapabilityEntry, ...] = (
         requirement_name="Out-of-Scope Content",
         support_status=SupportStatus.SUPPORTED,
         target_evaluation_mode=EvaluationMode.SEMANTIC_OR_HYBRID,
-        implemented_milestone="Semantic AI/RAG",
-        planned_milestone_or_dependency="M6-M7 categorical and confirmed-scope contract",
+        implemented_milestone="M6",
     ),
     CapabilityEntry(
         requirement_id="REQ003",
         rule_id="RULE003",
         requirement_name="Assessment Method Consistency",
-        support_status=SupportStatus.UNSUPPORTED,
+        support_status=SupportStatus.SUPPORTED,
         target_evaluation_mode=EvaluationMode.SEMANTIC_OR_HYBRID,
-        reason=(
-            "Retained for Version 1, but no runtime evaluator currently compares explicit exam "
-            "metadata with TP-153 assessment-method and assessment-activity evidence. Until that "
-            "conservative comparison is implemented, no Finding is released."
-        ),
-        planned_milestone_or_dependency="M8 semantic/hybrid implementation",
+        implemented_milestone="M8",
     ),
     CapabilityEntry(
         requirement_id="REQ011",
         rule_id="RULE011",
         requirement_name="Clear Task Statement",
-        support_status=SupportStatus.UNSUPPORTED,
+        support_status=SupportStatus.SUPPORTED,
         target_evaluation_mode=EvaluationMode.SEMANTIC_OR_HYBRID,
-        reason=(
-            "Retained for governed semantic implementation in Version 1. The current runtime has "
-            "no evaluator for the KB's clear-action and expected-response conditions."
-        ),
-        planned_milestone_or_dependency="M9 semantic implementation",
+        implemented_milestone="M9",
     ),
     CapabilityEntry(
         requirement_id="REQ012",
         rule_id="RULE012",
         requirement_name="Unambiguous Wording",
-        support_status=SupportStatus.UNSUPPORTED,
+        support_status=SupportStatus.SUPPORTED,
         target_evaluation_mode=EvaluationMode.SEMANTIC_OR_HYBRID,
-        reason=(
-            "Retained for governed semantic implementation in Version 1. The current runtime has "
-            "no evaluator for material ambiguity, contradiction, or missing conditions."
-        ),
-        planned_milestone_or_dependency="M9 semantic implementation",
+        implemented_milestone="M9",
     ),
     CapabilityEntry(
         requirement_id="REQ013",
         rule_id="RULE013",
         requirement_name="Complete Information",
         rule_name="Complete Question Information",
-        support_status=SupportStatus.UNSUPPORTED,
+        support_status=SupportStatus.SUPPORTED,
         target_evaluation_mode=EvaluationMode.SEMANTIC_OR_HYBRID,
-        reason=(
-            "Retained for governed semantic implementation in Version 1. Structured question and "
-            "question-specific instruction evidence must be available before evaluation."
-        ),
-        planned_milestone_or_dependency="M9 semantic implementation",
+        implemented_milestone="M9",
     ),
     CapabilityEntry(
         requirement_id="REQ014",
@@ -318,13 +294,9 @@ CAPABILITY_MANIFEST: tuple[CapabilityEntry, ...] = (
         requirement_id="REQ021",
         rule_id="RULE021",
         requirement_name="Complete Instructions",
-        support_status=SupportStatus.UNSUPPORTED,
+        support_status=SupportStatus.SUPPORTED,
         target_evaluation_mode=EvaluationMode.SEMANTIC_OR_HYBRID,
-        reason=(
-            "Retained for conservative governed semantic implementation in Version 1. The current "
-            "runtime does not evaluate general and question-specific instruction evidence."
-        ),
-        planned_milestone_or_dependency="M8 semantic/hybrid implementation",
+        implemented_milestone="M8",
     ),
     CapabilityEntry(
         requirement_id="REQ022",

@@ -4,6 +4,7 @@ import {
   createAnalysis,
   getAnalysis,
   getExtractionReview,
+  getRuleCoverage,
   listFindings,
   parseFindingResponses,
   saveExtractionReview,
@@ -15,6 +16,7 @@ import type {
   ExtractionReviewResponse,
   ExtractionReviewSnapshot,
   FindingResponse,
+  RuleCoverageAuditResponse,
   UploadedFileResponse,
 } from '../types/api'
 
@@ -119,7 +121,18 @@ const SEMANTIC_FINDING: FindingResponse = {
   recommendation_id: null,
   status: 'Satisfied',
   explanation: 'The question is relevant to the mapped CLO.',
-  confidence: 0.84,
+  confidence: 1,
+  confidence_level: 'High',
+  evaluation_details: {
+    schema_version: 1,
+    decision: 'Satisfied',
+    evidence_used: [],
+    reasoning: 'The question is relevant to the mapped CLO.',
+    recommendation: null,
+    confidence_basis: ['All required items were judged.'],
+    item_judgments: [],
+    retrieved_knowledge_ids: ['REQ002', 'RULE002'],
+  },
   evaluator_type: 'semantic_ai',
   ai_provider: 'fake',
   ai_model: 'fake-semantic-v1',
@@ -144,6 +157,35 @@ describe('listFindings', () => {
     const malformed = { ...SEMANTIC_FINDING }
     delete (malformed as Partial<FindingResponse>).prompt_template_version
     expect(() => parseFindingResponses([malformed])).toThrow(/malformed findings response/i)
+  })
+
+  it('rejects provider-invented numeric confidence categories at the API boundary', () => {
+    const malformed = { ...SEMANTIC_FINDING, confidence_level: 0.91 }
+    expect(() => parseFindingResponses([malformed])).toThrow(/malformed findings response/i)
+  })
+})
+
+const RULE_COVERAGE: RuleCoverageAuditResponse = {
+  analysis_id: 'analysis-1',
+  scope: 'exam_facing_rules',
+  total_rules: 21,
+  evaluated_rules: 14,
+  conditional_capability_gap_rules: 1,
+  unsupported_rules: 6,
+  not_run_rules: 0,
+  runtime_integrity_ok: true,
+  entries: [],
+}
+
+describe('getRuleCoverage', () => {
+  it('GETs the governed rule coverage audit separately from academic findings', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(RULE_COVERAGE))
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await getRuleCoverage('analysis-1')).toEqual(RULE_COVERAGE)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('http://localhost:8000/api/v1/analyses/analysis-1/rule-coverage')
+    expect(init.method).toBeUndefined()
   })
 })
 

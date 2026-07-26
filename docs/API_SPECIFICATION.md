@@ -5,7 +5,8 @@ Base path: `/api/v1`
 Unless an endpoint is explicitly marked **Planned**, it describes the currently implemented API.
 Planned contracts are design-authorized by M1 but must not be treated as available until their
 implementation milestone is complete. M3 adds `review_ready`; M4-M5 implement the owner-scoped
-Extraction Review API and workspace. Categorical semantic-confidence API changes remain planned.
+Extraction Review API/workspace and the M6-M9 categorical semantic/coverage contracts are
+currently implemented. M10 presentation/report refinements remain planned.
 
 ## Health
 - `GET /health`
@@ -27,7 +28,11 @@ Extraction Review API and workspace. Categorical semantic-confidence API changes
 - `GET /analyses/{id}/findings` filterable findings, enriched (M9) with each finding's official
   requirement display metadata (`requirement_name`, `dimension`, `source_type`, `officiality`)
   resolved from the KB. Semantic findings also expose nullable `recommendation_id`, `ai_provider`,
-  `ai_model`, `prompt_template_version`, and `kb_version` provenance fields.
+  `ai_model`, `prompt_template_version`, and `kb_version` provenance fields, categorical
+  `confidence_level`, and versioned `evaluation_details`.
+- `GET /analyses/{id}/rule-coverage` account for all 21 governed exam-facing rules using operational
+  dispositions (`evaluated`, `conditional_capability_gap`, `unsupported`, `not_run`) that are
+  deliberately separate from academic statuses.
 - `GET /analyses/{id}/clos` raw CLO records extracted from TP-153 (alignment/coverage appear as
   Findings, not here).
 - `GET /analyses/{id}/topics` raw topic records extracted from TP-153 (alignment/coverage appear
@@ -85,28 +90,23 @@ The review contract rejects:
 No database migration is required for M4-M5; the immutable revision table and exact confirmation
 pointer introduced in M2 are reused. No separate mappings endpoint or per-entity edit API is design-authorized for Version 1. Structured mapping details will be returned with the authoritative rule Finding.
 
-## Planned semantic Finding contract
+## Semantic Finding contract - currently implemented
 
-The planned additive Finding response exposes:
+Semantic Findings additively expose:
 
-- Decision through the existing academic status;
-- Evidence Used through validated evidence references and safe excerpts;
-- Concise Reasoning through the existing explanation;
+- Decision through the exact academic status;
+- Evidence Used through validated same-analysis evidence references;
+- Concise Reasoning and item-level judgments through `evaluation_details`;
 - categorical `confidence_level` (`High`, `Medium`, or `Low`);
-- versioned rule-specific evaluation details, including derived mapping pairs where applicable;
-  and
-- an optional controlled Recommendation.
-
-Explicit source mappings and derived relationships must be labeled separately. Derived mappings
-reference only confirmed existing question and target IDs, never overwrite extracted source
-evidence, and never become source evidence.
+- an optional controlled Recommendation ID; and
+- provider/model, prompt-template, KB-version, and retrieved governed-record provenance.
 
 The backend derives confidence from validated evidence conditions. Low confidence requires Not
-Verified. The current API still returns numeric finding confidence until its planned replacement;
-clients must not interpret that implementation gap as the approved target contract.
+Verified. Numeric `confidence` remains a derived compatibility field only and is not the
+authoritative semantic contract. OCR/extraction confidence is separate.
 
-M2 persists nullable `confidence_level` and `evaluation_details` columns but does not expose or
-populate them. `SemanticConfidenceLevel` from the shared backend domain is the only authorized
-categorical-confidence enum for the future API. The internal version 1 `evaluation_details`
-contract contains `decision`, `evidence_used`, `reasoning`, and `recommendation` (a controlled ID
-or null).
+The rule-coverage endpoint does not create Findings or scores. A supported rule with no persisted
+Finding is `not_run`, which is a system coverage gap rather than academic Not Verified.
+
+Explicit source mappings remain source evidence. AI-derived relationships are labeled derived,
+reference confirmed IDs, and never overwrite a source mapping or source record.

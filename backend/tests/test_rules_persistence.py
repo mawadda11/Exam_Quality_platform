@@ -9,7 +9,12 @@ from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from app.core.domain import AcademicStatus, ExamType, UploadedFileType
+from app.core.domain import (
+    AcademicStatus,
+    ExamType,
+    SemanticConfidenceLevel,
+    UploadedFileType,
+)
 from app.db.base import Base
 from app.db.session import create_engine_from_url
 from app.models.analysis import Analysis
@@ -20,6 +25,7 @@ from app.models.user import User
 from app.services.rules.identifiers import CLO_RELEVANCE, MARKS_AND_TOTAL, NUMBERING
 from app.services.rules.persistence import persist_finding, persist_semantic_finding
 from app.services.rules.semantic_evaluators import SemanticRuleEvaluation
+from app.services.rules.semantic_types import SemanticItemJudgment
 from app.services.rules.types import RuleFindingResult
 
 
@@ -195,15 +201,26 @@ def _semantic_evaluation(evidence_id) -> SemanticRuleEvaluation:
     return SemanticRuleEvaluation(
         identifier=CLO_RELEVANCE,
         status=AcademicStatus.PARTIALLY_SATISFIED,
-        confidence=0.78,
+        confidence_level=SemanticConfidenceLevel.MEDIUM,
+        confidence=0.5,
         evidence_ids=[evidence_id],
         explanation="The question provides only indirect evidence for the mapped CLO.",
         recommendation_id="REC002",
         evaluator_type="semantic_ai",
         provider="fake",
-        model="fake-semantic-v1",
-        prompt_template_version="semantic-rule002-v1",
+        model="fake-semantic-v2",
+        prompt_template_version="semantic-rule002-v2",
         kb_version="1.0.0",
+        items=(
+            SemanticItemJudgment(
+                source_evidence_id=evidence_id,
+                target_evidence_ids=[],
+                status=AcademicStatus.PARTIALLY_SATISFIED,
+                reasoning="Only indirect evidence is available.",
+            ),
+        ),
+        confidence_basis=("Complete but mixed semantic evidence.",),
+        retrieved_knowledge_ids=("RULE002", "REQ002"),
     )
 
 
@@ -224,9 +241,12 @@ def test_semantic_finding_persists_provenance_and_is_idempotent(tmp_path: Path) 
         assert finding.evaluator_type == "semantic_ai"
         assert finding.recommendation_id == "REC002"
         assert finding.ai_provider == "fake"
-        assert finding.ai_model == "fake-semantic-v1"
-        assert finding.prompt_template_version == "semantic-rule002-v1"
+        assert finding.ai_model == "fake-semantic-v2"
+        assert finding.prompt_template_version == "semantic-rule002-v2"
         assert finding.kb_version == "1.0.0"
+        assert finding.confidence_level is SemanticConfidenceLevel.MEDIUM
+        assert finding.evaluation_details is not None
+        assert finding.evaluation_details["retrieved_knowledge_ids"] == ["RULE002", "REQ002"]
         links = session.execute(
             select(FindingEvidence).where(FindingEvidence.finding_id == finding.id)
         ).scalars()
