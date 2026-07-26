@@ -4,8 +4,8 @@ Base path: `/api/v1`
 
 Unless an endpoint is explicitly marked **Planned**, it describes the currently implemented API.
 Planned contracts are design-authorized by M1 but must not be treated as available until their
-implementation milestone is complete. M2 adds dormant persistence and internal schemas only; it
-does not expose a review or categorical-confidence API.
+implementation milestone is complete. M3 adds `review_ready` to the existing processing-state
+contract but exposes no review/edit/confirmation or categorical-confidence API.
 
 ## Health
 - `GET /health`
@@ -13,8 +13,8 @@ does not expose a review or categorical-confidence API.
 ## Analyses
 - `POST /analyses` create metadata.
 - `POST /analyses/{id}/files` upload exam and TP-153.
-- `POST /analyses/{id}/run` atomically claims a queued analysis as `validating` and schedules the
-  background pipeline.
+- `POST /analyses/{id}/run` atomically claims a queued analysis as `validating`, schedules
+  extraction, creates immutable extraction-review revision 1, and pauses at `review_ready`.
 - `GET /analyses/{id}` status and summary.
 - `GET /analyses/{id}/progress` stage and safe progress.
 - `GET /analyses/{id}/questions` question summaries.
@@ -47,10 +47,12 @@ does not expose a review or categorical-confidence API.
 - Problem Details-style error payloads.
 - Academic statuses use exact approved display values or stable documented enum keys.
 - File upload is multipart and must be validated server-side.
+- `review_ready` is an additive processing-state value. It means extraction has paused for review;
+  it is not an academic status and does not mean the analysis is completed.
 
 ## Planned Extraction Review contract
 
-These endpoints are design-authorized but remain unimplemented after M2:
+These endpoints are design-authorized but remain unimplemented after M3:
 
 - `GET /analyses/{id}/extraction-review` returns one coherent review snapshot, its revision
   identity, source anchors, warnings, and confirmation eligibility.
@@ -59,8 +61,8 @@ These endpoints are design-authorized but remain unimplemented after M2:
 - `POST /analyses/{id}/extraction-review/confirm` atomically confirms an exact revision and
   schedules post-confirmation evidence, retrieval, and evaluation stages.
 
-The existing `POST /analyses/{id}/run` is planned to validate, extract, create the initial review
-revision, and pause. The existing progress endpoint is planned to expose a review-ready state.
+The existing `POST /analyses/{id}/run` now validates, extracts, creates the initial review
+revision, and pauses. The existing progress endpoint now exposes `review_ready`.
 
 Review writes will be owner-authorized and allowed only while review is open. The review contract
 will reject:

@@ -40,9 +40,12 @@ The design-authorized evaluation order is:
 
 ### Version 1.2 - Extraction Review
 
-- **M3 - Pipeline pause and initial snapshot: planned.**
+- **M3 - Pipeline pause and initial snapshot: currently implemented.** New analyses create one
+  immutable, source-faithful revision 1 and pause at `review_ready`. Post-confirmation stages are
+  guarded and remain unreachable until M4.
 - **M4 - Review and confirmation API: planned.**
-- **M5 - Minimal Extraction Review UI: planned.**
+- **M5 - Minimal Extraction Review UI: planned.** M3 includes only additive frontend recognition
+  of `review_ready`, stopped polling, and a read-only handoff message.
 
 No AI evaluator may run before the planned confirmation boundary.
 

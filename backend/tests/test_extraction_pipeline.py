@@ -52,7 +52,7 @@ def _poll_until_terminal(client: TestClient, analysis_id: str, headers: dict[str
         response = client.get(f"/api/v1/analyses/{analysis_id}/progress", headers=headers)
         assert response.status_code == 200
         result = response.json()
-        if result["state"] in ("completed", "failed"):
+        if result["state"] in ("review_ready", "completed", "failed"):
             break
         time.sleep(0.05)
     return result
@@ -73,8 +73,8 @@ def test_pipeline_extracts_and_persists_questions_from_real_exam(client: TestCli
     assert run_response.status_code == 202
 
     progress = _poll_until_terminal(client, analysis_id, headers)
-    assert progress["state"] == "completed"
-    assert progress["message"] is None
+    assert progress["state"] == "review_ready"
+    assert progress["message"] == "Extraction is ready for review."
 
     questions_response = client.get(f"/api/v1/analyses/{analysis_id}/questions", headers=headers)
     assert questions_response.status_code == 200
@@ -120,7 +120,7 @@ def test_bundled_sample_format_persists_only_explicit_entities_and_not_verified_
     headers = auth_header(email)
     run_response = client.post(f"/api/v1/analyses/{analysis_id}/run", headers=headers)
     assert run_response.status_code == 202
-    assert _poll_until_terminal(client, analysis_id, headers)["state"] == "completed"
+    assert _poll_until_terminal(client, analysis_id, headers)["state"] == "review_ready"
 
     questions = client.get(f"/api/v1/analyses/{analysis_id}/questions", headers=headers).json()
     clos = client.get(f"/api/v1/analyses/{analysis_id}/clos", headers=headers).json()
@@ -145,11 +145,7 @@ def test_bundled_sample_format_persists_only_explicit_entities_and_not_verified_
         ("Assignments", None, 20.0),
     ]
 
-    findings_by_rule = {finding["rule_id"]: finding for finding in findings}
-    assert findings_by_rule["RULE018"]["status"] == "Satisfied"
-    assert "30" in findings_by_rule["RULE018"]["explanation"]
-    assert findings_by_rule["RULE001"]["status"] == "Not Verified"
-    assert findings_by_rule["RULE007"]["status"] == "Not Verified"
+    assert findings == []
 
 
 def test_pipeline_persists_evidence_with_traceable_fields(
@@ -164,7 +160,7 @@ def test_pipeline_persists_evidence_with_traceable_fields(
     headers = auth_header(email)
     client.post(f"/api/v1/analyses/{analysis_id}/run", headers=headers)
     progress = _poll_until_terminal(client, analysis_id, headers)
-    assert progress["state"] == "completed"
+    assert progress["state"] == "review_ready"
 
     with Session(db_engine) as session:
         # Scoped to EXAM evidence only - M5 adds TP153 evidence for the same

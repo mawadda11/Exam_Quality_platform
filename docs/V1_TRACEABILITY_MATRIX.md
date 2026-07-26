@@ -25,9 +25,10 @@ Hybrid-redesign status meanings:
 - **Deferred**: prohibited until the stated criterion, policy, or artifact is approved.
 
 Design authorization never changes an implementation status by itself. M1 implements governance
-contracts only. M2 implements the dormant review-revision/categorical-confidence persistence and
-strict internal schemas, but does not create revisions, pause processing, expose API/UI behavior,
-or change semantic evaluation.
+contracts only. M2 implements review-revision/categorical-confidence persistence and strict
+internal schemas. M3 creates revision 1, pauses processing at `review_ready`, guards downstream
+stages, and adds minimal frontend compatibility; it does not add review actions, confirmation,
+post-confirmation continuation, or semantic changes.
 
 An unavailable evaluator is never represented by an unconditional `Not
 Verified` Finding. `Not Verified` is reserved for an implemented evaluator
@@ -58,7 +59,7 @@ are included with the capability they constrain.
 | PRD-14 | Exact deterministic scoring and Insufficient Evidence | Complete | Scoring, API, UI, and report tests | No formula changes |
 | PRD-15 | Finding and evidence traceability | Complete for current evidence; reviewed/derived distinction Planned | Persistence, API, UI drill-down, and report tests | Bind later findings to confirmed evidence and label source versus derived mappings |
 | PRD-16 | Controlled actionable recommendations | Complete for current findings | Exact KB lookup and recommendation API tests | Reuse existing KB recommendation IDs for retained rules |
-| PRD-17 | Background progress and safe failure states | Partial; review pause Planned | Runner, progress, rollback, and non-blocking tests | Pause after extraction, prohibit AI before confirmation, then continue from confirmed evidence |
+| PRD-17 | Background progress and safe failure states | Partial; review pause implemented | Runner, progress, rollback, non-blocking, revision-idempotency, and no-pre-confirmation-processing tests | M4 must continue from confirmed evidence |
 | PRD-18 | Six-section results interface | Complete structurally | Results component suites | Add mappings, assessments, retained findings, navigation, and retry |
 | PRD-19 | Explicit and derived question-to-CLO/topic relationships | Design-authorized / Planned | Existing citation rules produce evidence but no structured pair output | Preserve explicit mappings as source facts; expose separately labeled AI-derived relationships referencing confirmed IDs |
 | PRD-20 | Assessment-method consistency | Retained | TP-153 assessment data is already extracted | Implement RULE003 and present assessment evidence |
@@ -96,9 +97,9 @@ are included with the capability they constrain.
 | FR-016 Generate downloadable report | Complete | Report suites | Add retained content |
 | FR-017 Store history | Complete | History API/UI tests | Navigation |
 | FR-018 Create linked reanalysis | Complete | Reanalysis API/UI tests | Preserve |
-| FR-019 Durable extraction review before semantic analysis | Partial: M2 foundation implemented; M3-M5 behavior planned | Migration `0008`, immutable revision ORM, strict source-faithful snapshot contract, and focused schema/model/migration tests | Create revision 1, pause processing, then add review API and UI |
+| FR-019 Durable extraction review before semantic analysis | Partial: M2-M3 foundation and pause implemented; M4-M5 review behavior planned | Migration `0008`, immutable revision ORM, strict snapshot contract, idempotent revision 1, `review_ready` pause, and focused tests | Add review API, exact-revision confirmation, continuation, and UI |
 | FR-020 Source-faithful review operations only | Design-authorized / Planned M4-M5 | M1 governance-contract tests only | Permit correction/restoration/exclusion/confirmation; reject source authoring |
-| FR-021 No AI before extraction confirmation | Design-authorized / Planned M3-M4 | M1 governance-contract tests only | Add worker/provider non-invocation and state-transition tests |
+| FR-021 No AI before extraction confirmation | Partial: M3 initial-pipeline enforcement implemented; M4 continuation planned | Worker/provider non-invocation, centralized guard, state-transition, and no-Finding tests | M4 must bind confirmation before scheduling continuation |
 | FR-022 Separate source mappings from derived relationships | Design-authorized / Planned M6-M7 | M1 manifest/traceability tests | Add labeled typed derived details without overwriting Evidence |
 | FR-023 Derived relationships reference confirmed IDs and evidence | Design-authorized / Planned M6-M7 | M1 manifest/traceability tests | Add candidate-ID and same-analysis validation |
 | FR-024 Backend-derived High/Medium/Low semantic confidence | Partial: M2 enum/persistence implemented; M6 behavior planned | Shared authoritative `SemanticConfidenceLevel`, nullable Finding column, and contract tests; current runtime remains numeric | Add backend evidence-condition derivation and Low-to-Not-Verified enforcement |
@@ -164,8 +165,8 @@ types. Listing a planned component does not claim runtime support.
 
 | Decision | Requirement mapping | Rule mapping | Evidence mapping | Planned component | Planned test | Status |
 |---|---|---|---|---|---|---|
-| DD-001 Evidence-gated hybrid architecture | PRD-11, FR-010-FR-014, FR-021, FR-027 | Semantic/hybrid RULE001/002/003/004/007/008/011/012/013/021; deterministic RULE005/006/009/014/016/018/019/022 | EV002, EV003, EV004, EV005, EV012, EV014, EV015, EV018, EV021, EV022, EV024 | M3-M10 processing, evidence preparation, rule evaluators, scoring | Pipeline order, no pre-confirm AI, rule classification, deterministic aggregation | Design-authorized / Planned; current runtime remains uninterrupted |
-| DD-002 Extraction Review before AI | PRD-03, PRD-15, PRD-17, FR-019-FR-021 | RULE010, RULE023-RULE026, RULE030 | EV018, EV019, EV020, EV023 | M2 review revision; M3 pause; M4 API; M5 UI | Revision fidelity, provider non-invocation, ownership, stale revision, confirmation race | M2 persistence implemented; workflow Planned |
+| DD-001 Evidence-gated hybrid architecture | PRD-11, FR-010-FR-014, FR-021, FR-027 | Semantic/hybrid RULE001/002/003/004/007/008/011/012/013/021; deterministic RULE005/006/009/014/016/018/019/022 | EV002, EV003, EV004, EV005, EV012, EV014, EV015, EV018, EV021, EV022, EV024 | M3-M10 processing, evidence preparation, rule evaluators, scoring | Pipeline order, no pre-confirm AI, rule classification, deterministic aggregation | M3 pause/guard implemented; confirmation and governed continuation Planned |
+| DD-002 Extraction Review before AI | PRD-03, PRD-15, PRD-17, FR-019-FR-021 | RULE010, RULE023-RULE026, RULE030 | EV018, EV019, EV020, EV023 | M2 review revision; M3 pause; M4 API; M5 UI | Revision fidelity, provider non-invocation, ownership, stale revision, confirmation race | M2 persistence and M3 initial snapshot/pause implemented; review workflow Planned |
 | DD-003 Source evidence versus derived relationships | PRD-15, PRD-19, FR-022-FR-023 | RULE001, RULE007, RULE010, RULE030 | EV002, EV012, EV015, EV018, EV021, EV024 | M6 typed details/validation; M7 derived mappings; M10 labels/report | Candidate allowlist, same-analysis evidence, source/derived label, no Evidence overwrite | Design-authorized / Planned |
 | DD-004 Categorical semantic confidence | PRD-12-PRD-14, FR-024-FR-026 | RULE029, RULE030 | EV018, EV019, EV020, EV021, EV024 | M2 persistence; M6 semantic contract; M10 UI/report | Exact High/Medium/Low enum, no numeric conversion, no percentage display | M2 enum/persistence implemented; numeric runtime currently implemented |
 | DD-005 Backend-derived confidence | PRD-11-PRD-13, FR-023-FR-025 | RULE010, RULE029, RULE030 | EV018, EV019, EV020, EV021, EV024 | M6 validation and persistence | Model cannot elevate confidence; server evidence gates and downgrade tests | Design-authorized / Planned |

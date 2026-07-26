@@ -395,6 +395,22 @@ describe('AppRoutes', () => {
     expect(analysesApi.listQuestions).not.toHaveBeenCalled()
   })
 
+  it('routes review_ready analyses to the read-only progress handoff', async () => {
+    vi.mocked(analysesApi.getAnalysis).mockResolvedValue({
+      ...COMPLETED_ANALYSIS,
+      state: 'review_ready',
+    })
+
+    renderAt('/analyses/analysis-1/results/overview')
+
+    expect(await screen.findByText(/extraction ready for review/i)).toBeInTheDocument()
+    expect(screen.getByLabelText('Current route')).toHaveTextContent(
+      '/analyses/analysis-1/progress',
+    )
+    expect(analysesApi.getAnalysisProgress).not.toHaveBeenCalled()
+    expect(analysesApi.listFindings).not.toHaveBeenCalled()
+  })
+
   it('redirects an unknown result tab to the safe overview tab', async () => {
     vi.mocked(analysesApi.getAnalysis).mockResolvedValue(COMPLETED_ANALYSIS)
 

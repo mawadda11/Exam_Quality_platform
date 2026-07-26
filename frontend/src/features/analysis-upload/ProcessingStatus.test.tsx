@@ -89,6 +89,46 @@ describe('ProcessingStatus', () => {
     expect(analysesApi.getAnalysisProgress).toHaveBeenCalledTimes(callsAtCompletion)
   })
 
+  it('stops at review_ready and presents a read-only review handoff', async () => {
+    vi.mocked(analysesApi.getAnalysisProgress).mockResolvedValue(
+      progressResponse('review_ready', 'Extraction is ready for review.'),
+    )
+
+    render(
+      <ProcessingStatus
+        analysisId="analysis-1"
+        initialState="extracting_tp153"
+        pollIntervalMs={10}
+      />,
+    )
+
+    expect(await screen.findByText('review_ready', { selector: 'strong' }))
+      .toBeInTheDocument()
+    expect(
+      screen.getByText('Extraction ready for review', {
+        selector: '.ui-alert-title',
+      }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/available in a later milestone/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /confirm|save|restore|exclude/i }))
+      .not.toBeInTheDocument()
+
+    const callsAtReviewReady = vi.mocked(analysesApi.getAnalysisProgress).mock.calls.length
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(analysesApi.getAnalysisProgress).toHaveBeenCalledTimes(callsAtReviewReady)
+  })
+
+  it('does not poll when review_ready is loaded directly', async () => {
+    render(<ProcessingStatus analysisId="analysis-1" initialState="review_ready" />)
+
+    expect(
+      screen.getByText('Extraction ready for review', {
+        selector: '.ui-alert-title',
+      }),
+    ).toBeInTheDocument()
+    expect(analysesApi.getAnalysisProgress).not.toHaveBeenCalled()
+  })
+
   it('shows degraded connectivity while retrying and clears it after recovery', async () => {
     vi.mocked(analysesApi.getAnalysisProgress)
       .mockRejectedValueOnce(new ApiError(503, 'Unavailable'))

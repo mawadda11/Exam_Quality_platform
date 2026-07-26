@@ -169,7 +169,9 @@ def test_get_report_returns_404_for_unknown_id(client: TestClient) -> None:
     assert response.status_code == 404
 
 
-def test_download_report_returns_the_pdf_bytes(client: TestClient, db_engine: Engine) -> None:
+def test_legacy_completed_analysis_without_confirmation_remains_readable_and_downloadable(
+    client: TestClient, db_engine: Engine
+) -> None:
     email = "report-download@kau.edu.sa"
     analysis_id = _create_analysis(client, email)
     _insert_finding(db_engine, analysis_id, "REQ018", "RULE018", AcademicStatus.SATISFIED)
@@ -179,7 +181,10 @@ def test_download_report_returns_the_pdf_bytes(client: TestClient, db_engine: En
         f"/api/v1/analyses/{analysis_id}/reports", headers=auth_header(email)
     ).json()
 
+    analysis_response = client.get(f"/api/v1/analyses/{analysis_id}", headers=auth_header(email))
     response = client.get(f"/api/v1/reports/{created['id']}/download", headers=auth_header(email))
+    assert analysis_response.status_code == 200
+    assert analysis_response.json()["state"] == "completed"
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
     assert "attachment" in response.headers["content-disposition"]

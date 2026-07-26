@@ -57,7 +57,8 @@ Processing failures are not academic statuses. Use separate processing states/er
 - Keep explicit source mappings separate from AI-derived semantic relationships. A derived
   relationship must reference confirmed source records and must never overwrite source evidence.
 - Do not call an AI evaluator before the uploaded-document extraction has been reviewed and
-  confirmed. This is the approved target contract; implementation begins after M1.
+  confirmed. M3 enforces the initial `review_ready` pause and post-confirmation stage guard; M4
+  will add confirmation and continuation APIs.
 - Semantic confidence is categorical (`High`, `Medium`, or `Low`) and is eventually derived by the
   backend from validated evidence conditions, never trusted as model self-assessment. Low
   confidence produces `Not Verified`.

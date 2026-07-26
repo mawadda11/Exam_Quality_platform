@@ -52,7 +52,7 @@ def _poll_until_terminal(client: TestClient, analysis_id: str, headers: dict[str
         response = client.get(f"/api/v1/analyses/{analysis_id}/progress", headers=headers)
         assert response.status_code == 200
         result = response.json()
-        if result["state"] in ("completed", "failed"):
+        if result["state"] in ("review_ready", "completed", "failed"):
             break
         time.sleep(0.05)
     return result
@@ -69,8 +69,8 @@ def test_pipeline_extracts_and_persists_tp153_records(client: TestClient) -> Non
     assert run_response.status_code == 202
 
     progress = _poll_until_terminal(client, analysis_id, headers)
-    assert progress["state"] == "completed"
-    assert progress["message"] is None
+    assert progress["state"] == "review_ready"
+    assert progress["message"] == "Extraction is ready for review."
 
     clos = client.get(f"/api/v1/analyses/{analysis_id}/clos", headers=headers).json()
     topics = client.get(f"/api/v1/analyses/{analysis_id}/topics", headers=headers).json()
@@ -95,7 +95,7 @@ def test_pipeline_persists_tp153_evidence_with_traceable_fields(
     headers = auth_header(email)
     client.post(f"/api/v1/analyses/{analysis_id}/run", headers=headers)
     progress = _poll_until_terminal(client, analysis_id, headers)
-    assert progress["state"] == "completed"
+    assert progress["state"] == "review_ready"
 
     with Session(db_engine) as session:
         tp153_evidence = (
@@ -124,7 +124,7 @@ def test_pipeline_missing_clo_section_persists_marker_not_invented_clo(
     headers = auth_header(email)
     client.post(f"/api/v1/analyses/{analysis_id}/run", headers=headers)
     progress = _poll_until_terminal(client, analysis_id, headers)
-    assert progress["state"] == "completed"
+    assert progress["state"] == "review_ready"
 
     clos = client.get(f"/api/v1/analyses/{analysis_id}/clos", headers=headers).json()
     assert clos == []  # never an invented CLO

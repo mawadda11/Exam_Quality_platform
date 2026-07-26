@@ -17,6 +17,7 @@ from app.db.base import Base
 from app.db.session import create_engine_from_url
 from app.models.analysis import Analysis
 from app.models.course import Course
+from app.models.extraction_review_revision import ExtractionReviewRevision
 from app.models.processing_event import ProcessingEvent
 from app.models.user import User
 
@@ -69,14 +70,14 @@ def _events_for(engine: Engine, analysis_id: uuid.UUID) -> list[ProcessingEvent]
         )
 
 
-def test_pipeline_runs_every_stage_to_completed(
+def test_pipeline_runs_extraction_stages_and_pauses_at_review_ready(
     runner_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # This test exercises generic stage-machine mechanics, not extraction
     # itself (that's test_extraction_pipeline.py / test_tp153_extraction_pipeline.py) -
     # all real stage handlers are stubbed back to no-ops so no uploaded files,
     # extracted evidence, KB runtime, or reports are needed.
-    for stage in stages.WORK_STAGES:
+    for stage in stages.PRE_REVIEW_STAGES:
         monkeypatch.setitem(
             stages.STAGE_HANDLERS,
             stage,
@@ -90,22 +91,49 @@ def test_pipeline_runs_every_stage_to_completed(
     with Session(runner_engine) as session:
         analysis = session.get(Analysis, analysis_id)
         assert analysis is not None
-        assert analysis.state == ProcessingStage.COMPLETED
+        assert analysis.state == ProcessingStage.REVIEW_READY
+        revisions = session.execute(
+            select(ExtractionReviewRevision).where(
+                ExtractionReviewRevision.analysis_id == analysis_id
+            )
+        ).scalars()
+        assert len(list(revisions)) == 1
 
     events = _events_for(runner_engine, analysis_id)
     assert [e.stage for e in events] == [
         ProcessingStage.VALIDATING,
         ProcessingStage.EXTRACTING_EXAM,
         ProcessingStage.EXTRACTING_TP153,
-        ProcessingStage.BUILDING_EVIDENCE,
-        ProcessingStage.RETRIEVING_KNOWLEDGE,
-        ProcessingStage.APPLYING_RULES,
-        ProcessingStage.GENERATING_REPORT,
-        ProcessingStage.COMPLETED,
+        ProcessingStage.REVIEW_READY,
     ]
-    assert {
-        event.stage: event.message for event in events if event.message is not None
-    } == runner.STAGE_SUCCESS_MESSAGES
+    assert events[-1].message == runner.REVIEW_READY_MESSAGE
+
+
+def test_repeated_pipeline_execution_does_not_duplicate_revision_or_event(
+    runner_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for stage in stages.PRE_REVIEW_STAGES:
+        monkeypatch.setitem(
+            stages.STAGE_HANDLERS,
+            stage,
+            lambda analysis, session, settings: None,
+        )
+    analysis_id = _create_analysis(runner_engine)
+
+    runner.run_analysis_pipeline(analysis_id)
+    runner.run_analysis_pipeline(analysis_id)
+
+    with Session(runner_engine) as session:
+        revisions = list(
+            session.execute(
+                select(ExtractionReviewRevision).where(
+                    ExtractionReviewRevision.analysis_id == analysis_id
+                )
+            ).scalars()
+        )
+    events = _events_for(runner_engine, analysis_id)
+    assert len(revisions) == 1
+    assert [event.stage for event in events].count(ProcessingStage.REVIEW_READY) == 1
 
 
 def test_pipeline_transitions_to_failed_with_safe_message_on_exception(

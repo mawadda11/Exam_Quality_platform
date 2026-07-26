@@ -638,12 +638,14 @@ its documented backend milestone, except a separately approved defect fix.
   mixed-direction display rather than providing full interface localization.
 - Responsive acceptance is supported by automated semantic/behavior tests plus a documented manual
   browser viewport matrix; no additional browser-automation package was introduced.
-- Extraction Review and its review-specific states remain reserved for M3-M5.
+- The M3 `review_ready` state is recognized as an additive API value. Polling stops and the
+  existing progress route shows a read-only handoff message. The Extraction Review workspace and
+  actions remain reserved for M5.
 
-### M3-M5 reserved states - not implemented
+### M3 compatibility implemented; M4-M5 review behavior reserved
 
-- `review_ready`;
-- initial Extraction Review revision;
+- `review_ready` recognition, stopped polling, and read-only messaging are implemented;
+- initial Extraction Review revision exists in the backend but is not exposed to this UI;
 - review snapshot API consumption;
 - dirty/saved/stale revision state;
 - source anchors;

@@ -13,10 +13,12 @@ The repository uses four distinct status terms:
 - **Planned**: design-authorized but not yet implemented.
 - **Deferred**: prohibited until the missing criterion, policy, or artifact is approved.
 
-Milestone M1 changes governance and planning contracts only. M2 implements the minimum dormant
-persistence and strict internal schemas for Extraction Review and categorical semantic confidence.
-Revision creation, processing/API/UI behavior, categorical-confidence evaluation, and expanded
-semantic evaluators remain planned for M3 and later milestones.
+Milestone M1 changes governance and planning contracts only. M2 implements the minimum persistence
+and strict internal schemas for Extraction Review and categorical semantic confidence. M3 creates
+revision 1, pauses at `review_ready`, guards post-confirmation processing, and adds minimal
+frontend compatibility. Review/edit/confirmation APIs, the review workspace,
+categorical-confidence evaluation, and expanded semantic evaluators remain planned for M4 and
+later milestones.
 
 ## DD-001 - Evidence-gated hybrid architecture
 
@@ -109,8 +111,9 @@ from being mistaken for document facts.
 
 **Consequences and limitations**
 
-M1 itself does not implement the pause, persistence, API, or UI. M2 now supplies only the dormant
-persistence/internal-schema foundation; the pause, revision creation, API, and UI remain planned.
+M1 itself does not implement runtime behavior. M2 supplies the persistence/internal-schema
+foundation. M3 now implements revision creation and the pause, with a read-only frontend handoff;
+review/edit/confirmation APIs and the review workspace remain planned for M4-M5.
 Missing official TP-153 content cannot be entered during review; the user must provide a corrected
 official document in a new or restarted analysis.
 

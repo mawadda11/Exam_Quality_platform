@@ -1,8 +1,9 @@
 # Database Schema
 
 This file lists the currently implemented schema. Milestone M2 added the minimum durable
-Extraction Review foundation in migration `0008`; it did not activate the review workflow,
-processing pause, APIs, UI, or categorical semantic behavior.
+Extraction Review foundation in migration `0008`. M3 uses that unchanged schema to create revision
+1 and pause processing; it creates no migration and adds no review API or categorical semantic
+behavior.
 
 ## Core tables
 - `users`: Faculty Member identity, institution, and department. Version 1 does not require multi-role authorization.
@@ -41,7 +42,7 @@ The `analyses` table intentionally has no persisted score or general KB-version 
 - Generated report rows persist their KB version and aggregate scoring snapshot.
 - Semantic findings persist the exact KB and prompt versions used for their evaluation.
 
-## M2 Extraction Review persistence foundation - currently implemented
+## M2 persistence and M3 initial snapshot - currently implemented
 
 Migration `0008` adds one table and three nullable columns. Existing analyses and Findings require
 no backfill, and current runtime/API behavior remains unchanged until later milestones.
@@ -61,9 +62,10 @@ Each row represents one immutable complete review snapshot:
 The internal Pydantic contract uses `schema_version = 1`, stable source-record identifiers,
 source-faithful fields, explicit inclusion state, source geometry, and numeric
 `extraction_confidence`. It permits empty entity collections and validates internal question and
-evidence references. M3 will create revision 1 from the original machine extraction. M4 will append
-review saves and enforce correction/restoration/exclusion-only behavior against that original
-revision.
+evidence references. M3 creates revision 1 idempotently from genuine persisted machine extraction
+rows. Concurrent creation uses a savepoint and safe requery; empty collections stay empty and no
+placeholder records are fabricated. M4 will append review saves and enforce
+correction/restoration/exclusion-only behavior against that original revision.
 
 ### Columns added to existing tables
 

@@ -1,12 +1,10 @@
 """Per-stage pipeline handlers.
 
-Milestone 3 wired the stage machine and job runner with no-op placeholders.
-Milestone 4 replaced run_extracting_exam with real digital-PDF extraction
-and persistence. Milestone 5 replaces run_extracting_tp153 the same way.
-Milestone 6 replaced run_applying_rules with marks/total and numbering
-rules; Milestone 8 added deterministic CLO/topic alignment and coverage.
-The semantic/RAG continuation completes versioned KB indexing and adds the
-approved RULE002/RULE004/RULE008 semantic evaluators to that same stage.
+The delivered baseline wired extraction, evidence, KB retrieval, deterministic
+rules, and the currently supported semantic evaluators. Hybrid-redesign M3
+splits those handlers into pre-review and post-confirmation groups. The initial
+runner stops after source-faithful extraction and revision materialization;
+every downstream handler shares the confirmation guard below.
 
 The M8 correction remains intact for deterministic evaluation:
 REQ006/RULE006 (CLO Coverage Distribution) is genuinely
@@ -34,6 +32,7 @@ from app.models.topic import Topic
 from app.services.extraction.digital_pdf_extractor import PdfPlumberExamExtractor
 from app.services.extraction.digital_tp153_extractor import PdfPlumberTp153Extractor
 from app.services.extraction.persistence import persist_extraction_result
+from app.services.extraction.review_snapshot import materialize_initial_review_revision
 from app.services.extraction.tp153_persistence import persist_tp153_extraction_result
 from app.services.extraction.types import ExtractionError
 from app.services.knowledge_base.runtime import get_semantic_runtime
@@ -83,6 +82,18 @@ RUNTIME_RULE_IDENTIFIERS: tuple[RuleIdentifier, ...] = (
 )
 
 
+class ReviewConfirmationRequiredError(RuntimeError):
+    """Raised when a post-confirmation stage is invoked before confirmation."""
+
+
+def require_confirmed_review(analysis: Analysis) -> None:
+    """Central governance guard for every post-confirmation pipeline stage."""
+    if analysis.confirmed_review_id is None:
+        raise ReviewConfirmationRequiredError(
+            "A confirmed extraction review is required before downstream processing."
+        )
+
+
 def run_validating(analysis: Analysis, session: Session, settings: Settings) -> None:
     """Confirms both already-upload-validated source artifacts still exist."""
     for file_type in (UploadedFileType.EXAM, UploadedFileType.TP153):
@@ -121,6 +132,7 @@ def run_extracting_tp153(analysis: Analysis, session: Session, settings: Setting
 
 def run_building_evidence(analysis: Analysis, session: Session, settings: Settings) -> None:
     """Adds a traceable absence record when no exam question text was extracted."""
+    require_confirmed_review(analysis)
     existing = session.execute(
         select(Evidence)
         .where(
@@ -156,6 +168,7 @@ def run_building_evidence(analysis: Analysis, session: Session, settings: Settin
 
 def run_retrieving_knowledge(analysis: Analysis, session: Session, settings: Settings) -> None:
     """Validates, normalizes, and version-safely indexes the controlled KB."""
+    require_confirmed_review(analysis)
     get_semantic_runtime(settings).ensure_index()
 
 
@@ -166,6 +179,7 @@ def run_applying_rules(analysis: Analysis, session: Session, settings: Settings)
     It persists one Finding per rule that genuinely produces one - RULE006
     persists no Finding at all when 2+ CLOs are applicable (see module
     docstring). Report generation remains outside this rule stage."""
+    require_confirmed_review(analysis)
     questions = (
         session.execute(select(Question).where(Question.analysis_id == analysis.id)).scalars().all()
     )
@@ -238,6 +252,12 @@ def run_applying_rules(analysis: Analysis, session: Session, settings: Settings)
 
 def run_generating_report(analysis: Analysis, session: Session, settings: Settings) -> None:
     """Placeholder. A future milestone implements report generation here."""
+    require_confirmed_review(analysis)
+
+
+def run_materializing_review(analysis: Analysis, session: Session, _settings: Settings) -> None:
+    """Create the immutable source-faithful initial review revision."""
+    materialize_initial_review_revision(session, analysis.id)
 
 
 STAGE_HANDLERS: dict[ProcessingStage, Callable[[Analysis, Session, Settings], None]] = {
@@ -250,10 +270,13 @@ STAGE_HANDLERS: dict[ProcessingStage, Callable[[Analysis, Session, Settings], No
     ProcessingStage.GENERATING_REPORT: run_generating_report,
 }
 
-WORK_STAGES: tuple[ProcessingStage, ...] = (
+PRE_REVIEW_STAGES: tuple[ProcessingStage, ...] = (
     ProcessingStage.VALIDATING,
     ProcessingStage.EXTRACTING_EXAM,
     ProcessingStage.EXTRACTING_TP153,
+)
+
+POST_CONFIRMATION_STAGES: tuple[ProcessingStage, ...] = (
     ProcessingStage.BUILDING_EVIDENCE,
     ProcessingStage.RETRIEVING_KNOWLEDGE,
     ProcessingStage.APPLYING_RULES,

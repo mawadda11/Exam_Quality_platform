@@ -7,6 +7,7 @@ export type ProcessingStage =
   | 'validating'
   | 'extracting_exam'
   | 'extracting_tp153'
+  | 'review_ready'
   | 'building_evidence'
   | 'retrieving_knowledge'
   | 'applying_rules'

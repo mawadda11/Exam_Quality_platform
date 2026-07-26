@@ -232,7 +232,7 @@ def test_current_numeric_semantic_runtime_is_documented_as_a_planned_gap() -> No
     assert "current API still returns numeric finding confidence" in api
 
 
-def test_m1_governance_and_m2_persistence_status_are_explicit() -> None:
+def test_m1_governance_and_m2_m3_implementation_status_are_explicit() -> None:
     schema = _read("docs/DATABASE_SCHEMA.md")
     roadmap = _read("docs/IMPLEMENTATION_ROADMAP.md")
 
@@ -242,4 +242,4 @@ def test_m1_governance_and_m2_persistence_status_are_explicit() -> None:
     assert "`decision`" in schema
     assert "does not implement\n  runtime behavior" in roadmap
     assert "M2 - Minimal persistence foundation: currently implemented." in roadmap
-    assert "M3 - Pipeline pause and initial snapshot: planned." in roadmap
+    assert "M3 - Pipeline pause and initial snapshot: currently implemented." in roadmap

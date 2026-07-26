@@ -20,9 +20,12 @@ from tp153_pdf_fixtures import (
     build_missing_clo_section_tp153_pdf,
 )
 
+import app.services.processing.runner as runner
 import app.services.processing.stages as stages
 from app.core.domain import AcademicStatus
+from app.models.analysis import Analysis
 from app.services.ai.fake_provider import FakeAiProvider
+from app.services.extraction.review_snapshot import materialize_initial_review_revision
 from app.services.knowledge_base.runtime import SemanticRuntime, load_kb_snapshot
 from app.services.knowledge_base.vector_store import InMemoryVectorStore
 from app.services.rules.scoring import calculate_overall_score
@@ -42,6 +45,20 @@ ANALYSIS_PAYLOAD = {
 DETERMINISTIC_RULE_IDS = {"RULE001", "RULE005", "RULE007", "RULE009", "RULE018", "RULE019"}
 SEMANTIC_RULE_IDS = {"RULE002", "RULE004", "RULE008"}
 UNCONDITIONAL_RULE_IDS = DETERMINISTIC_RULE_IDS | SEMANTIC_RULE_IDS
+
+
+@pytest.fixture(autouse=True)
+def confirmed_downstream_stage_fixture(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Preserve governed downstream integration coverage before M4 adds its API."""
+
+    def run_confirmed_stages(analysis: Analysis, session: object, settings: object) -> None:
+        revision = materialize_initial_review_revision(session, analysis.id)
+        analysis.confirmed_review_id = revision.id
+        session.flush()
+        for stage in stages.POST_CONFIRMATION_STAGES:
+            stages.STAGE_HANDLERS[stage](analysis, session, settings)
+
+    monkeypatch.setattr(runner, "run_materializing_review", run_confirmed_stages)
 
 
 def _create_analysis(client: TestClient, email: str) -> str:
@@ -69,7 +86,7 @@ def _poll_until_terminal(client: TestClient, analysis_id: str, headers: dict[str
         response = client.get(f"/api/v1/analyses/{analysis_id}/progress", headers=headers)
         assert response.status_code == 200
         result = response.json()
-        if result["state"] in ("completed", "failed"):
+        if result["state"] in ("review_ready", "completed", "failed"):
             break
         time.sleep(0.05)
     return result
@@ -87,7 +104,7 @@ def _run_to_completion_and_get_findings(
     assert run_response.status_code == 202
 
     progress = _poll_until_terminal(client, analysis_id, headers)
-    assert progress["state"] == "completed", progress
+    assert progress["state"] == "review_ready", progress
 
     findings = client.get(f"/api/v1/analyses/{analysis_id}/findings", headers=headers).json()
     return {f["rule_id"]: f for f in findings}

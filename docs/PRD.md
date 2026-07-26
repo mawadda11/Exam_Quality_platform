@@ -13,9 +13,10 @@ The platform uses:
 The platform supports one evidence-based analysis workflow. Both the examination PDF and the
 populated TP-153 are mandatory. Extraction does not start until both files are uploaded and pass
 validation, and AI analysis does not start until the extracted evidence is reviewed and confirmed.
-The review-and-confirm workflow is design-authorized in M1. M2 implements only its dormant
-persistence/internal-schema foundation; creation, review, confirmation, and processing behavior
-remain planned for later milestones.
+The review-and-confirm workflow is design-authorized in M1. M2 implements its
+persistence/internal-schema foundation. M3 creates the initial source-faithful review revision and
+pauses at `review_ready`; review editing, confirmation, and post-confirmation continuation remain
+planned for M4-M5.
 
 ---
 

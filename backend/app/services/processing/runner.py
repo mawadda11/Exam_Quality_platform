@@ -11,7 +11,11 @@ from app.core.domain import ProcessingStage
 from app.db.session import session_scope
 from app.models.analysis import Analysis
 from app.models.processing_event import ProcessingEvent
-from app.services.processing.stages import STAGE_HANDLERS, WORK_STAGES
+from app.services.processing.stages import (
+    PRE_REVIEW_STAGES,
+    STAGE_HANDLERS,
+    run_materializing_review,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +29,8 @@ STAGE_SUCCESS_MESSAGES: dict[ProcessingStage, str] = {
     ),
     ProcessingStage.APPLYING_RULES: ("Deterministic and approved semantic rules were applied."),
 }
+
+REVIEW_READY_MESSAGE = "Extraction is ready for review."
 
 
 def _transition(
@@ -55,7 +61,7 @@ def run_analysis_pipeline(analysis_id: UUID) -> None:
             return
 
         try:
-            for stage in WORK_STAGES:
+            for stage in PRE_REVIEW_STAGES:
                 STAGE_HANDLERS[stage](analysis, session, settings)
                 _transition(
                     session,
@@ -63,7 +69,13 @@ def run_analysis_pipeline(analysis_id: UUID) -> None:
                     stage,
                     message=STAGE_SUCCESS_MESSAGES.get(stage),
                 )
-            _transition(session, analysis, ProcessingStage.COMPLETED)
+            run_materializing_review(analysis, session, settings)
+            _transition(
+                session,
+                analysis,
+                ProcessingStage.REVIEW_READY,
+                message=REVIEW_READY_MESSAGE,
+            )
         except Exception:
             logger.exception("Processing failed for analysis %s", analysis_id)
             # Discard any uncommitted rows from the failed stage before

@@ -45,6 +45,7 @@ class ProcessingStage(StrEnum):
     VALIDATING = "validating"
     EXTRACTING_EXAM = "extracting_exam"
     EXTRACTING_TP153 = "extracting_tp153"
+    REVIEW_READY = "review_ready"
     BUILDING_EVIDENCE = "building_evidence"
     RETRIEVING_KNOWLEDGE = "retrieving_knowledge"
     APPLYING_RULES = "applying_rules"

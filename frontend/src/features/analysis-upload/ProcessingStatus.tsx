@@ -6,11 +6,12 @@ import { Button } from '../../components/ui/Button'
 import { ProgressStepper, type ProgressStep } from '../../components/ui/ProgressStepper'
 import type { AnalysisResponse, ProcessingStage } from '../../types/api'
 
-const TERMINAL_STAGES: ProcessingStage[] = ['completed', 'failed']
+const TERMINAL_STAGES: ProcessingStage[] = ['review_ready', 'completed', 'failed']
 const ORDERED_PROCESSING_STAGES: ProcessingStage[] = [
   'validating',
   'extracting_exam',
   'extracting_tp153',
+  'review_ready',
   'building_evidence',
   'retrieving_knowledge',
   'applying_rules',
@@ -158,6 +159,12 @@ export function ProcessingStatus({
       {state === 'failed' && message && (
         <Alert variant="error" title="Analysis processing failed">
           {message}
+        </Alert>
+      )}
+      {state === 'review_ready' && (
+        <Alert variant="info" title="Extraction ready for review">
+          The extracted Exam and TP-153 evidence is ready for review. Review and
+          confirmation actions will be available in a later milestone.
         </Alert>
       )}
       {startError && (

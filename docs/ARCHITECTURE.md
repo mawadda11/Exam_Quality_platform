@@ -7,8 +7,9 @@ The design-authorized target architecture is evidence-gated:
 
 `confirmed source evidence -> deterministic checks -> constrained semantic relationships -> deterministic aggregation and scoring`
 
-Milestone M1 freezes this target. M2 implements only its dormant persistence and strict internal
-schema foundation: no review revision is created yet, and the review pause, API, UI,
+Milestone M1 freezes this target. M2 implements its persistence and strict internal schema
+foundation. M3 now creates immutable revision 1, pauses new analyses at `review_ready`, and guards
+every post-confirmation stage. Review/edit/confirmation APIs, the review workspace,
 categorical-confidence runtime behavior, and expanded semantic evaluators remain planned.
 
 ## Components
@@ -21,22 +22,22 @@ categorical-confidence runtime behavior, and expanded semantic evaluators remain
 - AI provider adapter: structured semantic evaluation.
 - OCR/layout adapters: provider-neutral extraction interfaces.
 
-## Currently implemented processing flow
+## Currently implemented initial processing flow
 1. `queued`
 2. `validating`
 3. `extracting_exam`
 4. `extracting_tp153`
-5. `building_evidence`
-6. `retrieving_knowledge`
-7. `applying_rules`
-8. `generating_report`
-9. `completed`
+5. materialize immutable extraction-review revision 1
+6. `review_ready`
 
 Failures use a separate processing state and error record. They never become an academic status.
 
-The currently implemented runner is uninterrupted and the currently implemented semantic runtime
-contains RULE002, RULE004, and RULE008. Numeric semantic confidence is still stored and displayed.
-These are explicit planned gaps, not the approved target contract.
+The initial runner stops at `review_ready`. `building_evidence`, `retrieving_knowledge`,
+`applying_rules`, and `generating_report` are guarded post-confirmation handlers and are not
+scheduled before `analyses.confirmed_review_id` is bound. M4 will add the confirmation and
+continuation API. The existing downstream semantic implementation still contains RULE002,
+RULE004, and RULE008. Numeric semantic confidence is still stored and displayed. M6 will migrate
+that runtime contract.
 
 ## Design-authorized target processing flow
 

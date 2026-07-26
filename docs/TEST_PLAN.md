@@ -24,7 +24,8 @@
 - Provider/retrieval/invalid-output failures use the processing-failure path and roll back findings.
 - Report generation with traceable finding.
 - Revised-exam analysis preserves predecessor.
-- Planned: extraction pauses before KB retrieval or AI, creates revision 1, and makes no Finding.
+- Implemented: extraction pauses before evidence gates, KB retrieval, or AI, creates revision 1
+  idempotently, and makes no Finding.
 - Planned: confirmation binds an exact review revision before post-confirmation processing.
 - Planned: review correction/restoration/exclusion remains source-faithful and atomic.
 - Planned: a Low or Not Verified semantic mapping does not contribute to deterministic coverage.

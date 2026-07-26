@@ -59,7 +59,7 @@ def _poll_until_terminal(client: TestClient, analysis_id: str, headers: dict[str
         response = client.get(f"/api/v1/analyses/{analysis_id}/progress", headers=headers)
         assert response.status_code == 200
         result = response.json()
-        if result["state"] in ("completed", "failed"):
+        if result["state"] in ("review_ready", "completed", "failed"):
             break
         time.sleep(0.05)
     return result
@@ -87,7 +87,7 @@ def test_run_missing_auth_header_returns_401(client: TestClient) -> None:
     assert response.status_code == 401
 
 
-def test_run_starts_pipeline_and_reaches_completed(client: TestClient) -> None:
+def test_run_starts_pipeline_and_reaches_review_ready(client: TestClient) -> None:
     analysis_id = _make_ready_analysis(client, "u2@kau.edu.sa")
     headers = auth_header("u2@kau.edu.sa")
 
@@ -95,8 +95,18 @@ def test_run_starts_pipeline_and_reaches_completed(client: TestClient) -> None:
     assert run_response.status_code == 202
 
     progress = _poll_until_terminal(client, analysis_id, headers)
-    assert progress["state"] == "completed"
-    assert progress["message"] is None
+    assert progress["state"] == "review_ready"
+    assert progress["message"] == "Extraction is ready for review."
+
+
+def test_openapi_exposes_review_ready_as_an_additive_processing_stage(
+    client: TestClient,
+) -> None:
+    response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+    processing_stages = response.json()["components"]["schemas"]["ProcessingStage"]["enum"]
+    assert "review_ready" in processing_stages
 
 
 def test_run_twice_returns_conflict(client: TestClient) -> None:
