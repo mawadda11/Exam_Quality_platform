@@ -23,9 +23,10 @@ The design-authorized Version 1 evaluation order is:
 `confirmed source evidence -> deterministic checks -> constrained semantic relationships -> deterministic aggregation and scoring`
 
 This contract is approved in M1. M2 implements review-revision and categorical-confidence
-persistence plus strict internal schemas. M3 creates revision 1, pauses at `review_ready`, and
-guards all post-confirmation handlers. Review/edit/confirmation APIs and UI,
-categorical-confidence runtime behavior, and expanded evaluators remain planned for M4 and later.
+persistence plus strict internal schemas. M3 creates revision 1 and pauses at `review_ready`.
+M4-M5 implement controlled review/edit/confirmation APIs, the review UI, and exact-revision guarded
+continuation. Categorical-confidence runtime behavior and expanded evaluators remain planned for
+M6 and later.
 
 ## Extraction Review boundary
 
@@ -33,7 +34,7 @@ No AI evaluator may run before extraction confirmation. M3 enforces this for new
 stopping the initial worker before evidence gates, KB retrieval, or rules and by applying one
 central confirmation guard to every downstream handler.
 
-Future Extraction Review may only:
+Implemented Extraction Review may only:
 
 - correct a source-faithful transcription;
 - restore the original machine extraction;

@@ -15,9 +15,14 @@ import { PageState } from '../components/ui/PageState'
 import { AnalysisWorkflowStepper } from '../features/analysis-upload/AnalysisWorkflowStepper'
 import { AnalysisDocuments } from '../features/analysis-upload/AnalysisUploadFlow'
 import { ProcessingStatus } from '../features/analysis-upload/ProcessingStatus'
+import { ExtractionReviewWorkspace } from '../features/extraction-review/ExtractionReviewWorkspace'
 import { ReviewStartSummary } from '../features/analysis-upload/ReviewStartSummary'
 import { routeForAnalysis } from '../router/analysisRouting'
-import type { AnalysisResponse, ProcessingStage } from '../types/api'
+import type {
+  AnalysisResponse,
+  ExtractionReviewConfirmResponse,
+  ProcessingStage,
+} from '../types/api'
 import { type AnalysisRouteContext, useAnalysisRoute } from './analysisRouteContext'
 
 type AnalysisLoadState =
@@ -226,20 +231,62 @@ export function AnalysisStartRoute() {
   )
 }
 
+export function AnalysisExtractionReviewRoute() {
+  const { analysis, updateAnalysisState } = useAnalysisRoute()
+  const navigate = useNavigate()
+
+  if (analysis.state !== 'review_ready') {
+    return <Navigate to={routeForAnalysis(analysis)} replace />
+  }
+
+  function handleConfirmed(response: ExtractionReviewConfirmResponse): void {
+    updateAnalysisState(response.state)
+    navigate(`/analyses/${analysis.id}/progress`, { replace: true })
+  }
+
+  return (
+    <div className="route-stack route-content-wide">
+      <PageHeader
+        title="Review Extracted Evidence"
+        description="Correct source transcription, exclude false positives, and confirm the exact revision before academic analysis begins."
+      />
+      <div className="analysis-workflow-stepper">
+        <AnalysisWorkflowStepper currentStep="extraction" />
+      </div>
+      <ExtractionReviewWorkspace
+        key={analysis.id}
+        analysisId={analysis.id}
+        onConfirmed={handleConfirmed}
+      />
+    </div>
+  )
+}
+
 export function AnalysisProgressRoute() {
   const { analysis, updateAnalysisState } = useAnalysisRoute()
   const navigate = useNavigate()
 
-  if (analysis.state === 'queued' || analysis.state === 'completed') {
+  if (
+    analysis.state === 'queued' ||
+    analysis.state === 'review_ready' ||
+    analysis.state === 'completed'
+  ) {
     return <Navigate to={routeForAnalysis(analysis)} replace />
   }
 
   function handleStateChange(state: ProcessingStage): void {
     updateAnalysisState(state)
-    if (state === 'completed') {
+    if (state === 'review_ready') {
+      navigate(`/analyses/${analysis.id}/review`, { replace: true })
+    } else if (state === 'completed') {
       navigate(`/analyses/${analysis.id}/results/overview`, { replace: true })
     }
   }
+
+  const beforeReview =
+    analysis.state === 'validating' ||
+    analysis.state === 'extracting_exam' ||
+    analysis.state === 'extracting_tp153'
 
   return (
     <div className="route-stack route-content-compact">
@@ -248,7 +295,7 @@ export function AnalysisProgressRoute() {
         description="Processing continues through the existing backend workflow."
       />
       <div className="analysis-workflow-stepper">
-        <AnalysisWorkflowStepper currentStep="complete" />
+        <AnalysisWorkflowStepper currentStep={beforeReview ? 'extraction' : 'complete'} />
       </div>
       <Card as="section" className="route-card">
         <h2>

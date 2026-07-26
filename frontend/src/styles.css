@@ -4,6 +4,7 @@
 @import './styles/layout.css';
 @import './styles/dashboard.css';
 @import './styles/analysis-workflow.css';
+@import './styles/extraction-review.css';
 @import './styles/results.css';
 
 p { line-height: 1.7; }

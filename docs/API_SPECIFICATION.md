@@ -4,8 +4,8 @@ Base path: `/api/v1`
 
 Unless an endpoint is explicitly marked **Planned**, it describes the currently implemented API.
 Planned contracts are design-authorized by M1 but must not be treated as available until their
-implementation milestone is complete. M3 adds `review_ready` to the existing processing-state
-contract but exposes no review/edit/confirmation or categorical-confidence API.
+implementation milestone is complete. M3 adds `review_ready`; M4-M5 implement the owner-scoped
+Extraction Review API and workspace. Categorical semantic-confidence API changes remain planned.
 
 ## Health
 - `GET /health`
@@ -17,6 +17,12 @@ contract but exposes no review/edit/confirmation or categorical-confidence API.
   extraction, creates immutable extraction-review revision 1, and pauses at `review_ready`.
 - `GET /analyses/{id}` status and summary.
 - `GET /analyses/{id}/progress` stage and safe progress.
+- `GET /analyses/{id}/extraction-review` return the latest immutable review revision, original
+  machine snapshot, source anchors, warnings, and edit/confirmation eligibility.
+- `PUT /analyses/{id}/extraction-review` validate a complete snapshot against an exact base
+  revision and append a new immutable source-faithful revision.
+- `POST /analyses/{id}/extraction-review/confirm` atomically confirm the exact latest revision,
+  materialize its included reviewed transcription, and schedule guarded downstream processing.
 - `GET /analyses/{id}/questions` question summaries.
 - `GET /analyses/{id}/findings` filterable findings, enriched (M9) with each finding's official
   requirement display metadata (`requirement_name`, `dimension`, `source_type`, `officiality`)
@@ -50,22 +56,24 @@ contract but exposes no review/edit/confirmation or categorical-confidence API.
 - `review_ready` is an additive processing-state value. It means extraction has paused for review;
   it is not an academic status and does not mean the analysis is completed.
 
-## Planned Extraction Review contract
+## Extraction Review contract - currently implemented
 
-These endpoints are design-authorized but remain unimplemented after M3:
+The existing `POST /analyses/{id}/run` validates, extracts, creates immutable revision 1, and
+pauses at `review_ready`. Review requests are owner-authorized and allowed only while review is
+open.
 
-- `GET /analyses/{id}/extraction-review` returns one coherent review snapshot, its revision
-  identity, source anchors, warnings, and confirmation eligibility.
-- `PUT /analyses/{id}/extraction-review` validates a complete source-faithful reviewed snapshot
-  against a base revision and creates a new immutable revision.
-- `POST /analyses/{id}/extraction-review/confirm` atomically confirms an exact revision and
-  schedules post-confirmation evidence, retrieval, and evaluation stages.
+`PUT` accepts `{base_revision_id, snapshot}` and returns `201` with the appended revision. The
+snapshot must preserve the complete machine-extraction source-record set and immutable anchors;
+editable transcription fields and `included` state may change. A stale base revision returns
+`409`, source-faithfulness violations return `422`, and inaccessible analyses remain owner-safe
+`404` responses.
 
-The existing `POST /analyses/{id}/run` now validates, extracts, creates the initial review
-revision, and pauses. The existing progress endpoint now exposes `review_ready`.
+`POST .../confirm` accepts `{revision_id}` and returns `202` with `building_evidence`. Only the
+latest revision may be confirmed. Confirmation binds `analyses.confirmed_review_id`, closes review
+writes, materializes the included reviewed transcription for existing downstream evaluators, and
+schedules evidence building, KB retrieval, rule application, and report-stage continuation.
 
-Review writes will be owner-authorized and allowed only while review is open. The review contract
-will reject:
+The review contract rejects:
 
 - new official CLOs, topics, or assessment records;
 - manually created question-to-CLO/topic mappings;
@@ -74,8 +82,8 @@ will reject:
 - stale revisions; and
 - writes after confirmation.
 
-No separate mappings endpoint or per-entity edit API is design-authorized for Version 1. Structured
-mapping details will be returned with the authoritative rule Finding.
+No database migration is required for M4-M5; the immutable revision table and exact confirmation
+pointer introduced in M2 are reused. No separate mappings endpoint or per-entity edit API is design-authorized for Version 1. Structured mapping details will be returned with the authoritative rule Finding.
 
 ## Planned semantic Finding contract
 

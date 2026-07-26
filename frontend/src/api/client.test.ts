@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, apiGet, apiPostJson, getApiBaseUrl } from './client'
+import { ApiError, apiGet, apiPostJson, apiPutJson, getApiBaseUrl } from './client'
 import { setStoredDevUserEmail } from './identity'
 
 function mockResponse(body: unknown, ok: boolean, status: number, statusText = ''): Response {
@@ -93,5 +93,27 @@ describe('apiPostJson', () => {
     expect(init.method).toBe('POST')
     expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
     expect(JSON.parse(init.body as string)).toEqual({ term: '2026 Spring' })
+  })
+})
+
+
+describe('apiPutJson', () => {
+  it('sends a JSON body with the correct method and headers', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse({ revision_number: 2 }, true, 201))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await apiPutJson<{ revision_number: number }>(
+      '/analyses/analysis-1/extraction-review',
+      { base_revision_id: 'revision-1' },
+    )
+
+    expect(result).toEqual({ revision_number: 2 })
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(
+      'http://localhost:8000/api/v1/analyses/analysis-1/extraction-review',
+    )
+    expect(init.method).toBe('PUT')
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
+    expect(JSON.parse(init.body as string)).toEqual({ base_revision_id: 'revision-1' })
   })
 })

@@ -226,3 +226,117 @@ export interface ReportResponse {
   size_bytes: number
   created_at: string
 }
+
+
+export interface ExtractionReviewGeometry {
+  x0: number
+  top: number
+  x1: number
+  bottom: number
+}
+
+export interface ExtractionReviewQuestion {
+  source_record_id: string
+  included: boolean
+  parent_source_record_id: string | null
+  number_label: string
+  question_text: string
+  page_number: number
+  marks: number | null
+  sequence: number
+  extraction_confidence: number
+  geometry: ExtractionReviewGeometry | null
+}
+
+export interface ExtractionReviewEvidence {
+  source_record_id: string
+  included: boolean
+  question_source_record_id: string | null
+  source_document: UploadedFileType
+  evidence_type: string
+  page_number: number
+  item_reference: string
+  extracted_text: string
+  extraction_confidence: number
+  geometry: ExtractionReviewGeometry | null
+}
+
+export interface ExtractionReviewClo {
+  source_record_id: string
+  included: boolean
+  code: string
+  text: string
+  program_outcome_reference: string | null
+  page_number: number
+  extraction_confidence: number
+  geometry: ExtractionReviewGeometry | null
+}
+
+export interface ExtractionReviewTopic {
+  source_record_id: string
+  included: boolean
+  code: string | null
+  text: string
+  expected_hours: number | null
+  page_number: number
+  extraction_confidence: number
+  geometry: ExtractionReviewGeometry | null
+}
+
+export interface ExtractionReviewAssessmentRecord {
+  source_record_id: string
+  included: boolean
+  method: string
+  activity: string | null
+  percentage: number | null
+  page_number: number
+  extraction_confidence: number
+  geometry: ExtractionReviewGeometry | null
+}
+
+export interface ExtractionReviewSnapshot {
+  schema_version: 1
+  questions: ExtractionReviewQuestion[]
+  evidence: ExtractionReviewEvidence[]
+  clos: ExtractionReviewClo[]
+  topics: ExtractionReviewTopic[]
+  assessment_records: ExtractionReviewAssessmentRecord[]
+}
+
+export type ExtractionReviewCollection =
+  | 'questions'
+  | 'evidence'
+  | 'clos'
+  | 'topics'
+  | 'assessment_records'
+  | 'review'
+
+export interface ExtractionReviewWarning {
+  code: string
+  severity: 'info' | 'warning'
+  collection: ExtractionReviewCollection
+  source_record_id: string | null
+  message: string
+}
+
+export interface ExtractionReviewResponse {
+  analysis_id: string
+  revision_id: string
+  revision_number: number
+  created_at: string
+  snapshot: ExtractionReviewSnapshot
+  original_snapshot: ExtractionReviewSnapshot
+  confirmed_revision_id: string | null
+  is_confirmed: boolean
+  can_edit: boolean
+  can_confirm: boolean
+  warnings: ExtractionReviewWarning[]
+  confirmation_blockers: string[]
+}
+
+export interface ExtractionReviewConfirmResponse {
+  analysis_id: string
+  confirmed_revision_id: string
+  confirmed_revision_number: number
+  state: ProcessingStage
+}

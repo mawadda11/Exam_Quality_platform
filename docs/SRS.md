@@ -37,9 +37,9 @@ institutional policies, and rule thresholds.
 
 FR-019 through FR-028 are design-authorized in M1. M2 implements the
 revision/categorical-confidence persistence and strict internal schema foundation. M3 implements
-the initial revision, `review_ready` pause, and no-pre-confirmation-processing guard. Review
-editing, confirmation, continuation, the review workspace, and semantic runtime changes remain
-planned for M4 and later.
+the initial revision, `review_ready` pause, and no-pre-confirmation-processing guard. M4-M5
+implement source-faithful review editing, immutable saves, exact confirmation, guarded
+continuation, and the review workspace. Semantic runtime changes remain planned for M6 and later.
 
 ## Non-functional requirements
 - Accuracy: unsupported claims are prohibited; insufficient evidence becomes Not Verified.

@@ -26,8 +26,10 @@
 - Revised-exam analysis preserves predecessor.
 - Implemented: extraction pauses before evidence gates, KB retrieval, or AI, creates revision 1
   idempotently, and makes no Finding.
-- Planned: confirmation binds an exact review revision before post-confirmation processing.
-- Planned: review correction/restoration/exclusion remains source-faithful and atomic.
+- Implemented: confirmation binds the exact latest review revision before post-confirmation
+  processing and ignores duplicate/mismatched continuation tasks.
+- Implemented: review correction/restoration/exclusion preserves source-record identity and
+  immutable anchors, rejects stale or fabricated rows, and closes writes after confirmation.
 - Planned: a Low or Not Verified semantic mapping does not contribute to deterministic coverage.
 
 ## Contract tests
@@ -46,7 +48,7 @@
 - Prompt injection content does not override system constraints.
 - Cross-analysis and wrong-source semantic evidence is rejected.
 - Unknown derived target IDs and AI-generated source records are rejected.
-- Manual CLO/topic/assessment-record/mapping creation is rejected by the planned review boundary.
+- Manual CLO/topic/assessment-record/mapping creation is rejected by the implemented review boundary.
 - AI providers are not invoked before extraction confirmation.
 - Sensitive content absent from logs.
 

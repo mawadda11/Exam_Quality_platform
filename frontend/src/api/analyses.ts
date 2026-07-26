@@ -1,10 +1,13 @@
-import { apiGet, apiGetBlob, apiPostForm, apiPostJson } from './client'
+import { apiGet, apiGetBlob, apiPostForm, apiPostJson, apiPutJson } from './client'
 import type {
   AnalysisCreateRequest,
   AnalysisResponse,
   AnalysisScoreResponse,
   AssessmentRecordResponse,
   CloResponse,
+  ExtractionReviewConfirmResponse,
+  ExtractionReviewResponse,
+  ExtractionReviewSnapshot,
   FindingResponse,
   ProgressResponse,
   QuestionResponse,
@@ -45,6 +48,32 @@ export function runAnalysis(analysisId: string): Promise<AnalysisResponse> {
 
 export function getAnalysisProgress(analysisId: string): Promise<ProgressResponse> {
   return apiGet<ProgressResponse>(`/analyses/${analysisId}/progress`)
+}
+
+
+export function getExtractionReview(analysisId: string): Promise<ExtractionReviewResponse> {
+  return apiGet<ExtractionReviewResponse>(`/analyses/${analysisId}/extraction-review`)
+}
+
+export function saveExtractionReview(
+  analysisId: string,
+  baseRevisionId: string,
+  snapshot: ExtractionReviewSnapshot,
+): Promise<ExtractionReviewResponse> {
+  return apiPutJson<ExtractionReviewResponse>(`/analyses/${analysisId}/extraction-review`, {
+    base_revision_id: baseRevisionId,
+    snapshot,
+  })
+}
+
+export function confirmExtractionReview(
+  analysisId: string,
+  revisionId: string,
+): Promise<ExtractionReviewConfirmResponse> {
+  return apiPostJson<ExtractionReviewConfirmResponse>(
+    `/analyses/${analysisId}/extraction-review/confirm`,
+    { revision_id: revisionId },
+  )
 }
 
 export function listQuestions(analysisId: string): Promise<QuestionResponse[]> {

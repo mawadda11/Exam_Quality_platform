@@ -163,8 +163,8 @@ export function ProcessingStatus({
       )}
       {state === 'review_ready' && (
         <Alert variant="info" title="Extraction ready for review">
-          The extracted Exam and TP-153 evidence is ready for review. Review and
-          confirmation actions will be available in a later milestone.
+          The extracted Exam and TP-153 evidence is ready. Continue to the dedicated
+          review workspace to correct transcription, save a revision, and confirm it.
         </Alert>
       )}
       {startError && (

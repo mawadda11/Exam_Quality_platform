@@ -15,8 +15,8 @@ populated TP-153 are mandatory. Extraction does not start until both files are u
 validation, and AI analysis does not start until the extracted evidence is reviewed and confirmed.
 The review-and-confirm workflow is design-authorized in M1. M2 implements its
 persistence/internal-schema foundation. M3 creates the initial source-faithful review revision and
-pauses at `review_ready`; review editing, confirmation, and post-confirmation continuation remain
-planned for M4-M5.
+pauses at `review_ready`. M4-M5 implement correction/restoration/false-positive exclusion,
+immutable revision saves, exact confirmation, and guarded post-confirmation continuation.
 
 ---
 

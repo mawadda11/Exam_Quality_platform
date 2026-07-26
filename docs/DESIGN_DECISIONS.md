@@ -15,10 +15,10 @@ The repository uses four distinct status terms:
 
 Milestone M1 changes governance and planning contracts only. M2 implements the minimum persistence
 and strict internal schemas for Extraction Review and categorical semantic confidence. M3 creates
-revision 1, pauses at `review_ready`, guards post-confirmation processing, and adds minimal
-frontend compatibility. Review/edit/confirmation APIs, the review workspace,
-categorical-confidence evaluation, and expanded semantic evaluators remain planned for M4 and
-later milestones.
+revision 1 and pauses at `review_ready`. M4-M5 implement owner-authorized immutable review
+revisions, exact-revision confirmation, guarded continuation, and the review workspace.
+Categorical-confidence evaluation and expanded semantic evaluators remain planned for M6 and later
+milestones.
 
 ## DD-001 - Evidence-gated hybrid architecture
 
@@ -80,7 +80,7 @@ unreviewed extraction can produce a well-formed but academically unsupported res
 
 **Chosen approach**
 
-The planned workflow pauses after extraction. Review is limited to:
+The implemented workflow pauses after extraction. Review is limited to:
 
 - correcting an existing source-faithful transcription;
 - restoring the original machine extraction;
@@ -112,9 +112,9 @@ from being mistaken for document facts.
 **Consequences and limitations**
 
 M1 itself does not implement runtime behavior. M2 supplies the persistence/internal-schema
-foundation. M3 now implements revision creation and the pause, with a read-only frontend handoff;
-review/edit/confirmation APIs and the review workspace remain planned for M4-M5.
-Missing official TP-153 content cannot be entered during review; the user must provide a corrected
+foundation. M3 implements revision creation and the pause. M4-M5 now implement review saves,
+source-faithfulness validation, exact confirmation, guarded continuation, and the controlled
+workspace. Missing official TP-153 content cannot be entered during review; the user must provide a corrected
 official document in a new or restarted analysis.
 
 ## DD-003 - Source evidence and derived semantic relationships are separate

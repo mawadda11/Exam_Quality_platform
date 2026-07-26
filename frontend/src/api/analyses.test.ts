@@ -1,12 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  confirmExtractionReview,
   createAnalysis,
   getAnalysis,
+  getExtractionReview,
   listFindings,
   parseFindingResponses,
+  saveExtractionReview,
   uploadAnalysisFile,
 } from './analyses'
-import type { AnalysisResponse, FindingResponse, UploadedFileResponse } from '../types/api'
+import type {
+  AnalysisResponse,
+  ExtractionReviewConfirmResponse,
+  ExtractionReviewResponse,
+  ExtractionReviewSnapshot,
+  FindingResponse,
+  UploadedFileResponse,
+} from '../types/api'
 
 function mockResponse(body: unknown, status = 200): Response {
   return {
@@ -134,5 +144,81 @@ describe('listFindings', () => {
     const malformed = { ...SEMANTIC_FINDING }
     delete (malformed as Partial<FindingResponse>).prompt_template_version
     expect(() => parseFindingResponses([malformed])).toThrow(/malformed findings response/i)
+  })
+})
+
+const REVIEW_SNAPSHOT: ExtractionReviewSnapshot = {
+  schema_version: 1,
+  questions: [],
+  evidence: [],
+  clos: [],
+  topics: [],
+  assessment_records: [],
+}
+
+const REVIEW_RESPONSE: ExtractionReviewResponse = {
+  analysis_id: 'analysis-1',
+  revision_id: 'revision-1',
+  revision_number: 1,
+  created_at: '2026-07-26T00:00:00Z',
+  snapshot: REVIEW_SNAPSHOT,
+  original_snapshot: REVIEW_SNAPSHOT,
+  confirmed_revision_id: null,
+  is_confirmed: false,
+  can_edit: true,
+  can_confirm: true,
+  warnings: [],
+  confirmation_blockers: [],
+}
+
+describe('extraction review API', () => {
+  it('loads the latest review revision with GET', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(REVIEW_RESPONSE))
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await getExtractionReview('analysis-1')).toEqual(REVIEW_RESPONSE)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(
+      'http://localhost:8000/api/v1/analyses/analysis-1/extraction-review',
+    )
+    expect(init.method).toBeUndefined()
+  })
+
+  it('saves a complete source-faithful snapshot with PUT', async () => {
+    const saved = { ...REVIEW_RESPONSE, revision_id: 'revision-2', revision_number: 2 }
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(saved, 201))
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(
+      await saveExtractionReview('analysis-1', 'revision-1', REVIEW_SNAPSHOT),
+    ).toEqual(saved)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(
+      'http://localhost:8000/api/v1/analyses/analysis-1/extraction-review',
+    )
+    expect(init.method).toBe('PUT')
+    expect(JSON.parse(init.body as string)).toEqual({
+      base_revision_id: 'revision-1',
+      snapshot: REVIEW_SNAPSHOT,
+    })
+  })
+
+  it('confirms one exact latest revision with POST', async () => {
+    const confirmed: ExtractionReviewConfirmResponse = {
+      analysis_id: 'analysis-1',
+      confirmed_revision_id: 'revision-2',
+      confirmed_revision_number: 2,
+      state: 'building_evidence',
+    }
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(confirmed, 202))
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await confirmExtractionReview('analysis-1', 'revision-2')).toEqual(confirmed)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(
+      'http://localhost:8000/api/v1/analyses/analysis-1/extraction-review/confirm',
+    )
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual({ revision_id: 'revision-2' })
   })
 })

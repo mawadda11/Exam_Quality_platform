@@ -20,6 +20,7 @@ from app.models.course import Course
 from app.models.extraction_review_revision import ExtractionReviewRevision
 from app.models.processing_event import ProcessingEvent
 from app.models.user import User
+from app.services.extraction.review_snapshot import materialize_initial_review_revision
 
 
 @pytest.fixture()
@@ -169,3 +170,106 @@ def test_pipeline_transitions_to_failed_with_safe_message_on_exception(
 def test_pipeline_does_nothing_for_unknown_analysis_id(runner_engine: Engine) -> None:
     # Should not raise - just logs and returns.
     runner.run_analysis_pipeline(uuid.uuid4())
+
+
+def _prepare_confirmed_analysis(engine: Engine) -> tuple[uuid.UUID, uuid.UUID]:
+    analysis_id = _create_analysis(engine)
+    with Session(engine) as session:
+        analysis = session.get(Analysis, analysis_id)
+        assert analysis is not None
+        revision = materialize_initial_review_revision(session, analysis_id)
+        analysis.confirmed_review_id = revision.id
+        analysis.state = ProcessingStage.BUILDING_EVIDENCE
+        session.add(
+            ProcessingEvent(
+                analysis_id=analysis.id,
+                stage=ProcessingStage.BUILDING_EVIDENCE,
+                message="Extraction review was confirmed; downstream analysis started.",
+            )
+        )
+        session.commit()
+        return analysis_id, revision.id
+
+
+def test_post_confirmation_pipeline_runs_only_downstream_stages_and_completes(
+    runner_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for stage in stages.POST_CONFIRMATION_STAGES:
+        monkeypatch.setitem(
+            stages.STAGE_HANDLERS,
+            stage,
+            lambda analysis, session, settings: None,
+        )
+    analysis_id, revision_id = _prepare_confirmed_analysis(runner_engine)
+
+    runner.run_post_confirmation_pipeline(analysis_id, revision_id)
+
+    with Session(runner_engine) as session:
+        analysis = session.get(Analysis, analysis_id)
+        assert analysis is not None
+        assert analysis.state == ProcessingStage.COMPLETED
+        assert analysis.confirmed_review_id == revision_id
+    events = _events_for(runner_engine, analysis_id)
+    assert [event.stage for event in events] == [
+        ProcessingStage.BUILDING_EVIDENCE,
+        ProcessingStage.RETRIEVING_KNOWLEDGE,
+        ProcessingStage.APPLYING_RULES,
+        ProcessingStage.GENERATING_REPORT,
+        ProcessingStage.COMPLETED,
+    ]
+    assert events[-1].message == runner.COMPLETED_MESSAGE
+
+
+def test_post_confirmation_pipeline_ignores_wrong_revision_or_duplicate_run(
+    runner_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    called = 0
+
+    def count_call(analysis: Analysis, session: Session, settings: object) -> None:
+        nonlocal called
+        called += 1
+
+    for stage in stages.POST_CONFIRMATION_STAGES:
+        monkeypatch.setitem(stages.STAGE_HANDLERS, stage, count_call)
+    analysis_id, revision_id = _prepare_confirmed_analysis(runner_engine)
+
+    runner.run_post_confirmation_pipeline(analysis_id, uuid.uuid4())
+    assert called == 0
+
+    runner.run_post_confirmation_pipeline(analysis_id, revision_id)
+    assert called == len(stages.POST_CONFIRMATION_STAGES)
+    runner.run_post_confirmation_pipeline(analysis_id, revision_id)
+    assert called == len(stages.POST_CONFIRMATION_STAGES)
+
+
+def test_post_confirmation_pipeline_fails_safely_and_stops(
+    runner_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(
+        stages.STAGE_HANDLERS,
+        ProcessingStage.BUILDING_EVIDENCE,
+        lambda analysis, session, settings: None,
+    )
+
+    def boom(analysis: Analysis, session: Session, settings: object) -> None:
+        raise RuntimeError("private semantic provider detail")
+
+    monkeypatch.setitem(
+        stages.STAGE_HANDLERS,
+        ProcessingStage.RETRIEVING_KNOWLEDGE,
+        boom,
+    )
+    analysis_id, revision_id = _prepare_confirmed_analysis(runner_engine)
+
+    runner.run_post_confirmation_pipeline(analysis_id, revision_id)
+
+    with Session(runner_engine) as session:
+        analysis = session.get(Analysis, analysis_id)
+        assert analysis is not None
+        assert analysis.state == ProcessingStage.FAILED
+    events = _events_for(runner_engine, analysis_id)
+    assert [event.stage for event in events] == [
+        ProcessingStage.BUILDING_EVIDENCE,
+        ProcessingStage.FAILED,
+    ]
+    assert events[-1].message == runner.SAFE_FAILURE_MESSAGE

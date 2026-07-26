@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime
 from typing import Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.core.domain import UploadedFileType
+from app.core.domain import ProcessingStage, UploadedFileType
 
 
 class _StrictReviewModel(BaseModel):
@@ -133,3 +135,60 @@ class ExtractionReviewSnapshot(_StrictReviewModel):
                 raise ValueError("Included evidence cannot reference an excluded question.")
 
         return self
+
+
+class ExtractionReviewWarning(_StrictReviewModel):
+    code: str = Field(min_length=1, max_length=100)
+    severity: Literal["info", "warning"]
+    collection: Literal[
+        "questions",
+        "evidence",
+        "clos",
+        "topics",
+        "assessment_records",
+        "review",
+    ]
+    source_record_id: UUID | None
+    message: str = Field(min_length=1, max_length=500)
+
+
+class ExtractionReviewResponse(_StrictReviewModel):
+    analysis_id: UUID
+    revision_id: UUID
+    revision_number: int = Field(ge=1)
+    created_at: datetime
+    snapshot: ExtractionReviewSnapshot
+    original_snapshot: ExtractionReviewSnapshot
+    confirmed_revision_id: UUID | None
+    is_confirmed: bool
+    can_edit: bool
+    can_confirm: bool
+    warnings: list[ExtractionReviewWarning]
+    confirmation_blockers: list[str]
+
+
+class _ReviewRequestModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+class ExtractionReviewUpdateRequest(_ReviewRequestModel):
+    base_revision_id: UUID
+    snapshot: ExtractionReviewSnapshot
+
+    @field_validator("snapshot", mode="before")
+    @classmethod
+    def parse_snapshot_as_strict_json(cls, value: object) -> ExtractionReviewSnapshot:
+        if isinstance(value, ExtractionReviewSnapshot):
+            return value
+        return ExtractionReviewSnapshot.model_validate_json(json.dumps(value))
+
+
+class ExtractionReviewConfirmRequest(_ReviewRequestModel):
+    revision_id: UUID
+
+
+class ExtractionReviewConfirmResponse(_StrictReviewModel):
+    analysis_id: UUID
+    confirmed_revision_id: UUID
+    confirmed_revision_number: int = Field(ge=1)
+    state: ProcessingStage

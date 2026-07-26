@@ -17,9 +17,9 @@ export function isActiveProcessingState(state: ProcessingStage): boolean {
 export function routeForAnalysis(analysis: AnalysisResponse): string {
   const base = `/analyses/${analysis.id}`
   if (analysis.state === 'completed') return `${base}/results/overview`
+  if (analysis.state === 'review_ready') return `${base}/review`
   if (
     analysis.state === 'failed' ||
-    analysis.state === 'review_ready' ||
     isActiveProcessingState(analysis.state)
   ) {
     return `${base}/progress`

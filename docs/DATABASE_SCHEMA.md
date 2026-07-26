@@ -1,9 +1,9 @@
 # Database Schema
 
 This file lists the currently implemented schema. Milestone M2 added the minimum durable
-Extraction Review foundation in migration `0008`. M3 uses that unchanged schema to create revision
-1 and pause processing; it creates no migration and adds no review API or categorical semantic
-behavior.
+Extraction Review foundation in migration `0008`. M3 creates revision 1 and pauses processing.
+M4-M5 reuse the same schema to append immutable review revisions, bind the exact confirmed revision,
+and continue processing; no additional migration or categorical semantic behavior is introduced.
 
 ## Core tables
 - `users`: Faculty Member identity, institution, and department. Version 1 does not require multi-role authorization.
@@ -42,10 +42,11 @@ The `analyses` table intentionally has no persisted score or general KB-version 
 - Generated report rows persist their KB version and aggregate scoring snapshot.
 - Semantic findings persist the exact KB and prompt versions used for their evaluation.
 
-## M2 persistence and M3 initial snapshot - currently implemented
+## M2-M5 Extraction Review persistence - currently implemented
 
 Migration `0008` adds one table and three nullable columns. Existing analyses and Findings require
-no backfill, and current runtime/API behavior remains unchanged until later milestones.
+no backfill. M3-M5 now use the review table and confirmation pointer without adding another
+migration.
 
 ### Table: `extraction_review_revisions`
 
@@ -64,8 +65,11 @@ source-faithful fields, explicit inclusion state, source geometry, and numeric
 `extraction_confidence`. It permits empty entity collections and validates internal question and
 evidence references. M3 creates revision 1 idempotently from genuine persisted machine extraction
 rows. Concurrent creation uses a savepoint and safe requery; empty collections stay empty and no
-placeholder records are fabricated. M4 will append review saves and enforce
-correction/restoration/exclusion-only behavior against that original revision.
+placeholder records are fabricated. M4 appends complete immutable snapshots only after validating
+the original source-record set and immutable source anchors. M4 confirmation points to the exact
+latest revision, materializes included reviewed fields into the canonical extraction tables for
+existing downstream evaluators, and leaves revision 1 unchanged as the machine-extraction audit
+record. Excluded false-positive rows are removed only from the canonical post-confirmation view.
 
 ### Columns added to existing tables
 

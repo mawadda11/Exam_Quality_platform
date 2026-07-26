@@ -89,7 +89,7 @@ describe('ProcessingStatus', () => {
     expect(analysesApi.getAnalysisProgress).toHaveBeenCalledTimes(callsAtCompletion)
   })
 
-  it('stops at review_ready and presents a read-only review handoff', async () => {
+  it('stops at review_ready and presents the extraction-review handoff', async () => {
     vi.mocked(analysesApi.getAnalysisProgress).mockResolvedValue(
       progressResponse('review_ready', 'Extraction is ready for review.'),
     )
@@ -109,7 +109,7 @@ describe('ProcessingStatus', () => {
         selector: '.ui-alert-title',
       }),
     ).toBeInTheDocument()
-    expect(screen.getByText(/available in a later milestone/i)).toBeInTheDocument()
+    expect(screen.getByText(/continue to the dedicated review workspace/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /confirm|save|restore|exclude/i }))
       .not.toBeInTheDocument()
 

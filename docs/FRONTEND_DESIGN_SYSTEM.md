@@ -638,25 +638,24 @@ its documented backend milestone, except a separately approved defect fix.
   mixed-direction display rather than providing full interface localization.
 - Responsive acceptance is supported by automated semantic/behavior tests plus a documented manual
   browser viewport matrix; no additional browser-automation package was introduced.
-- The M3 `review_ready` state is recognized as an additive API value. Polling stops and the
-  existing progress route shows a read-only handoff message. The Extraction Review workspace and
-  actions remain reserved for M5.
+- The `review_ready` state routes to the dedicated Extraction Review workspace. Polling stops
+  before review; after exact-revision confirmation the route returns to guarded processing.
 
-### M3 compatibility implemented; M4-M5 review behavior reserved
+### M4-M5 Extraction Review implemented
 
-- `review_ready` recognition, stopped polling, and read-only messaging are implemented;
-- initial Extraction Review revision exists in the backend but is not exposed to this UI;
-- review snapshot API consumption;
-- dirty/saved/stale revision state;
-- source anchors;
-- correction, restoration, and false-positive exclusion;
-- confirmation eligibility and exact-revision confirmation;
-- confirmed read-only state;
-- post-confirmation processing.
+- latest and original review snapshot API consumption;
+- revision identity plus dirty/saved/stale conflict state;
+- page and extraction-confidence source anchors;
+- tabs for questions, CLOs, topics, assessment records, and evidence;
+- source-faithful correction, restoration, and false-positive exclusion;
+- warnings and confirmation blockers;
+- immutable new-revision saves;
+- exact latest-revision confirmation;
+- read-only handling after confirmation; and
+- post-confirmation processing navigation.
 
-M3 establishes the processing pause and initial snapshot. M4 establishes review/confirmation APIs.
-M5 establishes the minimal Extraction Review UI. No frontend component may simulate these contracts
-before its milestone.
+The workspace is a transcription-review boundary, not a mapping, course-authoring, or academic
+approval interface. It never exposes controls to add official source records.
 
 ### Deferred or prohibited until an approved dependency exists
 

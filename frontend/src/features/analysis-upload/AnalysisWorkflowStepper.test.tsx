@@ -18,15 +18,32 @@ describe('AnalysisWorkflowStepper', () => {
       'data-step-status',
       'upcoming',
     )
+    expect(screen.getByText('Review Extraction').closest('li')).toHaveAttribute(
+      'data-step-status',
+      'upcoming',
+    )
   })
 
-  it('marks all presentation steps complete during backend processing', () => {
+  it('marks all presentation steps complete after extraction confirmation', () => {
     render(<AnalysisWorkflowStepper currentStep="complete" />)
 
-    expect(screen.getAllByRole('listitem')).toHaveLength(3)
+    expect(screen.getAllByRole('listitem')).toHaveLength(4)
     for (const item of screen.getAllByRole('listitem')) {
       expect(item).toHaveAttribute('data-step-status', 'complete')
       expect(item).not.toHaveAttribute('aria-current')
     }
   })
 })
+
+  it('marks extraction review as the current milestone after machine extraction', () => {
+    render(<AnalysisWorkflowStepper currentStep="extraction" />)
+
+    expect(screen.getByText('Review and Start').closest('li')).toHaveAttribute(
+      'data-step-status',
+      'complete',
+    )
+    expect(screen.getByText('Review Extraction').closest('li')).toHaveAttribute(
+      'aria-current',
+      'step',
+    )
+  })

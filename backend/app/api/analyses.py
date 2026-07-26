@@ -30,6 +30,12 @@ from app.schemas.analysis import AnalysisCreateRequest, AnalysisResponse, Reanal
 from app.schemas.assessment_record import AssessmentRecordResponse
 from app.schemas.clo import CloResponse
 from app.schemas.course import CourseInput
+from app.schemas.extraction_review import (
+    ExtractionReviewConfirmRequest,
+    ExtractionReviewConfirmResponse,
+    ExtractionReviewResponse,
+    ExtractionReviewUpdateRequest,
+)
 from app.schemas.finding import FindingResponse
 from app.schemas.progress import ProgressResponse
 from app.schemas.question import QuestionResponse
@@ -38,11 +44,24 @@ from app.schemas.report import ReportResponse
 from app.schemas.score import AnalysisScoreResponse
 from app.schemas.topic import TopicResponse
 from app.schemas.uploaded_file import UploadedFileResponse
+from app.services.extraction.review_workflow import (
+    ExtractionReviewClosedError,
+    ExtractionReviewNotReadyError,
+    ExtractionReviewRevisionNotFoundError,
+    ExtractionReviewSourceFaithfulnessError,
+    ExtractionReviewStaleRevisionError,
+    append_extraction_review_revision,
+    confirm_extraction_review,
+    get_extraction_review,
+)
 from app.services.knowledge_base.reference_data import (
     get_controlled_recommendations,
     get_requirement_display,
 )
-from app.services.processing.runner import run_analysis_pipeline
+from app.services.processing.runner import (
+    run_analysis_pipeline,
+    run_post_confirmation_pipeline,
+)
 from app.services.reporting.content import assemble_report_content
 from app.services.reporting.pdf import render_report_pdf
 from app.services.reporting.storage import store_report_pdf
@@ -234,6 +253,93 @@ def run_analysis(
     db.expire_all()
     background_tasks.add_task(run_analysis_pipeline, analysis.id)
     return AnalysisResponse.from_model(_load_with_relations(db, analysis.id))
+
+
+def _review_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, ExtractionReviewRevisionNotFoundError):
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    if isinstance(exc, ExtractionReviewSourceFaithfulnessError):
+        return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc))
+    if isinstance(
+        exc,
+        (
+            ExtractionReviewClosedError,
+            ExtractionReviewNotReadyError,
+            ExtractionReviewStaleRevisionError,
+        ),
+    ):
+        return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    raise exc
+
+
+@router.get(
+    "/{analysis_id}/extraction-review",
+    response_model=ExtractionReviewResponse,
+)
+def read_extraction_review(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ExtractionReviewResponse:
+    try:
+        return get_extraction_review(db, analysis)
+    except Exception as exc:
+        raise _review_http_error(exc) from exc
+
+
+@router.put(
+    "/{analysis_id}/extraction-review",
+    response_model=ExtractionReviewResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def save_extraction_review(
+    payload: ExtractionReviewUpdateRequest,
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ExtractionReviewResponse:
+    try:
+        return append_extraction_review_revision(
+            db,
+            analysis,
+            base_revision_id=payload.base_revision_id,
+            candidate_snapshot=payload.snapshot,
+        )
+    except Exception as exc:
+        raise _review_http_error(exc) from exc
+
+
+@router.post(
+    "/{analysis_id}/extraction-review/confirm",
+    response_model=ExtractionReviewConfirmResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def confirm_extraction_review_endpoint(
+    payload: ExtractionReviewConfirmRequest,
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+    background_tasks: BackgroundTasks,
+) -> ExtractionReviewConfirmResponse:
+    try:
+        confirmed = confirm_extraction_review(
+            db,
+            analysis,
+            revision_id=payload.revision_id,
+        )
+    except Exception as exc:
+        raise _review_http_error(exc) from exc
+
+    # The worker opens a separate session and must observe the exact confirmation claim.
+    db.commit()
+    background_tasks.add_task(
+        run_post_confirmation_pipeline,
+        analysis.id,
+        confirmed.revision_id,
+    )
+    return ExtractionReviewConfirmResponse(
+        analysis_id=analysis.id,
+        confirmed_revision_id=confirmed.revision_id,
+        confirmed_revision_number=confirmed.revision_number,
+        state=ProcessingStage.BUILDING_EVIDENCE,
+    )
 
 
 @router.post(

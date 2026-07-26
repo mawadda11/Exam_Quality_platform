@@ -14,6 +14,14 @@ final academic responsibility.
 
 Claude Code automatically reads `CLAUDE.md` in the repository root.
 
+## Current implementation status
+
+M1-M3 are committed through base commit `ff78686`. The `m4-m5-extraction-review` delivery adds the
+owner-authorized Extraction Review API, immutable review revisions, exact-revision confirmation,
+guarded post-confirmation continuation, and the dedicated review workspace. Read
+`docs/M4_M5_HANDOFF.md`, `docs/M4_M5_IMPLEMENTATION_REPORT.md`, and
+`docs/M4_M5_VERIFICATION.md` before committing or continuing to M6.
+
 ## Local development
 
 With Docker (entire stack - frontend, backend, PostgreSQL, ChromaDB):

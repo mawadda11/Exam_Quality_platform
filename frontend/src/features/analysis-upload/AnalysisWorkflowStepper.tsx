@@ -1,11 +1,17 @@
 import { ProgressStepper, type ProgressStep } from '../../components/ui/ProgressStepper'
 
-export type AnalysisWorkflowStep = 'information' | 'documents' | 'review' | 'complete'
+export type AnalysisWorkflowStep =
+  | 'information'
+  | 'documents'
+  | 'review'
+  | 'extraction'
+  | 'complete'
 
 const WORKFLOW_STEPS = [
   { id: 'information', label: 'Exam Information' },
   { id: 'documents', label: 'Upload Documents' },
   { id: 'review', label: 'Review and Start' },
+  { id: 'extraction', label: 'Review Extraction' },
 ] as const
 
 interface AnalysisWorkflowStepperProps {

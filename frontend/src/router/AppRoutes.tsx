@@ -3,6 +3,7 @@ import { AppShell } from '../components/layout/AppShell'
 import { AnalysesRoute } from '../routes/AnalysesRoute'
 import {
   AnalysisDocumentsRoute,
+  AnalysisExtractionReviewRoute,
   AnalysisIndexRoute,
   AnalysisProgressRoute,
   AnalysisRouteLayout,
@@ -29,6 +30,7 @@ export function AppRoutes() {
           <Route path="documents" element={<AnalysisDocumentsRoute />} />
           <Route path="start" element={<AnalysisStartRoute />} />
           <Route path="progress" element={<AnalysisProgressRoute />} />
+          <Route path="review" element={<AnalysisExtractionReviewRoute />} />
           <Route path="results" element={<AnalysisResultsIndexRoute />} />
           <Route path="results/:tab" element={<AnalysisResultsRoute />} />
           <Route path="*" element={<NotFoundRoute />} />

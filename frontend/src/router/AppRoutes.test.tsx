@@ -7,6 +7,7 @@ import { ApiError } from '../api/client'
 import type {
   AnalysisResponse,
   AnalysisScoreResponse,
+  ExtractionReviewResponse,
   QuestionResponse,
 } from '../types/api'
 import { AppRoutes } from './AppRoutes'
@@ -55,6 +56,61 @@ const QUESTION: QuestionResponse = {
   confidence: 1,
   geometry: null,
   created_at: '2026-01-01T00:00:00Z',
+}
+
+const EXTRACTION_REVIEW: ExtractionReviewResponse = {
+  analysis_id: 'analysis-1',
+  revision_id: 'review-revision-1',
+  revision_number: 1,
+  created_at: '2026-07-26T00:00:00Z',
+  snapshot: {
+    schema_version: 1,
+    questions: [
+      {
+        source_record_id: 'question-source-1',
+        included: true,
+        parent_source_record_id: null,
+        number_label: 'Q1',
+        question_text: 'Explain a stack.',
+        page_number: 1,
+        marks: 5,
+        sequence: 1,
+        extraction_confidence: 0.9,
+        geometry: null,
+      },
+    ],
+    evidence: [],
+    clos: [],
+    topics: [],
+    assessment_records: [],
+  },
+  original_snapshot: {
+    schema_version: 1,
+    questions: [
+      {
+        source_record_id: 'question-source-1',
+        included: true,
+        parent_source_record_id: null,
+        number_label: 'Q1',
+        question_text: 'Explain a stack.',
+        page_number: 1,
+        marks: 5,
+        sequence: 1,
+        extraction_confidence: 0.9,
+        geometry: null,
+      },
+    ],
+    evidence: [],
+    clos: [],
+    topics: [],
+    assessment_records: [],
+  },
+  confirmed_revision_id: null,
+  is_confirmed: false,
+  can_edit: true,
+  can_confirm: true,
+  warnings: [],
+  confirmation_blockers: [],
 }
 
 const SCORE: AnalysisScoreResponse = {
@@ -108,6 +164,7 @@ function mockResults(): void {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(analysesApi.listAnalyses).mockResolvedValue([])
+  vi.mocked(analysesApi.getExtractionReview).mockResolvedValue(EXTRACTION_REVIEW)
   mockResults()
 })
 
@@ -395,7 +452,7 @@ describe('AppRoutes', () => {
     expect(analysesApi.listQuestions).not.toHaveBeenCalled()
   })
 
-  it('routes review_ready analyses to the read-only progress handoff', async () => {
+  it('routes review_ready analyses to the dedicated extraction-review workspace', async () => {
     vi.mocked(analysesApi.getAnalysis).mockResolvedValue({
       ...COMPLETED_ANALYSIS,
       state: 'review_ready',
@@ -403,10 +460,16 @@ describe('AppRoutes', () => {
 
     renderAt('/analyses/analysis-1/results/overview')
 
-    expect(await screen.findByText(/extraction ready for review/i)).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Review Extracted Evidence' }),
+    ).toBeInTheDocument()
+    expect(
+  await screen.findByDisplayValue('Explain a stack.'),
+).toBeInTheDocument()
     expect(screen.getByLabelText('Current route')).toHaveTextContent(
-      '/analyses/analysis-1/progress',
+      '/analyses/analysis-1/review',
     )
+    expect(analysesApi.getExtractionReview).toHaveBeenCalledWith('analysis-1')
     expect(analysesApi.getAnalysisProgress).not.toHaveBeenCalled()
     expect(analysesApi.listFindings).not.toHaveBeenCalled()
   })
