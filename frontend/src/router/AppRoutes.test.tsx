@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as analysesApi from '../api/analyses'
@@ -115,6 +116,79 @@ describe('AppRoutes', () => {
 
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
     expect(screen.getByLabelText('Current route')).toHaveTextContent('/dashboard')
+  })
+
+  it('builds dashboard metrics from one history request without score or detail calls', async () => {
+    vi.mocked(analysesApi.listAnalyses).mockResolvedValue([
+      COMPLETED_ANALYSIS,
+      {
+        ...QUEUED_ANALYSIS,
+        id: 'analysis-2',
+        state: 'validating',
+        predecessor_analysis_id: 'analysis-1',
+      },
+      { ...QUEUED_ANALYSIS, id: 'analysis-3' },
+    ])
+
+    renderAt('/dashboard')
+
+    const totalCard = (await screen.findByRole('heading', {
+      name: 'Total analyses',
+    })).closest('article')
+    const completedCard = screen
+      .getByRole('heading', { name: 'Completed analyses' })
+      .closest('article')
+    const reanalysisCard = screen
+      .getByRole('heading', { name: 'Linked reanalyses' })
+      .closest('article')
+
+    expect(totalCard && within(totalCard).getByText('3')).toBeInTheDocument()
+    expect(completedCard && within(completedCard).getByText('1')).toBeInTheDocument()
+    expect(reanalysisCard && within(reanalysisCard).getByText('1')).toBeInTheDocument()
+    expect(analysesApi.listAnalyses).toHaveBeenCalledTimes(1)
+    expect(analysesApi.getAnalysis).not.toHaveBeenCalled()
+    expect(analysesApi.getAnalysisScore).not.toHaveBeenCalled()
+  })
+
+  it('deduplicates the dashboard request during the development Strict Mode remount', async () => {
+    render(
+      <StrictMode>
+        <MemoryRouter initialEntries={['/dashboard']}>
+          <AppRoutes />
+        </MemoryRouter>
+      </StrictMode>,
+    )
+
+    expect(await screen.findByRole('heading', { name: 'Total analyses' }))
+      .toBeInTheDocument()
+    expect(analysesApi.listAnalyses).toHaveBeenCalledTimes(1)
+  })
+
+  it('loads the full history with one list request and exact backend state labels', async () => {
+    vi.mocked(analysesApi.listAnalyses).mockResolvedValue([
+      { ...QUEUED_ANALYSIS, state: 'extracting_tp153' },
+    ])
+
+    renderAt('/analyses')
+
+    expect(await screen.findByLabelText('Processing state: extracting_tp153'))
+      .toHaveTextContent('extracting_tp153')
+    expect(analysesApi.listAnalyses).toHaveBeenCalledTimes(1)
+    expect(analysesApi.getAnalysisScore).not.toHaveBeenCalled()
+  })
+
+  it('shows an API-derived dashboard error without requesting metric details', async () => {
+    vi.mocked(analysesApi.listAnalyses).mockRejectedValue(
+      new ApiError(503, 'Analysis history is temporarily unavailable.'),
+    )
+
+    renderAt('/dashboard')
+
+    expect(await screen.findByText('Analysis history is temporarily unavailable.'))
+      .toBeInTheDocument()
+    expect(analysesApi.listAnalyses).toHaveBeenCalledTimes(1)
+    expect(analysesApi.getAnalysis).not.toHaveBeenCalled()
+    expect(analysesApi.getAnalysisScore).not.toHaveBeenCalled()
   })
 
   it('loads a deep-linked analysis once and preserves the selected results tab', async () => {

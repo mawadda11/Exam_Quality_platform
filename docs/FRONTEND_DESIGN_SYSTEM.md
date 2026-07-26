@@ -15,6 +15,10 @@ Phase 2 implements the application shell, responsive primary navigation, refresh
 URL-controlled analysis/result navigation. It does not redesign the New Analysis lifecycle or
 introduce Phase 3, M3, authentication, new APIs, dashboard statistics, or Extraction Review.
 
+Phase 3 approves the Version 1 New Analysis lifecycle and implements real API-backed dashboard and
+history presentation. It does not change the existing creation/upload/run sequence, add score
+requests for dashboard rows, or introduce Phase 4, M3, authentication, or Extraction Review.
+
 The design system exists so future Codex and Claude Code sessions can extend the interface without
 reinterpreting screenshots, inventing business behavior, or creating inconsistent component
 variants.
@@ -379,7 +383,7 @@ existing API layer; route state must not duplicate or replace backend state.
 | Route | Current purpose |
 |---|---|
 | `/` | Replace-redirect to `/dashboard` |
-| `/dashboard` | Honest entry point and navigation actions; no fabricated metrics |
+| `/dashboard` | Real history-derived summary and recent analyses; no fabricated or score metrics |
 | `/analyses` | Owned analysis history from the existing list endpoint |
 | `/analyses/new` | Existing analysis-creation form and persistence lifecycle |
 | `/analyses/:analysisId/documents` | Existing required Exam and TP-153 uploads |
@@ -415,9 +419,44 @@ The production frontend image uses Nginx and installs an SPA `try_files` fallbac
 continue to resolve normally, while direct requests to nested application routes return
 `index.html` so React Router can restore the URL.
 
+## Approved Version 1 New Analysis lifecycle
+
+Version 1 uses **Option A**:
+
+1. The user enters Exam Information.
+2. The frontend creates the analysis through the existing API.
+3. Persisted course, exam-type, and term metadata becomes read-only.
+4. The user uploads the Exam PDF and populated TP-153 independently.
+5. The user starts the existing analysis workflow after both uploads are confirmed.
+
+Option B (holding metadata and browser `File` objects locally until Start) is not approved for
+Version 1. The existing APIs cannot make create/upload/upload/run atomic, browser-selected files
+cannot survive refresh, and partial upload failures require resume behavior that the current API
+does not provide safely.
+
+Option A can leave an abandoned queued analysis when a user creates a record but does not finish
+both uploads. This is an explicit Version 1 limitation. The server-persisted record and independent
+uploads provide safer refresh and retry behavior than a browser-only draft. Addressing abandoned
+records requires a separately approved cleanup, deletion, or transactional draft contract; the
+frontend must not invent one.
+
+## Dashboard and history data contract
+
+Dashboard and history use one `GET /analyses` request per visited route. They may derive only:
+
+- total analyses;
+- completed analyses (`state === "completed"`);
+- linked reanalyses (`predecessor_analysis_id !== null`);
+- the five most recent analysis metadata records;
+- each record's exact backend processing state.
+
+They must not request per-analysis scores, findings, reports, or detail endpoints for metrics.
+Processing states retain their exact backend labels and use `ProcessingStateBadge`; they must never
+use `StatusBadge` or be translated into the five academic statuses.
+
 ## Currently implemented, planned, and deferred
 
-### Currently implemented after Phase 2
+### Currently implemented after Phase 3
 
 - Central visual tokens and shared base/component CSS.
 - Eleven shared UI primitives documented above.
@@ -427,6 +466,9 @@ continue to resolve normally, while direct requests to nested application routes
 - One shared analysis-summary load across nested analysis routes, plus backend-state route guards.
 - URL-controlled keyboard-operable result tabs with browser history.
 - Real API-backed analysis history links; no score request is issued for a history row.
+- Real API-backed dashboard summary cards and five-record recent-analysis table.
+- Exact backend processing-state badges kept separate from academic-status badges.
+- Option A recorded as the approved Version 1 New Analysis lifecycle.
 - Production Nginx fallback for nested client-side routes.
 - Keyboard-operable result tabs.
 - `dir="auto"` for displayed question source text and `<bdi>` for question labels.
@@ -435,16 +477,9 @@ continue to resolve normally, while direct requests to nested application routes
 
 ### Planned frontend-alignment work
 
-- Full dashboard composition using only approved real API data.
 - Three-step New Analysis presentation.
 - Upload cards and complete processing presentation.
 - Results header, score summary, filters, partial loading, and full responsive alignment.
-- A separate decision before that work comparing:
-  - Option A: create after Exam Information and make persisted metadata read-only;
-  - Option B: retain metadata/files locally, then create, upload both documents, and run at Start.
-
-Option B is preferred only if later analysis proves it safe with the existing API and without
-backend changes. Phase 1 does not implement or decide either option.
 
 ### M3-M5 reserved states - not implemented
 

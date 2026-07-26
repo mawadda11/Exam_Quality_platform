@@ -2,6 +2,7 @@
 @import './styles/base.css';
 @import './styles/components.css';
 @import './styles/layout.css';
+@import './styles/dashboard.css';
 
 p { line-height: 1.7; }
 .notice { margin-top: 1.5rem; padding: 1rem; border-radius: 12px; background: #eef3f7; }
@@ -80,9 +81,3 @@ p { line-height: 1.7; }
 .reanalysis-action { margin-top: 1.5rem; padding: 1rem; border: 1px dashed #c7cfd8; border-radius: 12px; }
 .reanalysis-action h4 { margin-top: 0; }
 .reanalysis-reuse-option { display: flex; align-items: center; gap: .5rem; font-weight: 400; font-size: .9rem; }
-
-.analysis-history { margin-top: 1.5rem; text-align: left; }
-.analysis-history-list { list-style: none; padding: 0; margin: .75rem 0 0; display: flex; flex-direction: column; gap: .6rem; }
-.analysis-history-list a { width: 100%; color: var(--color-text); text-align: start; text-decoration: none; padding: .75rem 1rem; border: 1px solid #dfe4ea; border-radius: 12px; background: white; font: inherit; cursor: pointer; display: flex; flex-direction: column; gap: .3rem; }
-.analysis-history-list a:hover { border-color: var(--color-brand-teal); }
-.analysis-history-meta { font-size: .8rem; color: #6b7280; }

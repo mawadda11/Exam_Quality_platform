@@ -1,37 +1,11 @@
-import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { listAnalyses } from '../api/analyses'
-import { ApiError } from '../api/client'
 import { PageHeader } from '../components/ui/PageHeader'
 import { PageState } from '../components/ui/PageState'
-import { AnalysisHistoryList } from '../features/analysis-upload/AnalysisHistoryList'
-import type { AnalysisResponse } from '../types/api'
-
-type AnalysesState =
-  | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | { status: 'ready'; analyses: AnalysisResponse[] }
+import { AnalysisHistoryTable } from '../features/analysis-history/AnalysisHistoryTable'
+import { useAnalyses } from '../features/analysis-history/useAnalyses'
 
 export function AnalysesRoute() {
-  const [state, setState] = useState<AnalysesState>({ status: 'loading' })
-
-  useEffect(() => {
-    let cancelled = false
-    listAnalyses()
-      .then((analyses) => {
-        if (!cancelled) setState({ status: 'ready', analyses })
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return
-        setState({
-          status: 'error',
-          message: error instanceof ApiError ? error.detail : 'Could not load analyses.',
-        })
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const state = useAnalyses()
 
   return (
     <div className="route-stack route-content-wide">
@@ -63,7 +37,7 @@ export function AnalysesRoute() {
         />
       )}
       {state.status === 'ready' && state.analyses.length > 0 && (
-        <AnalysisHistoryList analyses={state.analyses} />
+        <AnalysisHistoryTable analyses={state.analyses} caption="All analyses" />
       )}
     </div>
   )
