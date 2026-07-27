@@ -22,9 +22,11 @@ export function ScoreRing({
   const empty = score === null
   const scoreText = empty ? emptyLabel : `${score}%`
   const denominatorText =
-    denominator === 1
-      ? 'Based on 1 verified applicable rule'
-      : `Based on ${denominator} verified applicable rules`
+    denominator === 0
+      ? 'No verified checks were available'
+      : denominator === 1
+        ? 'Based on 1 verified check'
+        : `Based on ${denominator} verified checks`
   const angle = empty ? 0 : numericScore(score) * 3.6
   const style = { '--score-angle': `${angle}deg` } as CSSProperties
 

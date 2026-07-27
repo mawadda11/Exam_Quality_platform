@@ -583,7 +583,22 @@ def create_report(
 
     findings = _load_findings(db, analysis.id)
     source_dir = _kb_source_dir(settings)
-    content = assemble_report_content(analysis, findings, source_dir, datetime.now(UTC))
+    assessment_records = list(
+        db.execute(
+            select(AssessmentRecord)
+            .where(AssessmentRecord.analysis_id == analysis.id)
+            .order_by(AssessmentRecord.page_number, AssessmentRecord.created_at)
+        ).scalars()
+    )
+    coverage = build_rule_coverage_audit(analysis.id, findings)
+    content = assemble_report_content(
+        analysis,
+        findings,
+        source_dir,
+        datetime.now(UTC),
+        assessment_records=assessment_records,
+        rule_coverage=coverage,
+    )
     pdf_bytes = render_report_pdf(content)
 
     report_id = uuid.uuid4()

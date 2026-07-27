@@ -44,6 +44,6 @@ describe('MobileNavigation', () => {
 
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab', shiftKey: true })
 
-    expect(screen.getByRole('link', { name: 'New Analysis' })).toHaveFocus()
+    expect(screen.getByRole('link', { name: 'What We Evaluate' })).toHaveFocus()
   })
 })

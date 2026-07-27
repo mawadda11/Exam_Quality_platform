@@ -159,7 +159,18 @@ describe('ExtractionReviewWorkspace', () => {
     expect(onConfirmed).toHaveBeenCalledWith(confirmation)
   })
 
-  it('restores the original machine value and supports source-record exclusion', async () => {
+  it('keeps the review focused on questions, CLOs, and topics while preserving internal evidence', async () => {
+    const excludedSnapshot = structuredClone(ORIGINAL_SNAPSHOT)
+    excludedSnapshot.questions[0].included = false
+    excludedSnapshot.evidence[0].included = false
+    vi.mocked(analysesApi.saveExtractionReview).mockResolvedValue(
+      reviewResponse({
+        revision_id: '40000000-0000-0000-0000-000000000002',
+        revision_number: 2,
+        snapshot: excludedSnapshot,
+      }),
+    )
+
     render(
       <ExtractionReviewWorkspace analysisId="analysis-1" onConfirmed={vi.fn()} />,
     )
@@ -169,17 +180,23 @@ describe('ExtractionReviewWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Restore machine value' }))
     expect(screen.getByLabelText('Question text')).toHaveValue('Explain a stack.')
 
+    expect(screen.queryByRole('tab', { name: /assessment/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: /evidence/i })).not.toBeInTheDocument()
+
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include in analysis' }))
     expect(screen.getByLabelText('Question text')).toBeDisabled()
-    expect(screen.getByRole('button', { name: /save new revision/i })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: /save new revision/i }))
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Evidence (1)' }))
-    const evidenceInclude = screen.getByRole('checkbox', { name: 'Include in analysis' })
-    expect(evidenceInclude).not.toBeChecked()
-
-    fireEvent.click(evidenceInclude)
-    fireEvent.click(screen.getByRole('tab', { name: 'Questions (1)' }))
-    expect(screen.getByRole('checkbox', { name: 'Include in analysis' })).toBeChecked()
+    await waitFor(() =>
+      expect(analysesApi.saveExtractionReview).toHaveBeenCalledWith(
+        'analysis-1',
+        '40000000-0000-0000-0000-000000000001',
+        expect.objectContaining({
+          questions: [expect.objectContaining({ included: false })],
+          evidence: [expect.objectContaining({ included: false })],
+        }),
+      ),
+    )
   })
 
   it('shows a safe API conflict and keeps the draft available for review', async () => {

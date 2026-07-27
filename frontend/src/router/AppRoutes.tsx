@@ -14,6 +14,7 @@ import {
   AnalysisResultsRoute,
 } from '../routes/AnalysisResultsRoute'
 import { DashboardRoute } from '../routes/DashboardRoute'
+import { EvaluationScopeRoute } from '../routes/EvaluationScopeRoute'
 import { NewAnalysisRoute } from '../routes/NewAnalysisRoute'
 import { NotFoundRoute } from '../routes/NotFoundRoute'
 
@@ -25,6 +26,7 @@ export function AppRoutes() {
         <Route path="/dashboard" element={<DashboardRoute />} />
         <Route path="/analyses" element={<AnalysesRoute />} />
         <Route path="/analyses/new" element={<NewAnalysisRoute />} />
+        <Route path="/evaluation-scope" element={<EvaluationScopeRoute />} />
         <Route path="/analyses/:analysisId" element={<AnalysisRouteLayout />}>
           <Route index element={<AnalysisIndexRoute />} />
           <Route path="documents" element={<AnalysisDocumentsRoute />} />

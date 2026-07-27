@@ -8,7 +8,7 @@ from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name, version="0.1.0")
+app = FastAPI(title=settings.app_name, version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origin_list,

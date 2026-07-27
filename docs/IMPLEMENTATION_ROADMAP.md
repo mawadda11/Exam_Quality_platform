@@ -67,11 +67,11 @@ No AI evaluator may run before the implemented confirmation boundary.
 - **M8 - RULE003 assessment consistency and RULE021 instructions: currently implemented.**
 - **M9 - RULE011, RULE012, and RULE013 question-writing semantics plus complete rule-coverage
   audit: currently implemented.**
-- **M10 - Reasoning, mapping, confidence, evidence, denominator, and report presentation: planned.**
+- **M10 - Reasoning, mapping, confidence, evidence, denominator, and report presentation: currently implemented.**
 
 ### Version 1.5 - Acceptance release
 
-- **M11 - Full integrated acceptance and release hardening: planned.**
+- **M11 - Full integrated acceptance and release hardening: currently implemented, with the final local dependency-backed frontend/Ruff/mypy gate documented in `docs/M10_M11_VERIFICATION.md`.**
 
 The approved semantic/hybrid target set is RULE001, RULE002, RULE003, RULE004, RULE007, RULE008,
 RULE011, RULE012, RULE013, and RULE021. All ten are currently implemented behind the governed
@@ -101,8 +101,11 @@ may invent criteria to remove these deferrals.
   zero/one-CLO branches are supported and the undefined two-or-more-CLO branch produces no Finding.
 - M9 exposes an implementation-coverage audit for all 21 exam-facing rules so unsupported or
   unexpectedly unexecuted capabilities cannot be hidden as academic `Not Verified`.
-- Items 9 and 10 are delivered: results/evidence/recommendations UI, score display, PDF report
-  generation/download, and linked reanalysis history are implemented.
-- The original Item 11 review is delivered for the training-project baseline. Version 1.5 M11 is a
-  separate integrated acceptance milestone for the hybrid redesign and does not authorize
-  institutional production deployment.
+- Items 9 and 10 are delivered and refined through M10: results/evidence/recommendations UI,
+  categorical confidence, item-level derived relationships, denominator transparency, a separate
+  platform-capability scope view, focused PDF report generation/download, and linked reanalysis
+  history are implemented. Assessment records and runtime coverage remain available internally
+  without dominating the individual exam result or report.
+- The original Item 11 review is delivered for the training-project baseline. Version 1.5 M11 now
+  adds a synthetic offline end-to-end API acceptance test for the hybrid redesign. It does not
+  authorize institutional production deployment or replace external academic validation.

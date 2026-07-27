@@ -115,6 +115,8 @@ export function AnalysisResults({
               <OverviewSection
                 analysis={analysis}
                 score={score}
+                ruleCoverage={resources.ruleCoverage}
+                onRetryRuleCoverage={() => retryResource('ruleCoverage')}
                 onReanalysisCreated={onReanalysisCreated}
               />
             )}

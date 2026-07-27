@@ -164,3 +164,108 @@ def test_assemble_report_content_handles_zero_findings() -> None:
     assert content.missing_evidence == ()
     assert content.score is None
     assert content.score_label == "Insufficient Evidence"
+
+
+def test_report_content_preserves_semantic_confidence_and_derived_relationships() -> None:
+    from app.core.domain import SemanticConfidenceLevel
+
+    analysis = _analysis()
+    question = Evidence(
+        id=uuid.uuid4(),
+        analysis_id=analysis.id,
+        source_document=UploadedFileType.EXAM,
+        evidence_type="question_text",
+        page_number=1,
+        item_reference="Q1",
+        extracted_text="Explain software testing.",
+        confidence=1.0,
+    )
+    clo = Evidence(
+        id=uuid.uuid4(),
+        analysis_id=analysis.id,
+        source_document=UploadedFileType.TP153,
+        evidence_type="clo",
+        page_number=3,
+        item_reference="CLO1",
+        extracted_text="Explain software quality concepts.",
+        confidence=1.0,
+    )
+    finding = _finding(
+        analysis.id,
+        "REQ001",
+        "RULE001",
+        AcademicStatus.SATISFIED,
+        evidence=[question, clo],
+    )
+    finding.evaluator_type = "semantic_ai"
+    finding.confidence_level = SemanticConfidenceLevel.HIGH
+    finding.ai_provider = "fake"
+    finding.ai_model = "fake-semantic-v1"
+    finding.prompt_template_version = "semantic-rule-v1"
+    finding.kb_version = "1.0"
+    finding.evaluation_details = {
+        "schema_version": 1,
+        "decision": "Satisfied",
+        "evidence_used": [str(question.id), str(clo.id)],
+        "reasoning": "The confirmed question is related to the confirmed CLO.",
+        "recommendation": None,
+        "confidence_basis": ["All required question items were judged."],
+        "item_judgments": [
+            {
+                "source_evidence_id": str(question.id),
+                "target_evidence_ids": [str(clo.id)],
+                "status": "Satisfied",
+                "reasoning": "The concepts match within the controlled evidence set.",
+            }
+        ],
+        "retrieved_knowledge_ids": ["REQ001", "RULE001"],
+    }
+
+    content = assemble_report_content(analysis, [finding], KB_SOURCE, GENERATED_AT)
+    entry = content.findings[0]
+
+    assert entry.confidence_level is SemanticConfidenceLevel.HIGH
+    assert entry.evaluation_reasoning == ("The confirmed question is related to the confirmed CLO.")
+    assert entry.confidence_basis == ("All required question items were judged.",)
+    assert entry.contains_derived_relationships is True
+    assert len(entry.item_judgments) == 1
+    judgment = entry.item_judgments[0]
+    assert judgment.source_evidence is not None
+    assert judgment.source_evidence.item_reference == "Q1"
+    assert [item.item_reference for item in judgment.target_evidence] == ["CLO1"]
+    assert judgment.reasoning == "The concepts match within the controlled evidence set."
+    assert entry.retrieved_knowledge_ids == ("REQ001", "RULE001")
+
+
+def test_report_content_includes_assessment_records_and_runtime_coverage() -> None:
+    from app.models.assessment_record import AssessmentRecord
+    from app.services.rules.coverage_audit import build_rule_coverage_audit
+
+    analysis = _analysis()
+    finding = _finding(analysis.id, "REQ018", "RULE018", AcademicStatus.SATISFIED)
+    assessment = AssessmentRecord(
+        id=uuid.uuid4(),
+        analysis_id=analysis.id,
+        method="Written exam",
+        activity="Midterm",
+        percentage=30,
+        page_number=5,
+        confidence=1.0,
+    )
+    coverage = build_rule_coverage_audit(analysis.id, [finding])
+
+    content = assemble_report_content(
+        analysis,
+        [finding],
+        KB_SOURCE,
+        GENERATED_AT,
+        assessment_records=[assessment],
+        rule_coverage=coverage,
+    )
+
+    assert content.assessment_records[0].method == "Written exam"
+    assert content.assessment_records[0].percentage == 30
+    assert content.rule_coverage is coverage
+    rule018 = next(item for item in coverage.entries if item.rule_id == "RULE018")
+    assert rule018.finding_status is AcademicStatus.SATISFIED
+    assert coverage.not_run_rules > 0

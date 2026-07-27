@@ -54,7 +54,7 @@ Open `http://localhost:5173`, then:
 2. Upload an Exam PDF and populated TP-153 PDF.
 3. Start Analysis.
 4. Confirm the analysis reaches `review_ready` and opens the Extraction Review workspace.
-5. Check Questions, CLOs, Topics, Assessment, and Evidence tabs.
+5. Check the Questions, CLOs, and Topics tabs. Assessment records and evidence remain internal and are surfaced only through relevant warnings or result evidence.
 6. Correct one visibly inaccurate transcription and save a new revision.
 7. Exclude one clear false-positive record where appropriate.
 8. Confirm that the revision number increases and confirmation is disabled while edits are unsaved.

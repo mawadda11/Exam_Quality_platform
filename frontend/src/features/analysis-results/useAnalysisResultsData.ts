@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   getAnalysisScore,
+  getRuleCoverage,
   listAssessmentRecords,
   listClos,
   listFindings,
@@ -18,6 +19,7 @@ import type {
   QuestionResponse,
   RecommendationResponse,
   ReportResponse,
+  RuleCoverageAuditResponse,
   TopicResponse,
 } from '../../types/api'
 
@@ -30,6 +32,7 @@ export interface ResultsResourceData {
   score: AnalysisScoreResponse
   recommendations: RecommendationResponse[]
   reports: ReportResponse[]
+  ruleCoverage: RuleCoverageAuditResponse
 }
 
 export type ResultsResourceKey = keyof ResultsResourceData
@@ -52,6 +55,7 @@ const RESOURCE_KEYS: ResultsResourceKey[] = [
   'score',
   'recommendations',
   'reports',
+  'ruleCoverage',
 ]
 
 const LOADERS: {
@@ -65,6 +69,7 @@ const LOADERS: {
   score: getAnalysisScore,
   recommendations: listRecommendations,
   reports: listReports,
+  ruleCoverage: getRuleCoverage,
 }
 
 const ERROR_MESSAGES: Record<ResultsResourceKey, string> = {
@@ -76,6 +81,7 @@ const ERROR_MESSAGES: Record<ResultsResourceKey, string> = {
   score: 'Could not load the analysis score.',
   recommendations: 'Could not load recommendations.',
   reports: 'Could not load report history.',
+  ruleCoverage: 'Could not load rule execution coverage.',
 }
 
 const pendingRequests = new Map<string, Promise<unknown>>()
@@ -90,6 +96,7 @@ function createLoadingResources(): AnalysisResultsResources {
     score: { status: 'loading' },
     recommendations: { status: 'loading' },
     reports: { status: 'loading' },
+    ruleCoverage: { status: 'loading' },
   }
 }
 
@@ -155,6 +162,7 @@ export function useAnalysisResultsData(analysisId: string): AnalysisResultsData 
     score: 0,
     recommendations: 0,
     reports: 0,
+    ruleCoverage: 0,
   })
   const updateResource = useCallback(
     <Key extends ResultsResourceKey>(

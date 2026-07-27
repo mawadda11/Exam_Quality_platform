@@ -1,0 +1,102 @@
+.evaluation-scope-route {
+  padding-block-end: var(--space-8);
+}
+
+.evaluation-scope-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.evaluation-scope-summary > article {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.evaluation-scope-summary strong {
+  color: var(--color-brand-navy);
+  font-size: var(--font-size-2xl);
+}
+
+.evaluation-scope-summary span,
+.evaluation-scope-section > p,
+.evaluation-scope-list p {
+  color: var(--color-text-secondary);
+}
+
+.evaluation-scope-section {
+  padding: var(--space-6);
+}
+
+.evaluation-scope-section > h2,
+.evaluation-scope-section > p {
+  margin-block-start: 0;
+}
+
+.evaluation-scope-section--limited {
+  border-inline-start: 4px solid var(--color-warning);
+}
+
+.evaluation-scope-section--planned {
+  border-inline-start: 4px solid var(--color-border-strong);
+}
+
+.evaluation-scope-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  padding: 0;
+  margin: var(--space-5) 0 0;
+  list-style: none;
+}
+
+.evaluation-scope-list li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--color-canvas);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.evaluation-scope-list h3,
+.evaluation-scope-list p {
+  margin: 0;
+}
+
+.evaluation-scope-list p {
+  margin-block-start: var(--space-2);
+}
+
+
+
+.evaluation-scope-scoring-note p {
+  max-width: 70rem;
+  margin-block-end: 0;
+}
+
+@media (max-width: 64rem) {
+  .evaluation-scope-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 48rem) {
+  .evaluation-scope-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .evaluation-scope-section,
+  .evaluation-scope-summary > article {
+    padding: var(--space-4);
+  }
+
+  .evaluation-scope-list li {
+    flex-direction: column;
+  }
+}

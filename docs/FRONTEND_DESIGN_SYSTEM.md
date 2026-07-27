@@ -359,7 +359,8 @@ history/polling failures belongs to later alignment phases.
 - Page-header actions stack when horizontal space is insufficient.
 
 Phase 2 implements the shell, sidebar, mobile header/drawer, and route content widths. Full
-dashboard composition, upload-card redesign, and complete result-page alignment remain planned.
+dashboard composition and upload-card redesign remain outside this milestone; complete M10
+result-page alignment is implemented.
 
 ## Arabic and mixed-language content
 

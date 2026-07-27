@@ -34,6 +34,13 @@
   coverage; complete negative mappings produce Not Satisfied rather than default Not Verified.
 - Implemented: all 21 exam-facing rules are accounted for by the runtime coverage audit and a
   supported rule that fails to run is exposed as an operational gap.
+- Implemented M10: report-content/PDF tests preserve categorical confidence, concise reasoning,
+  item judgments, controlled KB references, and source-versus-derived relationship labels while
+  keeping course-wide assessment percentages and platform implementation diagnostics out of the
+  user-facing report.
+- Implemented M11: one real API acceptance test covers owned analysis creation, both required
+  uploads, extraction pause, exact revision confirmation, offline governed evaluation, semantic
+  mappings, score denominator, all-rule coverage, PDF generation/download, and owner isolation.
 
 ## Contract tests
 - OCR, AI provider, vector store, and file storage adapters.
@@ -70,7 +77,8 @@ Add governed semantic cases for:
 - retained RULE015, RULE017, RULE020, and RULE006 two-or-more-CLO deferrals; and
 - decision-support disclaimers that prohibit accreditation and attainment claims.
 
-Automated schema/failure tests use the fake provider. M6-M9 integration tests use the offline local
-baseline to prove complete governed execution without network I/O. Neither provider proves
+Automated schema/failure tests use the fake provider. M6-M11 integration and release-acceptance
+tests use the offline local baseline to prove complete governed execution and report delivery
+without network I/O. Neither provider proves
 institutional academic validity; production semantic validity requires an approved provider/model
 and external academic validation.
