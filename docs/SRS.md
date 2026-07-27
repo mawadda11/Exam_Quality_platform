@@ -43,7 +43,9 @@ the initial revision, `review_ready` pause, and no-pre-confirmation-processing g
 implement source-faithful review editing, immutable saves, exact confirmation, guarded
 continuation, and the review workspace. M6-M9 implement the ten-rule semantic/hybrid runtime,
 backend-derived categorical confidence, deterministic mapping coverage, and complete exam-facing
-rule capability accounting. M10-M11 remain planned.
+rule capability accounting. M10 implements complete UI/report presentation for those contracts,
+and M11 implements integrated synthetic release acceptance. Final local dependency-backed checks
+remain required before commit as documented in `docs/M10_M11_VERIFICATION.md`.
 
 ## Non-functional requirements
 - Accuracy: unsupported claims are prohibited; insufficient evidence becomes Not Verified.

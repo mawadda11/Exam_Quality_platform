@@ -115,3 +115,94 @@ def test_render_report_pdf_with_a_numeric_score() -> None:
         _content(score=Decimal("75.00"), score_label=None, denominator=2, satisfied_count=1)
     )
     assert pdf_bytes.startswith(b"%PDF")
+
+
+def test_render_report_pdf_handles_semantic_relationships_assessments_and_coverage() -> None:
+    from app.core.domain import SemanticConfidenceLevel
+    from app.schemas.rule_coverage import (
+        RuleCoverageAuditResponse,
+        RuleCoverageEntryResponse,
+        RuleRuntimeDisposition,
+    )
+    from app.services.reporting.content import (
+        ReportAssessmentRecordEntry,
+        ReportItemJudgment,
+    )
+    from app.services.rules.capability_manifest import (
+        DesignDisposition,
+        EvaluationMode,
+        SupportStatus,
+    )
+
+    source = EvidenceCitation(
+        id=uuid.uuid4(),
+        source_document=UploadedFileType.EXAM,
+        evidence_type="question_text",
+        page_number=1,
+        item_reference="Q1",
+    )
+    target = EvidenceCitation(
+        id=uuid.uuid4(),
+        source_document=UploadedFileType.TP153,
+        evidence_type="clo",
+        page_number=3,
+        item_reference="CLO1",
+    )
+    judgment = ReportItemJudgment(
+        source_evidence_id=source.id,  # type: ignore[arg-type]
+        source_evidence=source,
+        target_evidence_ids=(target.id,),  # type: ignore[arg-type]
+        target_evidence=(target,),
+        unresolved_target_evidence_ids=(),
+        status=AcademicStatus.SATISFIED,
+        reasoning="The controlled concepts align.",
+    )
+    entry = _finding_entry(
+        requirement_id="REQ001",
+        rule_id="RULE001",
+        confidence_level=SemanticConfidenceLevel.HIGH,
+        evaluation_reasoning="The confirmed evidence supports the relationship.",
+        confidence_basis=("All required items were judged.",),
+        item_judgments=(judgment,),
+        retrieved_knowledge_ids=("REQ001", "RULE001"),
+        evidence=(source, target),
+    )
+    coverage = RuleCoverageAuditResponse(
+        analysis_id=uuid.uuid4(),
+        total_rules=1,
+        evaluated_rules=1,
+        conditional_capability_gap_rules=0,
+        unsupported_rules=0,
+        not_run_rules=0,
+        runtime_integrity_ok=True,
+        entries=[
+            RuleCoverageEntryResponse(
+                requirement_id="REQ001",
+                rule_id="RULE001",
+                requirement_name="Question-to-CLO Mapping",
+                rule_name="CLO Mapping",
+                support_status=SupportStatus.SUPPORTED,
+                evaluation_mode=EvaluationMode.SEMANTIC_OR_HYBRID,
+                design_disposition=DesignDisposition.DESIGN_AUTHORIZED,
+                runtime_disposition=RuleRuntimeDisposition.EVALUATED,
+                finding_status=AcademicStatus.SATISFIED,
+                evaluator_type="semantic_ai",
+            )
+        ],
+    )
+    content = _content(
+        findings=(entry,),
+        assessment_records=(
+            ReportAssessmentRecordEntry(
+                method="Written exam",
+                activity="Midterm",
+                percentage=30,
+                page_number=5,
+            ),
+        ),
+        rule_coverage=coverage,
+    )
+
+    pdf_bytes = render_report_pdf(content)
+    assert pdf_bytes.startswith(b"%PDF")
+    assert pdf_bytes.rstrip().endswith(b"%%EOF")

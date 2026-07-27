@@ -15,11 +15,16 @@ Claude Code automatically reads `CLAUDE.md` in the repository root.
 
 ## Current implementation status
 
-M1-M5 are committed through base commit `cce3dc0`. The current
-`m6-m9-governed-semantic-evaluation` delivery adds confirmed evidence construction, categorical
-semantic confidence, the complete ten-rule semantic/hybrid target, deterministic CLO/topic
-coverage, and all-rule runtime accounting. Read `docs/M6_M9_HANDOFF.md`,
-`docs/M6_M9_IMPLEMENTATION_REPORT.md`, and `docs/M6_M9_VERIFICATION.md` before committing.
+M1-M9 are committed through base commit `5f76d6a`. The current working-tree delivery completes:
+
+- **M10:** categorical-confidence, semantic reasoning, derived mapping, evidence, score-denominator,
+  runtime rule-coverage, and PDF-report presentation; and
+- **M11:** a synthetic, offline, API-level acceptance test for the complete supported upload ->
+  extraction review -> confirmation -> governed evaluation -> score/coverage -> report workflow.
+
+Read `docs/M10_M11_HANDOFF.md`, `docs/M10_M11_IMPLEMENTATION_REPORT.md`, and
+`docs/M10_M11_VERIFICATION.md` before editing or committing. The final local frontend/Ruff/mypy
+checks documented there remain mandatory where package registries are available.
 
 ## Local development
 

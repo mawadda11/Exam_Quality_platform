@@ -5,12 +5,17 @@ import type {
   AcademicStatus,
   AnalysisResponse,
   AnalysisScoreResponse,
+  RuleCoverageAuditResponse,
 } from '../../types/api'
 import { ReanalysisAction } from './ReanalysisAction'
+import { RuleCoveragePanel } from './RuleCoveragePanel'
+import type { ResultResource } from './useAnalysisResultsData'
 
 interface OverviewSectionProps {
   analysis: AnalysisResponse
   score: AnalysisScoreResponse
+  ruleCoverage: ResultResource<RuleCoverageAuditResponse>
+  onRetryRuleCoverage: () => void
   onReanalysisCreated?: (reanalysis: AnalysisResponse) => void
 }
 
@@ -27,8 +32,11 @@ function statusCounts(score: AnalysisScoreResponse): [AcademicStatus, number][] 
 export function OverviewSection({
   analysis,
   score,
+  ruleCoverage,
+  onRetryRuleCoverage,
   onReanalysisCreated,
 }: OverviewSectionProps) {
+  const earnedCredits = score.satisfied_count + score.partially_satisfied_count * 0.5
   return (
     <div className="overview-section results-section-stack">
       <div className="results-section-heading">
@@ -57,13 +65,24 @@ export function OverviewSection({
               </li>
             ))}
           </ul>
-          <p className="results-supporting-text">
-            The score denominator contains {score.denominator} verified applicable{' '}
-            {score.denominator === 1 ? 'rule' : 'rules'}. Not Verified and Not Applicable
-            remain visible but are excluded from scoring.
-          </p>
+          <div className="score-transparency">
+            <h4>Score denominator transparency</h4>
+            <p>
+              Earned credit: {score.satisfied_count} × 1.0 +{' '}
+              {score.partially_satisfied_count} × 0.5 + {score.not_satisfied_count} × 0.0 ={' '}
+              <strong>{earnedCredits.toFixed(1)}</strong>.
+            </p>
+            <p className="results-supporting-text">
+              The denominator contains {score.denominator} verified applicable{' '}
+              {score.denominator === 1 ? 'rule' : 'rules'}. Not Verified and Not Applicable
+              remain visible but are excluded from scoring. Semantic confidence does not change
+              rule weight.
+            </p>
+          </div>
         </Card>
       </div>
+
+      <RuleCoveragePanel coverage={ruleCoverage} onRetry={onRetryRuleCoverage} />
 
       {onReanalysisCreated && (
         <ReanalysisAction analysisId={analysis.id} onCreated={onReanalysisCreated} />

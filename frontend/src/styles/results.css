@@ -512,3 +512,195 @@
     grid-column: 1;
   }
 }
+
+/* M10: categorical semantic confidence, governed reasoning, mappings, and runtime coverage. */
+.semantic-confidence-badge,
+.runtime-disposition,
+.coverage-not-academic {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75rem;
+  padding: 0.15rem 0.55rem;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.semantic-confidence-badge--high {
+  color: var(--color-success);
+  background: var(--color-success-surface);
+}
+
+.semantic-confidence-badge--medium {
+  color: var(--color-warning);
+  background: var(--color-warning-surface);
+}
+
+.semantic-confidence-badge--low {
+  color: var(--color-neutral-status);
+  background: var(--color-neutral-status-surface);
+}
+
+.semantic-evaluation-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--color-canvas);
+  border-radius: var(--radius-md);
+}
+
+.semantic-reasoning,
+.semantic-kb-references,
+.semantic-item-reasoning,
+.semantic-derived-notice {
+  margin: 0;
+}
+
+.semantic-confidence-basis > strong,
+.semantic-item-judgments-section > strong {
+  color: var(--color-brand-navy);
+}
+
+.semantic-confidence-basis ul,
+.semantic-item-judgments,
+.semantic-target-list {
+  margin-block-end: 0;
+}
+
+.semantic-item-judgments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-inline-start: var(--space-6);
+}
+
+.semantic-item-judgment {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.semantic-item-judgment-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.semantic-derived-notice {
+  padding: var(--space-3);
+  margin-block-start: var(--space-3);
+  color: var(--color-info);
+  background: var(--color-info-surface);
+  border-inline-start: 3px solid var(--color-info);
+  border-radius: var(--radius-sm);
+}
+
+.semantic-item-evidence {
+  display: grid;
+  gap: var(--space-3);
+  margin-block: var(--space-4);
+}
+
+.semantic-item-evidence > div {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.3fr) minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.semantic-item-evidence dt {
+  color: var(--color-text-muted);
+  font-weight: 700;
+}
+
+.semantic-item-evidence dd {
+  margin: 0;
+}
+
+.semantic-evidence-reference {
+  overflow-wrap: anywhere;
+}
+
+.semantic-evidence-reference--missing {
+  color: var(--color-danger);
+}
+
+.score-transparency {
+  padding-block-start: var(--space-4);
+  margin-block-start: var(--space-4);
+  border-block-start: var(--border-width) solid var(--color-border);
+}
+
+.score-transparency h4,
+.score-transparency p {
+  margin-block-start: 0;
+}
+
+.coverage-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-block: var(--space-4);
+}
+
+.coverage-summary-grid > div {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  text-align: center;
+  background: var(--color-canvas);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.coverage-summary-grid strong {
+  color: var(--color-brand-navy);
+  font-size: var(--font-size-xl);
+}
+
+.rule-coverage-panel .ui-responsive-table {
+  margin-block-start: var(--space-4);
+}
+
+.coverage-cell-note {
+  margin-block-start: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.runtime-disposition--evaluated {
+  color: var(--color-success);
+  background: var(--color-success-surface);
+}
+
+.runtime-disposition--conditional_capability_gap,
+.runtime-disposition--unsupported {
+  color: var(--color-warning);
+  background: var(--color-warning-surface);
+}
+
+.runtime-disposition--not_run {
+  color: var(--color-danger);
+  background: var(--color-danger-surface);
+}
+
+.coverage-not-academic {
+  color: var(--color-text-secondary);
+  background: var(--color-surface-muted);
+}
+
+@media (max-width: 48rem) {
+  .semantic-item-judgment-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .semantic-item-evidence > div,
+  .coverage-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}

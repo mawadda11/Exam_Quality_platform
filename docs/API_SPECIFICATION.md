@@ -5,8 +5,9 @@ Base path: `/api/v1`
 Unless an endpoint is explicitly marked **Planned**, it describes the currently implemented API.
 Planned contracts are design-authorized by M1 but must not be treated as available until their
 implementation milestone is complete. M3 adds `review_ready`; M4-M5 implement the owner-scoped
-Extraction Review API/workspace and the M6-M9 categorical semantic/coverage contracts are
-currently implemented. M10 presentation/report refinements remain planned.
+Extraction Review API/workspace, the M6-M9 categorical semantic/coverage contracts, and M10
+presentation/report refinements are currently implemented. M11 adds integrated release acceptance
+without changing the public API contract.
 
 ## Health
 - `GET /health`
@@ -42,11 +43,11 @@ currently implemented. M10 presentation/report refinements remain planned.
 - `GET /analyses/{id}/recommendations` controlled KB recommendations resolved from a semantic
   finding's validated stored recommendation ID, or from the legacy deterministic
   `(rule_id, status)` mapping.
-- `POST /analyses/{id}/reanalysis` create linked revised analysis. (Milestone 10.)
+- `POST /analyses/{id}/reanalysis` create a linked revised analysis without overwriting prior results.
 - `GET /analyses` owned analysis history.
 
 ## Reports
-- `POST /analyses/{id}/reports` generate report.
+- `POST /analyses/{id}/reports` generate an immutable PDF snapshot containing score and denominator transparency, all five status counts, runtime rule coverage, TP-153 assessment source records, finding evidence, categorical semantic confidence, governed reasoning, item judgments, source-versus-derived mapping labels, controlled KB references, provenance, and recommendations.
 - `GET /analyses/{id}/reports` list report metadata for an analysis.
 - `GET /reports/{id}` metadata.
 - `GET /reports/{id}/download` authorized download.

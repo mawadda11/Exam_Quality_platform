@@ -18,7 +18,7 @@ and strict internal schemas for Extraction Review and categorical semantic confi
 revision 1 and pauses at `review_ready`. M4-M5 implement owner-authorized immutable review
 revisions, exact-revision confirmation, guarded continuation, and the review workspace.
 M6-M9 implement categorical-confidence evaluation, the complete ten-rule semantic/hybrid target,
-deterministic mapping coverage, and explicit capability accounting. M10-M11 remain planned.
+deterministic mapping coverage, and explicit capability accounting. M10 now implements the governed presentation/report layer, and M11 adds integrated synthetic release acceptance; see `docs/M10_M11_HANDOFF.md`.
 
 ## DD-001 - Evidence-gated hybrid architecture
 

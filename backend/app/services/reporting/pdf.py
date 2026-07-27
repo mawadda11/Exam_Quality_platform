@@ -1,14 +1,21 @@
-"""Renders a ReportContent snapshot to PDF bytes using fpdf2 - the same
-library already used (as a test-only dependency, until this milestone) to
-build synthetic exam PDFs for extraction tests. Layout only; all content
-decisions (what to include, what text to show) live in content.py.
+"""Render a governed :class:`ReportContent` snapshot to PDF bytes.
+
+All academic and operational decisions are assembled in ``content.py``. This
+module is presentation only and deliberately labels semantic relationships,
+confidence, and runtime capability separately from academic statuses.
 """
 
 from __future__ import annotations
 
 from fpdf import FPDF, XPos, YPos
 
-from app.services.reporting.content import ReportContent, ReportFindingEntry
+from app.schemas.rule_coverage import RuleRuntimeDisposition
+from app.services.reporting.content import (
+    EvidenceCitation,
+    ReportContent,
+    ReportFindingEntry,
+    ReportItemJudgment,
+)
 
 _SCOPE_DISCLAIMER = (
     "This report is limited to the uploaded examination and its populated TP-153 Course "
@@ -18,6 +25,13 @@ _SCOPE_DISCLAIMER = (
     "decisions."
 )
 
+_RUNTIME_DISPOSITION_LABELS = {
+    RuleRuntimeDisposition.EVALUATED: "Evaluated",
+    RuleRuntimeDisposition.CONDITIONAL_CAPABILITY_GAP: "Conditional capability gap",
+    RuleRuntimeDisposition.UNSUPPORTED: "Unsupported",
+    RuleRuntimeDisposition.NOT_RUN: "Not run",
+}
+
 
 def _heading(pdf: FPDF, text: str) -> None:
     pdf.set_font("Helvetica", style="B", size=13)
@@ -25,8 +39,14 @@ def _heading(pdf: FPDF, text: str) -> None:
     pdf.set_font("Helvetica", size=11)
 
 
-def _paragraph(pdf: FPDF, text: str, *, style: str = "") -> None:
-    pdf.set_font("Helvetica", style=style, size=11)
+def _subheading(pdf: FPDF, text: str) -> None:
+    pdf.set_font("Helvetica", style="B", size=11)
+    pdf.multi_cell(0, 7, text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_font("Helvetica", size=10)
+
+
+def _paragraph(pdf: FPDF, text: str, *, style: str = "", size: int = 11) -> None:
+    pdf.set_font("Helvetica", style=style, size=size)
     pdf.multi_cell(0, 6, text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
 
@@ -34,7 +54,60 @@ def _score_line(content: ReportContent) -> str:
     if content.score is None:
         return content.score_label or "Insufficient Evidence"
     plural = "" if content.denominator == 1 else "s"
-    return f"{content.score} (based on {content.denominator} verified applicable rule{plural})"
+    return f"{content.score}% (based on {content.denominator} verified applicable rule{plural})"
+
+
+def _citation_line(item: EvidenceCitation) -> str:
+    document = "Exam" if item.source_document.value == "exam" else "TP-153"
+    return f"{item.item_reference} | {document} page {item.page_number} | {item.evidence_type}"
+
+
+def _render_item_judgment(
+    pdf: FPDF,
+    entry: ReportFindingEntry,
+    judgment: ReportItemJudgment,
+) -> None:
+    relationship = entry.rule_id in {"RULE001", "RULE007"} and judgment.is_derived_relationship
+    label = "AI-derived advisory relationship" if relationship else "Governed item judgment"
+    _paragraph(pdf, f"  {label} - {judgment.status.value}", style="B", size=9)
+    if relationship:
+        _paragraph(
+            pdf,
+            "  This relationship is an analysis output, not an official TP-153 mapping, and "
+            "does not overwrite source evidence.",
+            style="I",
+            size=8,
+        )
+
+    if judgment.source_evidence is not None:
+        _paragraph(
+            pdf,
+            f"  Source: {_citation_line(judgment.source_evidence)}",
+            size=9,
+        )
+    else:
+        _paragraph(
+            pdf,
+            f"  Source evidence reference unavailable: {judgment.source_evidence_id}",
+            style="I",
+            size=9,
+        )
+
+    if judgment.target_evidence:
+        for target in judgment.target_evidence:
+            _paragraph(pdf, f"  Related evidence: {_citation_line(target)}", size=9)
+    elif judgment.target_evidence_ids:
+        _paragraph(
+            pdf,
+            "  Related evidence references were retained but could not be resolved in this "
+            "report snapshot.",
+            style="I",
+            size=9,
+        )
+    else:
+        _paragraph(pdf, "  No target relationship was asserted.", style="I", size=9)
+
+    _paragraph(pdf, f"  Concise reasoning: {judgment.reasoning}", size=9)
 
 
 def _render_finding(pdf: FPDF, entry: ReportFindingEntry) -> None:
@@ -50,41 +123,142 @@ def _render_finding(pdf: FPDF, entry: ReportFindingEntry) -> None:
     pdf.multi_cell(
         0,
         5,
-        f"{entry.dimension} | {entry.source_type} ({entry.officiality})",
+        f"{entry.dimension} | {entry.source_type} ({entry.officiality}) | "
+        f"{entry.requirement_id} / {entry.rule_id}",
         new_x=XPos.LMARGIN,
         new_y=YPos.NEXT,
     )
     _paragraph(pdf, entry.explanation)
 
+    if entry.confidence_level is not None:
+        _paragraph(
+            pdf,
+            f"Semantic confidence: {entry.confidence_level.value} "
+            "(categorical only; not a score, severity, priority, probability, or weight)",
+            style="B",
+            size=9,
+        )
+    if entry.evaluation_reasoning:
+        _paragraph(
+            pdf,
+            f"Governed decision reasoning: {entry.evaluation_reasoning}",
+            size=9,
+        )
+    for basis in entry.confidence_basis:
+        _paragraph(pdf, f"  Confidence basis: {basis}", size=9)
+
+    if entry.item_judgments:
+        _paragraph(
+            pdf,
+            f"Evidence-linked item judgments ({len(entry.item_judgments)}):",
+            style="B",
+            size=9,
+        )
+        for judgment in entry.item_judgments:
+            _render_item_judgment(pdf, entry, judgment)
+
     if entry.evidence:
-        pdf.set_font("Helvetica", size=9)
+        _paragraph(pdf, f"Linked evidence ({len(entry.evidence)}):", style="B", size=9)
         for item in entry.evidence:
-            doc = "Exam" if item.source_document.value == "exam" else "TP-153"
-            pdf.multi_cell(
-                0,
-                5,
-                f"  - Evidence: {item.evidence_type} ({doc} p.{item.page_number}, "
-                f"{item.item_reference})",
-                new_x=XPos.LMARGIN,
-                new_y=YPos.NEXT,
-            )
+            _paragraph(pdf, f"  - {_citation_line(item)}", size=9)
     else:
-        pdf.set_font("Helvetica", style="I", size=9)
-        pdf.multi_cell(
-            0,
-            5,
-            "  No evidence was linked to this finding.",
-            new_x=XPos.LMARGIN,
-            new_y=YPos.NEXT,
+        _paragraph(pdf, "No evidence was linked to this finding.", style="I", size=9)
+
+    if entry.retrieved_knowledge_ids:
+        _paragraph(
+            pdf,
+            "Controlled KB references: " + ", ".join(entry.retrieved_knowledge_ids),
+            size=9,
         )
 
-    for rec in entry.recommendations:
-        pdf.set_font("Helvetica", style="B", size=9)
-        pdf.multi_cell(0, 5, f"  Recommendation: {rec.title}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.set_font("Helvetica", size=9)
-        pdf.multi_cell(0, 5, f"  {rec.text}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    provenance = [
+        value
+        for value in (
+            f"Provider: {entry.ai_provider}" if entry.ai_provider else None,
+            f"Model: {entry.ai_model}" if entry.ai_model else None,
+            (f"Prompt: {entry.prompt_template_version}" if entry.prompt_template_version else None),
+            f"KB: {entry.finding_kb_version}" if entry.finding_kb_version else None,
+        )
+        if value is not None
+    ]
+    if provenance:
+        _paragraph(pdf, "AI provenance: " + " | ".join(provenance), style="I", size=8)
+
+    for recommendation in entry.recommendations:
+        _paragraph(pdf, f"Recommendation: {recommendation.title}", style="B", size=9)
+        _paragraph(pdf, recommendation.text, size=9)
 
     pdf.ln(3)
+
+
+def _render_rule_coverage(pdf: FPDF, content: ReportContent) -> None:
+    coverage = content.rule_coverage
+    if coverage is None:
+        return
+
+    _heading(pdf, "Rule Execution Coverage")
+    _paragraph(
+        pdf,
+        "Operational capability coverage is separate from academic status. Unsupported, "
+        "conditional, or unexecuted capability is never converted into Not Verified.",
+        style="I",
+        size=9,
+    )
+    _paragraph(
+        pdf,
+        f"Total governed exam-facing rules: {coverage.total_rules} | Evaluated: "
+        f"{coverage.evaluated_rules} | Conditional gaps: "
+        f"{coverage.conditional_capability_gap_rules} | Unsupported: "
+        f"{coverage.unsupported_rules} | Not run: {coverage.not_run_rules}",
+        size=10,
+    )
+    integrity = (
+        "Supported runtime execution is complete."
+        if coverage.runtime_integrity_ok
+        else "System execution gap detected; this is not an academic finding."
+    )
+    _paragraph(pdf, integrity, style="B", size=10)
+
+    for item in coverage.entries:
+        academic = item.finding_status.value if item.finding_status is not None else "None"
+        disposition = _RUNTIME_DISPOSITION_LABELS[item.runtime_disposition]
+        _paragraph(
+            pdf,
+            f"{item.rule_id} / {item.requirement_id}: {disposition}; academic result: {academic}",
+            style="B",
+            size=8,
+        )
+        _paragraph(
+            pdf,
+            item.reason or "Executed as designed.",
+            size=8,
+        )
+    pdf.ln(2)
+
+
+def _render_assessment_records(pdf: FPDF, content: ReportContent) -> None:
+    _heading(pdf, f"TP-153 Assessment Source Records ({len(content.assessment_records)})")
+    _paragraph(
+        pdf,
+        "These are confirmed source records. Any assessment-consistency conclusion appears as a "
+        "separate governed finding.",
+        style="I",
+        size=9,
+    )
+    if not content.assessment_records:
+        _paragraph(pdf, "No assessment records were available.", style="I", size=9)
+        return
+
+    for record in content.assessment_records:
+        percentage = "-" if record.percentage is None else f"{record.percentage:g}%"
+        activity = record.activity or "-"
+        _paragraph(
+            pdf,
+            f"Method: {record.method} | Activity: {activity} | Percentage: {percentage} | "
+            f"TP-153 page {record.page_number}",
+            size=9,
+        )
+    pdf.ln(2)
 
 
 def render_report_pdf(content: ReportContent) -> bytes:
@@ -101,29 +275,14 @@ def render_report_pdf(content: ReportContent) -> bytes:
         new_y=YPos.NEXT,
     )
 
-    pdf.set_font("Helvetica", size=11)
-    pdf.multi_cell(
-        0,
-        6,
-        f"{content.course_code} - {content.course_name}",
-        new_x=XPos.LMARGIN,
-        new_y=YPos.NEXT,
-    )
-    pdf.multi_cell(
-        0,
-        6,
-        f"{content.exam_type.value} exam, {content.term}",
-        new_x=XPos.LMARGIN,
-        new_y=YPos.NEXT,
-    )
-    pdf.set_font("Helvetica", size=9)
-    pdf.multi_cell(
-        0,
-        5,
+    _paragraph(pdf, f"{content.course_code} - {content.course_name}")
+    _paragraph(pdf, f"{content.exam_type.value} exam, {content.term}")
+    _paragraph(
+        pdf,
         f"Analysis ID: {content.analysis_id} | Generated: "
-        f"{content.generated_at.isoformat(timespec='seconds')} | KB version: {content.kb_version}",
-        new_x=XPos.LMARGIN,
-        new_y=YPos.NEXT,
+        f"{content.generated_at.isoformat(timespec='seconds')} | KB version: "
+        f"{content.kb_version}",
+        size=9,
     )
     pdf.ln(2)
 
@@ -135,12 +294,30 @@ def render_report_pdf(content: ReportContent) -> bytes:
     _paragraph(pdf, _score_line(content))
     _paragraph(
         pdf,
-        f"Satisfied: {content.satisfied_count}  |  Partially Satisfied: "
-        f"{content.partially_satisfied_count}  |  Not Satisfied: {content.not_satisfied_count}  |  "
-        f"Not Verified: {content.not_verified_count}  |  Not Applicable: "
-        f"{content.not_applicable_count}",
+        f"Earned credit: {content.satisfied_count} x 1.0 + "
+        f"{content.partially_satisfied_count} x 0.5 + "
+        f"{content.not_satisfied_count} x 0.0 = {content.earned_credit}",
+        size=10,
+    )
+    _paragraph(
+        pdf,
+        f"Satisfied: {content.satisfied_count} | Partially Satisfied: "
+        f"{content.partially_satisfied_count} | Not Satisfied: "
+        f"{content.not_satisfied_count} | Not Verified: {content.not_verified_count} | "
+        f"Not Applicable: {content.not_applicable_count}",
+        size=10,
+    )
+    _paragraph(
+        pdf,
+        "Not Verified and Not Applicable are visible but excluded from the denominator. "
+        "Semantic confidence never changes scoring weight.",
+        style="I",
+        size=9,
     )
     pdf.ln(2)
+
+    _render_rule_coverage(pdf, content)
+    _render_assessment_records(pdf, content)
 
     missing = content.missing_evidence
     if missing:
@@ -152,10 +329,8 @@ def render_report_pdf(content: ReportContent) -> bytes:
             style="I",
         )
         for entry in missing:
-            pdf.set_font("Helvetica", style="B", size=10)
-            pdf.multi_cell(0, 5, entry.requirement_name, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            pdf.set_font("Helvetica", size=10)
-            pdf.multi_cell(0, 5, entry.explanation, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            _subheading(pdf, entry.requirement_name)
+            _paragraph(pdf, entry.explanation, size=10)
         pdf.ln(2)
 
     _heading(pdf, f"Findings ({len(content.findings)})")

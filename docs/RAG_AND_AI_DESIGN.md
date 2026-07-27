@@ -11,7 +11,7 @@ This document distinguishes the approved target design from current runtime capa
 
 M1 froze this design contract. M2-M5 implemented Extraction Review and persistence; M6-M9 now
 implement the governed semantic contract, all ten design-authorized semantic/hybrid evaluators,
-deterministic relationship coverage, and runtime capability accounting. M10-M11 remain planned.
+deterministic relationship coverage, and runtime capability accounting. M10 now implements the governed presentation/report layer, and M11 adds integrated synthetic release acceptance; see `docs/M10_M11_HANDOFF.md`.
 
 ## KB ingestion
 

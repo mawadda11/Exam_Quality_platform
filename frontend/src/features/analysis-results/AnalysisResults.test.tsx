@@ -9,6 +9,7 @@ import type {
   AnalysisScoreResponse,
   FindingResponse,
   QuestionResponse,
+  RuleCoverageAuditResponse,
 } from '../../types/api'
 import { AnalysisResults } from './AnalysisResults'
 
@@ -58,6 +59,18 @@ const SCORE: AnalysisScoreResponse = {
   not_applicable_count: 0,
 }
 
+const RULE_COVERAGE: RuleCoverageAuditResponse = {
+  analysis_id: 'analysis-1',
+  scope: 'exam_facing_rules',
+  total_rules: 21,
+  evaluated_rules: 14,
+  conditional_capability_gap_rules: 1,
+  unsupported_rules: 6,
+  not_run_rules: 0,
+  runtime_integrity_ok: true,
+  entries: [],
+}
+
 const QUESTION: QuestionResponse = {
   id: 'q-1',
   analysis_id: 'analysis-1',
@@ -105,6 +118,7 @@ function mockSuccessfulLoad(): void {
   vi.mocked(analysesApi.getAnalysisScore).mockResolvedValue(SCORE)
   vi.mocked(analysesApi.listRecommendations).mockResolvedValue([])
   vi.mocked(analysesApi.listReports).mockResolvedValue([])
+  vi.mocked(analysesApi.getRuleCoverage).mockResolvedValue(RULE_COVERAGE)
 }
 
 function resultsTree(element: ReactElement) {
@@ -180,9 +194,9 @@ describe('AnalysisResults', () => {
   it('deduplicates in-flight resource requests during a Strict Mode remount', async () => {
     render(
       resultsTree(
-      <StrictMode>
-        <AnalysisResults analysis={ANALYSIS} />
-      </StrictMode>,
+        <StrictMode>
+          <AnalysisResults analysis={ANALYSIS} />
+        </StrictMode>,
       ),
     )
 
@@ -197,6 +211,7 @@ describe('AnalysisResults', () => {
     expect(analysesApi.listAssessmentRecords).toHaveBeenCalledTimes(1)
     expect(analysesApi.getAnalysisScore).toHaveBeenCalledTimes(1)
     expect(analysesApi.listReports).toHaveBeenCalledTimes(1)
+    expect(analysesApi.getRuleCoverage).toHaveBeenCalledTimes(1)
   })
 
   it('ignores a stale response after the analysis id changes', async () => {
@@ -271,9 +286,12 @@ describe('AnalysisResults', () => {
     )
 
     expect(await screen.findByText('AI-Assisted')).toBeInTheDocument()
+    expect(screen.getByText('Semantic confidence: High')).toBeInTheDocument()
     expect(screen.getByText(/provider:/i)).toHaveTextContent('fake')
     expect(screen.getByText(/model:/i)).toHaveTextContent('fake-semantic-v1')
-    expect(screen.queryByText(/confidence:/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/84%/i)).not.toBeInTheDocument()
+   expect(screen.getByText(/semantic confidence:/i)).toHaveTextContent(
+  'Semantic confidence: High',
+)
+expect(screen.queryByText(/84%/i)).not.toBeInTheDocument()
   })
 })

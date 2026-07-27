@@ -127,6 +127,17 @@ marks arithmetic, numbering outcomes, and score aggregation remain deterministic
 - `.github/workflows/`: do not remove security/test gates to make CI pass.
 - User uploads and generated reports: never commit them.
 
+## Current handoff state
+
+- M1-M9 are committed through base commit `5f76d6a`.
+- The current intentional working tree implements M10 presentation/report refinement and M11
+  integrated release acceptance.
+- Before editing or discarding any working-tree change, read `docs/M10_M11_HANDOFF.md`,
+  `docs/M10_M11_IMPLEMENTATION_REPORT.md`, and `docs/M10_M11_VERIFICATION.md`.
+- The repository and its tests are the source of truth; do not depend on prior chat context.
+- Do not reset, clean, stash, or overwrite the M10-M11 working tree. Run the documented local
+  completion gate first and fix only verified failures.
+
 ## Definition of done
 A task is complete only when:
 - Behavior matches the project scope and governance rules.

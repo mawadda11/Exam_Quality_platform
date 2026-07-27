@@ -1,6 +1,10 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { AnalysisResponse, AnalysisScoreResponse } from '../../types/api'
+import type {
+  AnalysisResponse,
+  AnalysisScoreResponse,
+  RuleCoverageAuditResponse,
+} from '../../types/api'
 import { OverviewSection } from './OverviewSection'
 
 vi.mock('../../api/analyses')
@@ -27,6 +31,20 @@ const ANALYSIS: AnalysisResponse = {
   updated_at: '2026-01-01T00:00:00Z',
 }
 
+const RULE_COVERAGE: RuleCoverageAuditResponse = {
+  analysis_id: 'analysis-1',
+  scope: 'exam_facing_rules',
+  total_rules: 21,
+  evaluated_rules: 14,
+  conditional_capability_gap_rules: 1,
+  unsupported_rules: 6,
+  not_run_rules: 0,
+  runtime_integrity_ok: true,
+  entries: [],
+}
+
+const COVERAGE_RESOURCE = { status: 'ready' as const, data: RULE_COVERAGE }
+
 function score(overrides: Partial<AnalysisScoreResponse> = {}): AnalysisScoreResponse {
   return {
     analysis_id: 'analysis-1',
@@ -44,10 +62,23 @@ function score(overrides: Partial<AnalysisScoreResponse> = {}): AnalysisScoreRes
 
 describe('OverviewSection', () => {
   it('shows the backend score, denominator, and all five approved status counts', () => {
-    render(<OverviewSection analysis={ANALYSIS} score={score()} />)
+    render(
+      <OverviewSection
+        analysis={ANALYSIS}
+        score={score()}
+        ruleCoverage={COVERAGE_RESOURCE}
+        onRetryRuleCoverage={vi.fn()}
+      />,
+    )
 
     expect(screen.getByText('75.00%')).toBeInTheDocument()
-    expect(screen.getByText(/contains 4 verified applicable rules/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/denominator contains 4 verified applicable rules/i),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/2 × 1.0 \+ 1 × 0.5 \+ 1 × 0.0 =/i),
+    ).toHaveTextContent('2.5')
+    expect(screen.getByText(/supported rule execution is complete/i)).toBeInTheDocument()
     expect(screen.getByText('Satisfied').closest('li')).toHaveTextContent('2')
     expect(screen.getByText('Partially Satisfied').closest('li')).toHaveTextContent('1')
     expect(screen.getByText('Not Satisfied').closest('li')).toHaveTextContent('1')
@@ -64,6 +95,8 @@ describe('OverviewSection', () => {
           label: 'Insufficient Evidence',
           denominator: 0,
         })}
+        ruleCoverage={COVERAGE_RESOURCE}
+        onRetryRuleCoverage={vi.fn()}
       />,
     )
 
@@ -73,7 +106,12 @@ describe('OverviewSection', () => {
 
   it('renders reanalysis only when the current analysis supplies the contextual action', () => {
     const { rerender } = render(
-      <OverviewSection analysis={ANALYSIS} score={score()} />,
+      <OverviewSection
+        analysis={ANALYSIS}
+        score={score()}
+        ruleCoverage={COVERAGE_RESOURCE}
+        onRetryRuleCoverage={vi.fn()}
+      />,
     )
     expect(screen.queryByRole('button', { name: /create reanalysis/i }))
       .not.toBeInTheDocument()
@@ -82,6 +120,8 @@ describe('OverviewSection', () => {
       <OverviewSection
         analysis={ANALYSIS}
         score={score()}
+        ruleCoverage={COVERAGE_RESOURCE}
+        onRetryRuleCoverage={vi.fn()}
         onReanalysisCreated={vi.fn()}
       />,
     )

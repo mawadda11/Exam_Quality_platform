@@ -1,6 +1,8 @@
 import type { FindingResponse, RecommendationResponse } from '../../types/api'
 import { EvidenceDrillDown, type EvidenceLookupKind } from './EvidenceDrillDown'
 import type { EvidenceLookups } from './lookups'
+import { SemanticConfidenceBadge } from './SemanticConfidenceBadge'
+import { SemanticEvaluationDetails } from './SemanticEvaluationDetails'
 import { GovernanceTag, StatusBadge } from './StatusBadge'
 
 interface FindingCardProps {
@@ -32,6 +34,9 @@ export function FindingCard({
         <strong>{finding.requirement_name}</strong>
         <div className="finding-card-badges">
           {isAiAssisted && <span className="ai-assisted-tag">AI-Assisted</span>}
+          {finding.confidence_level && (
+            <SemanticConfidenceBadge level={finding.confidence_level} />
+          )}
           <StatusBadge status={finding.status} />
         </div>
       </div>
@@ -67,6 +72,12 @@ export function FindingCard({
         </p>
       )}
       <p dir="auto">{finding.explanation}</p>
+      {finding.evaluation_details && (
+        <details className="semantic-evaluation-disclosure">
+          <summary>Semantic evaluation details</summary>
+          <SemanticEvaluationDetails finding={finding} />
+        </details>
+      )}
       <details>
         <summary>Evidence ({finding.evidence.length})</summary>
         <EvidenceDrillDown
