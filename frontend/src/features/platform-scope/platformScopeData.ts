@@ -82,7 +82,7 @@ export const LIMITED_EVALUATION_SCOPE: EvaluationScopeItem[] = [
     ruleId: 'RULE006',
     title: 'CLO coverage distribution',
     description:
-      'The current version handles zero or one applicable CLO. Cases with two or more applicable CLOs require an approved concentration method before the system can judge distribution.',
+      'The platform can evaluate this check when zero or one CLO is applicable. Cases with two or more applicable CLOs require an approved concentration method before distribution can be judged.',
   },
 ]
 

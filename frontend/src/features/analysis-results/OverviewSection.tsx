@@ -71,7 +71,7 @@ export function OverviewSection({
             </p>
             <p className="results-supporting-text">
               Results that could not be verified or did not apply remain visible, but they do not
-              lower the score. Checks planned for a future release are also excluded.
+              lower the score. Checks that are not yet available are also excluded.
             </p>
           </div>
         </Card>

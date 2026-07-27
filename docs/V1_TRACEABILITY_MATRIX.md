@@ -86,15 +86,15 @@ are included with the capability they constrain.
 | FR-005 Extract page-aware digital content | Complete for current text | Digital extractor and persistence tests | Retained structured evidence |
 | FR-006 Invoke OCR for scanned/image pages through an adapter | Complete for exam pages with no digital text | OCR contract and live Tesseract test | Preserve and extend only where retained evidence permits |
 | FR-007 Extract hierarchy, marks, declared total, instructions, assets, code, and structure | Partial | Hierarchy/marks/total/instruction extraction exists | Add retained metadata, assets, code, references, and associations |
-| FR-008 Extract TP-153 CLOs, topics, methods, activities, hours, and percentages | Complete | TP-153 extraction/persistence/API plus UI/report assessment presentation | Preserve |
+| FR-008 Extract TP-153 CLOs, topics, methods, activities, hours, and percentages | Complete | TP-153 extraction/persistence/API; assessment records remain internal and feed governed findings | Preserve |
 | FR-009 Create immutable source evidence | Complete for current types | Evidence persistence and ownership tests | Extend for retained evidence |
 | FR-010 Retrieve versioned KB records | Complete | KB/RAG tests | Startup/readiness verification |
 | FR-011 Execute deterministic and semantic rules | Partial | Existing runtime and semantic integration tests | Retained rules and explicit deferrals |
 | FR-012 Return one approved status per executed rule | Complete | Domain, persistence, and semantic validation | Apply to retained evaluators |
 | FR-013 Generate evidence-based explanations and recommendations | Partial coverage | Findings and recommendation tests | Retained rules |
 | FR-014 Calculate approved score | Complete | Scoring/API/report/UI tests | None |
-| FR-015 Display progress, counts, score, mappings, findings, missing evidence, and recommendations | Complete for current supported scope | Progress, counts, denominator, score, mapping labels, confidence, assessments, runtime coverage, findings, missing evidence, recommendations, and retries | Extend only for authorized retained evidence |
-| FR-016 Generate downloadable report | Complete for current supported scope | Report content/PDF/API/UI suites include mappings, confidence, assessments, runtime coverage, denominator, evidence, provenance, and recommendations | Extend only for authorized retained evidence |
+| FR-015 Display progress, counts, score, mappings, findings, missing evidence, and recommendations | Complete for current supported scope | Progress, counts, denominator, score, mapping labels, confidence, concise completion status, separate platform scope, findings, missing evidence, recommendations, and retries | Extend only for authorized retained evidence |
+| FR-016 Generate downloadable report | Complete for current supported scope | Report content/PDF/API/UI suites include mappings, confidence, denominator context, evidence, provenance, and recommendations while excluding course-wide assessment percentages and platform diagnostics | Extend only for authorized retained evidence |
 | FR-017 Store history | Complete | History API/UI tests | Navigation |
 | FR-018 Create linked reanalysis | Complete | Reanalysis API/UI tests | Preserve |
 | FR-019 Durable extraction review before semantic analysis | Complete | Migration `0008`, immutable revisions, revision 1, `review_ready`, GET/PUT/confirm API, controlled workspace, focused tests, and M11 end-to-end acceptance | Preserve |

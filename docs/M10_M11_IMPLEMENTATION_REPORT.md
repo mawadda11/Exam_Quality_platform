@@ -45,16 +45,20 @@ Generated reports now freeze and present:
 - existing controlled recommendations.
 
 The report renderer remains presentation-only. It reuses persisted findings, source evidence,
-assessment records, the authoritative scoring service, and the authoritative coverage audit. It
-does not infer new academic facts.
+the authoritative scoring service, and governed semantic details. Assessment records and runtime
+coverage remain available internally, but course-wide assessment percentages and platform
+implementation diagnostics are not rendered in the user-facing report. It does not infer new
+academic facts.
 
 ## Final Version 1 UX refinement
 
 After manual review, the capability catalogue was identified as platform-level information rather
 than an exam-specific result. Version 1.0.0 therefore removes the large 21-rule table and mostly
 fixed support counts from the default Overview, adds a separate platform-scope page, and replaces
-the visible score equation with a plain-language explanation. No knowledge-base rule, scoring rule,
-or report audit detail was removed.
+the visible score equation with a plain-language explanation. The final refinement also limits the
+Extraction Review to Questions, CLOs, and Topics; keeps Assessment and Evidence records internal;
+and removes course-wide percentage distribution and platform diagnostics from the generated report.
+No knowledge-base rule or scoring rule was removed.
 
 ## M11 - integrated release validation
 

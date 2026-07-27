@@ -102,9 +102,10 @@ may invent criteria to remove these deferrals.
 - M9 exposes an implementation-coverage audit for all 21 exam-facing rules so unsupported or
   unexpectedly unexecuted capabilities cannot be hidden as academic `Not Verified`.
 - Items 9 and 10 are delivered and refined through M10: results/evidence/recommendations UI,
-  categorical confidence, item-level derived relationships, denominator transparency, runtime
-  coverage, assessment source records, PDF report generation/download, and linked reanalysis
-  history are implemented.
+  categorical confidence, item-level derived relationships, denominator transparency, a separate
+  platform-capability scope view, focused PDF report generation/download, and linked reanalysis
+  history are implemented. Assessment records and runtime coverage remain available internally
+  without dominating the individual exam result or report.
 - The original Item 11 review is delivered for the training-project baseline. Version 1.5 M11 now
   adds a synthetic offline end-to-end API acceptance test for the hybrid redesign. It does not
   authorize institutional production deployment or replace external academic validation.

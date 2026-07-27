@@ -30,12 +30,12 @@ Expected backend baseline: 526 tests pass. A later intentional test addition may
 
 ```powershell
 cd frontend
-npm ci
-npm run lint
-npm run typecheck
-npm test -- --run
-npm run build
-npm audit
+npm.cmd ci
+npm.cmd run lint
+npm.cmd run typecheck
+npm.cmd test -- --run
+npm.cmd run build
+npm.cmd audit
 cd ..
 ```
 
@@ -70,16 +70,21 @@ Open `http://localhost:5173` and use synthetic/non-private PDFs only. Confirm:
 
 1. A Midterm or Final analysis requires both the exam PDF and populated TP-153.
 2. Extraction pauses at the review workspace and exact-revision confirmation resumes processing.
-3. Completed results show categorical semantic confidence without numeric AI confidence.
-4. AI-derived CLO/topic relationships are clearly advisory and do not overwrite TP-153 evidence.
-5. Overview shows the final score and plain-language result counts without an arithmetic equation.
-6. Overview does not show the full 21-rule capability table or the fixed six unsupported checks.
-7. Overview shows a concise analysis-completion message and a link to **What the Platform Evaluates**.
-8. The **What the Platform Evaluates** page shows available, limited, and planned checks separately.
-9. Planned checks are not shown as failures of an individual exam and do not reduce its score.
-10. Generated PDF reporting still contains the governed audit detail, evidence, reasoning, mappings,
-    recommendations, score methodology, and runtime coverage required for traceability.
-11. No real exam, TP-153, report, `.env`, or credential appears in Git status.
+3. Extraction Review shows only Questions, CLOs, and Topics; Assessment and Evidence remain internal.
+4. The upload step states that English-language examination and TP-153 PDFs are supported, without
+   showing release numbers or roadmap language.
+5. Completed results show categorical semantic confidence without numeric AI confidence.
+6. AI-derived CLO/topic relationships are clearly advisory and do not overwrite TP-153 evidence.
+7. Overview shows the final score and plain-language result counts without an arithmetic equation.
+8. Overview does not show the full 21-rule capability table or the fixed six unsupported checks.
+9. Overview shows a concise analysis-completion message and a link to **What the Platform Evaluates**.
+10. The **What the Platform Evaluates** page shows available, limited, and planned checks separately.
+11. Planned checks are not shown as failures of an individual exam and do not reduce its score.
+12. Generated PDF reporting contains the score summary, findings, evidence, reasoning, mappings,
+    recommendations, and provenance, without course-wide assessment percentages, score arithmetic,
+    or platform implementation diagnostics.
+13. The platform-scope page does not expose internal rule IDs or release numbers to ordinary users.
+14. No real exam, TP-153, report, `.env`, or credential appears in Git status.
 
 Stop the stack:
 

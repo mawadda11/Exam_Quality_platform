@@ -3,6 +3,9 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
+from io import BytesIO
+
+import pdfplumber
 
 from app.core.domain import AcademicStatus, ExamType, UploadedFileType
 from app.services.knowledge_base.reference_data import RecommendationDisplay
@@ -33,6 +36,11 @@ def _content(**overrides: object) -> ReportContent:
     )
     defaults.update(overrides)
     return ReportContent(**defaults)  # type: ignore[arg-type]
+
+
+def _pdf_text(pdf_bytes: bytes) -> str:
+    with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
+        return "\n".join(page.extract_text() or "" for page in pdf.pages)
 
 
 def _finding_entry(**overrides: object) -> ReportFindingEntry:
@@ -117,7 +125,7 @@ def test_render_report_pdf_with_a_numeric_score() -> None:
     assert pdf_bytes.startswith(b"%PDF")
 
 
-def test_render_report_pdf_handles_semantic_relationships_assessments_and_coverage() -> None:
+def test_render_report_pdf_keeps_internal_assessments_and_coverage_out_of_user_report() -> None:
     from app.core.domain import SemanticConfidenceLevel
     from app.schemas.rule_coverage import (
         RuleCoverageAuditResponse,
@@ -204,5 +212,11 @@ def test_render_report_pdf_handles_semantic_relationships_assessments_and_covera
     )
 
     pdf_bytes = render_report_pdf(content)
+    text = _pdf_text(pdf_bytes)
+
     assert pdf_bytes.startswith(b"%PDF")
     assert pdf_bytes.rstrip().endswith(b"%%EOF")
+    assert "Evidence-linked item judgments" in text
+    assert "TP-153 Assessment Source Records" not in text
+    assert "Rule Execution Coverage" not in text
+    assert "Earned credit:" not in text

@@ -18,7 +18,7 @@ function readyMessage(coverage: RuleCoverageAuditResponse) {
     return {
       variant: 'warning' as const,
       title: 'Analysis completed with a limited check',
-      body: `${coverage.conditional_capability_gap_rules} ${coverage.conditional_capability_gap_rules === 1 ? 'check could' : 'checks could'} not be fully evaluated for this analysis because the current release does not yet have an approved method for that case. This does not count as an exam failure.`,
+      body: `${coverage.conditional_capability_gap_rules} ${coverage.conditional_capability_gap_rules === 1 ? 'check could' : 'checks could'} not be fully evaluated for this analysis because the platform does not yet have an approved method for that case. This does not count as an exam failure.`,
     }
   }
 

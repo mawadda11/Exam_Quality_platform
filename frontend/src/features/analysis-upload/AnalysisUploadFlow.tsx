@@ -177,6 +177,9 @@ export function AnalysisDocuments({ analysis, onRefreshed }: AnalysisDocumentsPr
           Both the examination PDF and the populated TP-153 are required. Each upload can be
           retried independently.
         </p>
+        <p className="results-supporting-text">
+          English-language examination and TP-153 PDF files are supported.
+        </p>
       </div>
 
       <dl className="analysis-persisted-summary" aria-label="Persisted exam information">

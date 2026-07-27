@@ -1,15 +1,14 @@
 """Render a governed :class:`ReportContent` snapshot to PDF bytes.
 
 All academic and operational decisions are assembled in ``content.py``. This
-module is presentation only and deliberately labels semantic relationships,
-confidence, and runtime capability separately from academic statuses.
+module is presentation only and keeps the user-facing report focused on the
+uploaded exam, its findings, recommendations, and traceable evidence.
 """
 
 from __future__ import annotations
 
 from fpdf import FPDF, XPos, YPos
 
-from app.schemas.rule_coverage import RuleRuntimeDisposition
 from app.services.reporting.content import (
     EvidenceCitation,
     ReportContent,
@@ -24,13 +23,6 @@ _SCOPE_DISCLAIMER = (
     "decision. Recommendations are academic support for human review, not institutional "
     "decisions."
 )
-
-_RUNTIME_DISPOSITION_LABELS = {
-    RuleRuntimeDisposition.EVALUATED: "Evaluated",
-    RuleRuntimeDisposition.CONDITIONAL_CAPABILITY_GAP: "Conditional capability gap",
-    RuleRuntimeDisposition.UNSUPPORTED: "Unsupported",
-    RuleRuntimeDisposition.NOT_RUN: "Not run",
-}
 
 
 def _heading(pdf: FPDF, text: str) -> None:
@@ -191,76 +183,6 @@ def _render_finding(pdf: FPDF, entry: ReportFindingEntry) -> None:
     pdf.ln(3)
 
 
-def _render_rule_coverage(pdf: FPDF, content: ReportContent) -> None:
-    coverage = content.rule_coverage
-    if coverage is None:
-        return
-
-    _heading(pdf, "Rule Execution Coverage")
-    _paragraph(
-        pdf,
-        "Operational capability coverage is separate from academic status. Unsupported, "
-        "conditional, or unexecuted capability is never converted into Not Verified.",
-        style="I",
-        size=9,
-    )
-    _paragraph(
-        pdf,
-        f"Total governed exam-facing rules: {coverage.total_rules} | Evaluated: "
-        f"{coverage.evaluated_rules} | Conditional gaps: "
-        f"{coverage.conditional_capability_gap_rules} | Unsupported: "
-        f"{coverage.unsupported_rules} | Not run: {coverage.not_run_rules}",
-        size=10,
-    )
-    integrity = (
-        "Supported runtime execution is complete."
-        if coverage.runtime_integrity_ok
-        else "System execution gap detected; this is not an academic finding."
-    )
-    _paragraph(pdf, integrity, style="B", size=10)
-
-    for item in coverage.entries:
-        academic = item.finding_status.value if item.finding_status is not None else "None"
-        disposition = _RUNTIME_DISPOSITION_LABELS[item.runtime_disposition]
-        _paragraph(
-            pdf,
-            f"{item.rule_id} / {item.requirement_id}: {disposition}; academic result: {academic}",
-            style="B",
-            size=8,
-        )
-        _paragraph(
-            pdf,
-            item.reason or "Executed as designed.",
-            size=8,
-        )
-    pdf.ln(2)
-
-
-def _render_assessment_records(pdf: FPDF, content: ReportContent) -> None:
-    _heading(pdf, f"TP-153 Assessment Source Records ({len(content.assessment_records)})")
-    _paragraph(
-        pdf,
-        "These are confirmed source records. Any assessment-consistency conclusion appears as a "
-        "separate governed finding.",
-        style="I",
-        size=9,
-    )
-    if not content.assessment_records:
-        _paragraph(pdf, "No assessment records were available.", style="I", size=9)
-        return
-
-    for record in content.assessment_records:
-        percentage = "-" if record.percentage is None else f"{record.percentage:g}%"
-        activity = record.activity or "-"
-        _paragraph(
-            pdf,
-            f"Method: {record.method} | Activity: {activity} | Percentage: {percentage} | "
-            f"TP-153 page {record.page_number}",
-            size=9,
-        )
-    pdf.ln(2)
-
-
 def render_report_pdf(content: ReportContent) -> bytes:
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -294,13 +216,6 @@ def render_report_pdf(content: ReportContent) -> bytes:
     _paragraph(pdf, _score_line(content))
     _paragraph(
         pdf,
-        f"Earned credit: {content.satisfied_count} x 1.0 + "
-        f"{content.partially_satisfied_count} x 0.5 + "
-        f"{content.not_satisfied_count} x 0.0 = {content.earned_credit}",
-        size=10,
-    )
-    _paragraph(
-        pdf,
         f"Satisfied: {content.satisfied_count} | Partially Satisfied: "
         f"{content.partially_satisfied_count} | Not Satisfied: "
         f"{content.not_satisfied_count} | Not Verified: {content.not_verified_count} | "
@@ -315,9 +230,6 @@ def render_report_pdf(content: ReportContent) -> bytes:
         size=9,
     )
     pdf.ln(2)
-
-    _render_rule_coverage(pdf, content)
-    _render_assessment_records(pdf, content)
 
     missing = content.missing_evidence
     if missing:

@@ -16,7 +16,6 @@ function ScopeList({ items }: { items: EvaluationScopeItem[] }) {
             <h3>{item.title}</h3>
             <p>{item.description}</p>
           </div>
-          <span className="evaluation-scope-rule-id">{item.ruleId}</span>
         </li>
       ))}
     </ul>
@@ -27,9 +26,8 @@ export function EvaluationScopeRoute() {
   return (
     <div className="route-stack route-content-wide evaluation-scope-route">
       <PageHeader
-        eyebrow="Release v1.0.0"
         title="What the Platform Evaluates"
-        description="See which exam-quality checks are available now, which check has a defined limitation, and which checks are planned for a later release. Planned checks are not treated as exam failures and do not reduce the score."
+        description="See which exam-quality checks are available, which check has a defined limitation, and which capabilities are planned. Planned checks are not treated as exam failures and do not reduce the score."
       />
 
       <div className="evaluation-scope-summary" aria-label="Current evaluation scope summary">
@@ -48,7 +46,7 @@ export function EvaluationScopeRoute() {
       </div>
 
       <Card as="section" className="evaluation-scope-section">
-        <h2>Available in this release</h2>
+        <h2>Available checks</h2>
         <p>
           These checks can produce an academic result when the uploaded exam and TP-153 contain
           sufficient confirmed evidence.
@@ -66,7 +64,7 @@ export function EvaluationScopeRoute() {
       </Card>
 
       <Card as="section" className="evaluation-scope-section evaluation-scope-section--planned">
-        <h2>Planned for a future release</h2>
+        <h2>Planned capabilities</h2>
         <p>
           These checks remain documented so the platform does not hide its current boundaries.
           They are not scored and are not shown as failures in an individual exam result.

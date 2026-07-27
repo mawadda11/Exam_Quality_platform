@@ -26,6 +26,14 @@ The Overview score presentation also removes the arithmetic expression previousl
 The interface keeps a concise explanation that the score is based on verified, applicable checks,
 while the governed scoring policy remains documented for audit and maintenance.
 
+The extraction review is limited to Questions, CLOs, and Topics. Assessment records and evidence
+remain preserved internally for governed evaluation and traceability, but are not exposed as editable
+review tabs. The generated report no longer lists the course-wide assessment percentage distribution
+or platform implementation-coverage diagnostics.
+
+The upload step states the currently supported document language in plain user-facing language,
+without exposing release numbers or internal roadmap terminology in the workflow.
+
 ## Included capability scope
 
 - 14 currently available exam-facing checks.

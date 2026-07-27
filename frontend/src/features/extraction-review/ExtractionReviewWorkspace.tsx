@@ -11,24 +11,17 @@ import { Card } from '../../components/ui/Card'
 import { PageState } from '../../components/ui/PageState'
 import { Tabs, type TabItem } from '../../components/ui/Tabs'
 import type {
-  ExtractionReviewAssessmentRecord,
   ExtractionReviewClo,
   ExtractionReviewConfirmResponse,
-  ExtractionReviewEvidence,
   ExtractionReviewQuestion,
   ExtractionReviewResponse,
   ExtractionReviewSnapshot,
   ExtractionReviewTopic,
 } from '../../types/api'
 
-type ReviewTab = 'questions' | 'clos' | 'topics' | 'assessment_records' | 'evidence'
+type ReviewTab = 'questions' | 'clos' | 'topics'
 type EditableCollection = ReviewTab
-type ReviewRecord =
-  | ExtractionReviewQuestion
-  | ExtractionReviewClo
-  | ExtractionReviewTopic
-  | ExtractionReviewAssessmentRecord
-  | ExtractionReviewEvidence
+type ReviewRecord = ExtractionReviewQuestion | ExtractionReviewClo | ExtractionReviewTopic
 
 interface ExtractionReviewWorkspaceProps {
   analysisId: string
@@ -129,26 +122,6 @@ function updateSnapshotRecord(
     }
   }
 
-  if (collection === 'evidence' && patch.included === true) {
-    const evidence = snapshot.evidence.find((item) => item.source_record_id === sourceRecordId)
-    const questionId = evidence?.question_source_record_id
-    if (questionId) {
-      const includedIds = questionAncestors(snapshot.questions, questionId)
-      return {
-        ...snapshot,
-        questions: snapshot.questions.map((question) =>
-          includedIds.has(question.source_record_id)
-            ? { ...question, included: true }
-            : question,
-        ),
-        evidence: replaceRecord<ExtractionReviewEvidence>(
-          snapshot.evidence,
-          sourceRecordId,
-          patch as Partial<ExtractionReviewEvidence>,
-        ),
-      }
-    }
-  }
 
   const items = snapshot[collection] as ReviewRecord[]
   return {
@@ -426,134 +399,6 @@ function TopicsPanel({
   )
 }
 
-function AssessmentPanel({
-  items,
-  original,
-  disabled,
-  onChange,
-}: {
-  items: ExtractionReviewAssessmentRecord[]
-  original: ExtractionReviewAssessmentRecord[]
-  disabled: boolean
-  onChange: (id: string, patch: Partial<ExtractionReviewAssessmentRecord>) => void
-}) {
-  if (!items.length) return <EmptyCollection label="assessment records" />
-  const originals = new Map(original.map((item) => [item.source_record_id, item]))
-  return (
-    <div className="review-record-list">
-      {items.map((item) => (
-        <Card as="article" className={!item.included ? 'review-record review-record--excluded' : 'review-record'} key={item.source_record_id}>
-          <RecordHeader
-            title={item.method}
-            included={item.included}
-            pageNumber={item.page_number}
-            confidence={item.extraction_confidence}
-            disabled={disabled}
-            onIncludedChange={(included) => onChange(item.source_record_id, { included })}
-            onRestore={() => {
-              const value = originals.get(item.source_record_id)
-              if (value) onChange(item.source_record_id, value)
-            }}
-          />
-          <div className="review-form-grid">
-            <label>
-              Assessment method
-              <input
-                value={item.method}
-                disabled={disabled || !item.included}
-                onChange={(event) => onChange(item.source_record_id, { method: event.target.value })}
-              />
-            </label>
-            <label>
-              Percentage
-              <input
-                type="number"
-                min="0"
-                max="100"
-                step="any"
-                value={item.percentage ?? ''}
-                disabled={disabled || !item.included}
-                onChange={(event) =>
-                  onChange(item.source_record_id, {
-                    percentage: optionalNumber(event.target.value),
-                  })
-                }
-              />
-            </label>
-            <label className="review-field-wide">
-              Activity
-              <input
-                value={item.activity ?? ''}
-                disabled={disabled || !item.included}
-                onChange={(event) =>
-                  onChange(item.source_record_id, { activity: event.target.value || null })
-                }
-              />
-            </label>
-          </div>
-        </Card>
-      ))}
-    </div>
-  )
-}
-
-function EvidencePanel({
-  items,
-  original,
-  disabled,
-  onChange,
-}: {
-  items: ExtractionReviewEvidence[]
-  original: ExtractionReviewEvidence[]
-  disabled: boolean
-  onChange: (id: string, patch: Partial<ExtractionReviewEvidence>) => void
-}) {
-  if (!items.length) return <EmptyCollection label="evidence records" />
-  const originals = new Map(original.map((item) => [item.source_record_id, item]))
-  return (
-    <div className="review-record-list">
-      {items.map((item) => (
-        <Card as="article" className={!item.included ? 'review-record review-record--excluded' : 'review-record'} key={item.source_record_id}>
-          <RecordHeader
-            title={`${item.source_document.toUpperCase()} · ${item.evidence_type}`}
-            included={item.included}
-            pageNumber={item.page_number}
-            confidence={item.extraction_confidence}
-            disabled={disabled}
-            onIncludedChange={(included) => onChange(item.source_record_id, { included })}
-            onRestore={() => {
-              const value = originals.get(item.source_record_id)
-              if (value) onChange(item.source_record_id, value)
-            }}
-          />
-          <div className="review-form-grid">
-            <label>
-              Item reference
-              <input
-                value={item.item_reference}
-                disabled={disabled || !item.included}
-                onChange={(event) =>
-                  onChange(item.source_record_id, { item_reference: event.target.value })
-                }
-              />
-            </label>
-            <label className="review-field-wide">
-              Extracted text
-              <textarea
-                rows={4}
-                value={item.extracted_text}
-                disabled={disabled || !item.included}
-                onChange={(event) =>
-                  onChange(item.source_record_id, { extracted_text: event.target.value })
-                }
-              />
-            </label>
-          </div>
-        </Card>
-      ))}
-    </div>
-  )
-}
 
 export function ExtractionReviewWorkspace({
   analysisId,
@@ -643,11 +488,6 @@ export function ExtractionReviewWorkspace({
     { id: 'questions', label: `Questions (${draft.questions.length})` },
     { id: 'clos', label: `CLOs (${draft.clos.length})` },
     { id: 'topics', label: `Topics (${draft.topics.length})` },
-    {
-      id: 'assessment_records',
-      label: `Assessment (${draft.assessment_records.length})`,
-    },
-    { id: 'evidence', label: `Evidence (${draft.evidence.length})` },
   ]
 
   function changeRecord(
@@ -775,22 +615,6 @@ export function ExtractionReviewWorkspace({
             original={review.original_snapshot.topics}
             disabled={!review.can_edit}
             onChange={(id, patch) => changeRecord('topics', id, patch)}
-          />
-        )}
-        {activeTab === 'assessment_records' && (
-          <AssessmentPanel
-            items={draft.assessment_records}
-            original={review.original_snapshot.assessment_records}
-            disabled={!review.can_edit}
-            onChange={(id, patch) => changeRecord('assessment_records', id, patch)}
-          />
-        )}
-        {activeTab === 'evidence' && (
-          <EvidencePanel
-            items={draft.evidence}
-            original={review.original_snapshot.evidence}
-            disabled={!review.can_edit}
-            onChange={(id, patch) => changeRecord('evidence', id, patch)}
           />
         )}
       </section>

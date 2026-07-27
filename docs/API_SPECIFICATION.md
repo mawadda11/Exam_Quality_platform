@@ -47,7 +47,7 @@ without changing the public API contract.
 - `GET /analyses` owned analysis history.
 
 ## Reports
-- `POST /analyses/{id}/reports` generate an immutable PDF snapshot containing score and denominator transparency, all five status counts, runtime rule coverage, TP-153 assessment source records, finding evidence, categorical semantic confidence, governed reasoning, item judgments, source-versus-derived mapping labels, controlled KB references, provenance, and recommendations.
+- `POST /analyses/{id}/reports` generate an immutable user-facing PDF snapshot containing the score and denominator context, all five status counts, finding evidence, categorical semantic confidence, governed reasoning, item judgments, source-versus-derived mapping labels, controlled KB references, provenance, and recommendations. Course-wide assessment percentages and platform implementation diagnostics remain internal and are not rendered in the report.
 - `GET /analyses/{id}/reports` list report metadata for an analysis.
 - `GET /reports/{id}` metadata.
 - `GET /reports/{id}/download` authorized download.

@@ -73,15 +73,7 @@
   margin-block-start: var(--space-2);
 }
 
-.evaluation-scope-rule-id {
-  flex: 0 0 auto;
-  padding: 0.2rem 0.55rem;
-  color: var(--color-text-secondary);
-  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
-  font-size: var(--font-size-xs);
-  background: var(--color-surface-muted);
-  border-radius: var(--radius-sm);
-}
+
 
 .evaluation-scope-scoring-note p {
   max-width: 70rem;
