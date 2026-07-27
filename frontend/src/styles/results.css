@@ -514,9 +514,7 @@
 }
 
 /* M10: categorical semantic confidence, governed reasoning, mappings, and runtime coverage. */
-.semantic-confidence-badge,
-.runtime-disposition,
-.coverage-not-academic {
+.semantic-confidence-badge {
   display: inline-flex;
   align-items: center;
   min-height: 1.75rem;
@@ -639,58 +637,13 @@
   margin-block-start: 0;
 }
 
-.coverage-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-3);
-  margin-block: var(--space-4);
+.rule-coverage-scope-link {
+  margin-block-end: 0;
 }
 
-.coverage-summary-grid > div {
-  display: grid;
-  justify-items: center;
-  gap: var(--space-1);
-  padding: var(--space-4);
-  text-align: center;
-  background: var(--color-canvas);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-
-.coverage-summary-grid strong {
+.rule-coverage-scope-link a {
   color: var(--color-brand-navy);
-  font-size: var(--font-size-xl);
-}
-
-.rule-coverage-panel .ui-responsive-table {
-  margin-block-start: var(--space-4);
-}
-
-.coverage-cell-note {
-  margin-block-start: var(--space-1);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-}
-
-.runtime-disposition--evaluated {
-  color: var(--color-success);
-  background: var(--color-success-surface);
-}
-
-.runtime-disposition--conditional_capability_gap,
-.runtime-disposition--unsupported {
-  color: var(--color-warning);
-  background: var(--color-warning-surface);
-}
-
-.runtime-disposition--not_run {
-  color: var(--color-danger);
-  background: var(--color-danger-surface);
-}
-
-.coverage-not-academic {
-  color: var(--color-text-secondary);
-  background: var(--color-surface-muted);
+  font-weight: 700;
 }
 
 @media (max-width: 48rem) {
@@ -699,8 +652,7 @@
     flex-direction: column;
   }
 
-  .semantic-item-evidence > div,
-  .coverage-summary-grid {
+  .semantic-item-evidence > div {
     grid-template-columns: 1fr;
   }
 }

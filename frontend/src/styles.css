@@ -6,6 +6,7 @@
 @import './styles/analysis-workflow.css';
 @import './styles/extraction-review.css';
 @import './styles/results.css';
+@import './styles/evaluation-scope.css';
 
 p { line-height: 1.7; }
 .notice { margin-top: 1.5rem; padding: 1rem; border-radius: 12px; background: #eef3f7; }

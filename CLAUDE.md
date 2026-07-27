@@ -1,5 +1,17 @@
 # CLAUDE.md — AI Exam Quality Platform
 
+## Current release context
+
+- Product release target: `v1.0.0`.
+- Read `docs/RELEASE_V1.md` for the Version 1 release boundary.
+- Read `docs/V2_ROADMAP.md` before planning authentication, public deployment, localization,
+  Arabic-document analysis, or additional rule support.
+- Individual exam results must prioritize exam-specific findings. Platform capability inventory
+  belongs in the **What the Platform Evaluates** page or technical documentation, not as a
+  large default results table.
+- Keep the Overview score concise. Do not expose arithmetic working to ordinary users; preserve the
+  governed methodology in documentation and audit/report layers.
+
 ## Mission
 Build and maintain an evidence-based platform that analyzes Midterm and Final exam PDFs for computing courses against a populated TP-153 Course Specification and the versioned Exam Quality Knowledge Base.
 

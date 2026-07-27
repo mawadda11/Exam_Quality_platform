@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import type {
   AnalysisResponse,
@@ -60,25 +61,32 @@ function score(overrides: Partial<AnalysisScoreResponse> = {}): AnalysisScoreRes
   }
 }
 
-describe('OverviewSection', () => {
-  it('shows the backend score, denominator, and all five approved status counts', () => {
-    render(
+function renderOverview(props: { score?: AnalysisScoreResponse; onReanalysisCreated?: () => void } = {}) {
+  return render(
+    <MemoryRouter>
       <OverviewSection
         analysis={ANALYSIS}
-        score={score()}
+        score={props.score ?? score()}
         ruleCoverage={COVERAGE_RESOURCE}
         onRetryRuleCoverage={vi.fn()}
-      />,
-    )
+        onReanalysisCreated={props.onReanalysisCreated}
+      />
+    </MemoryRouter>,
+  )
+}
+
+describe('OverviewSection', () => {
+  it('shows the score and academic statuses without exposing an arithmetic formula', () => {
+    renderOverview()
 
     expect(screen.getByText('75.00%')).toBeInTheDocument()
-    expect(
-      screen.getByText(/denominator contains 4 verified applicable rules/i),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText(/2 × 1.0 \+ 1 × 0.5 \+ 1 × 0.0 =/i),
-    ).toHaveTextContent('2.5')
-    expect(screen.getByText(/supported rule execution is complete/i)).toBeInTheDocument()
+    expect(screen.getByText('Based on 4 verified checks')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'About this score' })).toBeInTheDocument()
+    expect(screen.queryByText(/earned credit/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/× 1\.0/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/analysis completed with a limited check/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /see what the platform evaluates/i }))
+      .toHaveAttribute('href', '/evaluation-scope')
     expect(screen.getByText('Satisfied').closest('li')).toHaveTextContent('2')
     expect(screen.getByText('Partially Satisfied').closest('li')).toHaveTextContent('1')
     expect(screen.getByText('Not Satisfied').closest('li')).toHaveTextContent('1')
@@ -87,18 +95,13 @@ describe('OverviewSection', () => {
   })
 
   it('shows Insufficient Evidence instead of a number when the score is null', () => {
-    render(
-      <OverviewSection
-        analysis={ANALYSIS}
-        score={score({
-          score: null,
-          label: 'Insufficient Evidence',
-          denominator: 0,
-        })}
-        ruleCoverage={COVERAGE_RESOURCE}
-        onRetryRuleCoverage={vi.fn()}
-      />,
-    )
+    renderOverview({
+      score: score({
+        score: null,
+        label: 'Insufficient Evidence',
+        denominator: 0,
+      }),
+    })
 
     expect(screen.getByText('Insufficient Evidence')).toBeInTheDocument()
     expect(screen.queryByText(/0%/)).not.toBeInTheDocument()
@@ -106,24 +109,28 @@ describe('OverviewSection', () => {
 
   it('renders reanalysis only when the current analysis supplies the contextual action', () => {
     const { rerender } = render(
-      <OverviewSection
-        analysis={ANALYSIS}
-        score={score()}
-        ruleCoverage={COVERAGE_RESOURCE}
-        onRetryRuleCoverage={vi.fn()}
-      />,
+      <MemoryRouter>
+        <OverviewSection
+          analysis={ANALYSIS}
+          score={score()}
+          ruleCoverage={COVERAGE_RESOURCE}
+          onRetryRuleCoverage={vi.fn()}
+        />
+      </MemoryRouter>,
     )
     expect(screen.queryByRole('button', { name: /create reanalysis/i }))
       .not.toBeInTheDocument()
 
     rerender(
-      <OverviewSection
-        analysis={ANALYSIS}
-        score={score()}
-        ruleCoverage={COVERAGE_RESOURCE}
-        onRetryRuleCoverage={vi.fn()}
-        onReanalysisCreated={vi.fn()}
-      />,
+      <MemoryRouter>
+        <OverviewSection
+          analysis={ANALYSIS}
+          score={score()}
+          ruleCoverage={COVERAGE_RESOURCE}
+          onRetryRuleCoverage={vi.fn()}
+          onReanalysisCreated={vi.fn()}
+        />
+      </MemoryRouter>,
     )
     expect(screen.getByRole('button', { name: /create reanalysis/i }))
       .toBeInTheDocument()

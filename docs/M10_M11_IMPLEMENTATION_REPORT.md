@@ -23,10 +23,12 @@ faculty evaluation, or approve/reject workflow was added.
   and evidence-linked item judgments retained in `evaluation_details`.
 - Labels RULE001 and RULE007 target relationships as **AI-derived advisory relationships** and
   states that they are not official TP-153 mappings and do not overwrite source evidence.
-- Presents the runtime rule-coverage audit independently from academic statuses using
-  `evaluated`, `conditional_capability_gap`, `unsupported`, and `not_run`.
-- Exposes score-denominator arithmetic and confirms that `Not Verified` and `Not Applicable` are
-  excluded while remaining visible.
+- Preserves the runtime rule-coverage audit independently from academic statuses using
+  `evaluated`, `conditional_capability_gap`, `unsupported`, and `not_run`. The final Version 1 UX
+  presents only an analysis-specific completion message in Overview and moves the complete platform
+  capability catalogue to the separate **What the Platform Evaluates** page.
+- Keeps the score concise for faculty users. The final Overview does not expose arithmetic working;
+  the exact governed methodology remains in the report and technical documentation.
 
 ### PDF report
 
@@ -45,6 +47,14 @@ Generated reports now freeze and present:
 The report renderer remains presentation-only. It reuses persisted findings, source evidence,
 assessment records, the authoritative scoring service, and the authoritative coverage audit. It
 does not infer new academic facts.
+
+## Final Version 1 UX refinement
+
+After manual review, the capability catalogue was identified as platform-level information rather
+than an exam-specific result. Version 1.0.0 therefore removes the large 21-rule table and mostly
+fixed support counts from the default Overview, adds a separate platform-scope page, and replaces
+the visible score equation with a plain-language explanation. No knowledge-base rule, scoring rule,
+or report audit detail was removed.
 
 ## M11 - integrated release validation
 

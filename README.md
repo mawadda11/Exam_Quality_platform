@@ -1,5 +1,7 @@
 # AI Exam Quality Platform
 
+**Current product release: v1.0.0** — the first complete controlled Version 1 release.
+
 Evidence-based Midterm and Final exam quality-analysis platform for Faculty Members. Deterministic aggregation and ten governed advisory semantic/hybrid evaluators produce traceable
 findings; the faculty member retains final academic responsibility.
 
@@ -15,15 +17,21 @@ Claude Code automatically reads `CLAUDE.md` in the repository root.
 
 ## Current implementation status
 
-M1-M9 are committed through base commit `5f76d6a`. The current working-tree delivery completes:
+M1-M9 are committed through base commit `5f76d6a`. M10-M11 are committed on the
+`release/v1.0.0` branch at `d2eb3d4`:
 
 - **M10:** categorical-confidence, semantic reasoning, derived mapping, evidence, score-denominator,
   runtime rule-coverage, and PDF-report presentation; and
 - **M11:** a synthetic, offline, API-level acceptance test for the complete supported upload ->
   extraction review -> confirmation -> governed evaluation -> score/coverage -> report workflow.
 
-Read `docs/M10_M11_HANDOFF.md`, `docs/M10_M11_IMPLEMENTATION_REPORT.md`, and
-`docs/M10_M11_VERIFICATION.md` before editing or committing. The final local frontend/Ruff/mypy
+The remaining working-tree changes are the final Version 1 faculty-facing UX refinement: concise
+score explanation, analysis-specific completion messaging, and the separate **What the Platform
+Evaluates** page.
+
+Read `docs/RELEASE_V1.md`, `docs/M10_M11_HANDOFF.md`,
+`docs/M10_M11_IMPLEMENTATION_REPORT.md`, and `docs/M10_M11_VERIFICATION.md` before editing or
+committing. Version 2 planning is maintained in `docs/V2_ROADMAP.md`. The final local frontend/Ruff/mypy
 checks documented there remain mandatory where package registries are available.
 
 ## Local development

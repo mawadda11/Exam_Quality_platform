@@ -36,13 +36,12 @@ export function OverviewSection({
   onRetryRuleCoverage,
   onReanalysisCreated,
 }: OverviewSectionProps) {
-  const earnedCredits = score.satisfied_count + score.partially_satisfied_count * 0.5
   return (
     <div className="overview-section results-section-stack">
       <div className="results-section-heading">
         <div>
           <h2>Overview</h2>
-          <p>Backend score and approved academic-status distribution.</p>
+          <p>A summary of the quality checks completed for this exam.</p>
         </div>
       </div>
 
@@ -56,7 +55,7 @@ export function OverviewSection({
         </Card>
 
         <Card as="section" className="overview-status-card">
-          <h3>Academic-status counts</h3>
+          <h3>Evaluation results</h3>
           <ul className="status-count-grid">
             {statusCounts(score).map(([status, count]) => (
               <li key={status}>
@@ -66,17 +65,13 @@ export function OverviewSection({
             ))}
           </ul>
           <div className="score-transparency">
-            <h4>Score denominator transparency</h4>
+            <h4>About this score</h4>
             <p>
-              Earned credit: {score.satisfied_count} × 1.0 +{' '}
-              {score.partially_satisfied_count} × 0.5 + {score.not_satisfied_count} × 0.0 ={' '}
-              <strong>{earnedCredits.toFixed(1)}</strong>.
+              This score summarizes the checks the platform was able to verify for this exam.
             </p>
             <p className="results-supporting-text">
-              The denominator contains {score.denominator} verified applicable{' '}
-              {score.denominator === 1 ? 'rule' : 'rules'}. Not Verified and Not Applicable
-              remain visible but are excluded from scoring. Semantic confidence does not change
-              rule weight.
+              Results that could not be verified or did not apply remain visible, but they do not
+              lower the score. Checks planned for a future release are also excluded.
             </p>
           </div>
         </Card>

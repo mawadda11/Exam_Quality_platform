@@ -1,4 +1,4 @@
-# M10-M11 Handoff
+# Version 1.0.0 Handoff
 
 ## Repository source of truth
 
@@ -9,22 +9,37 @@ Read in this order:
 
 1. `CLAUDE.md`
 2. `README.md`
-3. `docs/M10_M11_IMPLEMENTATION_REPORT.md`
-4. `docs/M10_M11_VERIFICATION.md`
-5. `docs/OWNER_FINAL_CHECKLIST.md`
-6. `docs/IMPLEMENTATION_ROADMAP.md`
-7. `docs/AI_GOVERNANCE.md`
-8. `docs/SCORING_POLICY.md`
-9. `docs/TEST_PLAN.md`
+3. `docs/RELEASE_V1.md`
+4. `docs/M10_M11_IMPLEMENTATION_REPORT.md`
+5. `docs/M10_M11_VERIFICATION.md`
+6. `docs/OWNER_FINAL_CHECKLIST.md`
+7. `docs/V2_ROADMAP.md`
+8. `docs/AI_GOVERNANCE.md`
+9. `docs/SCORING_POLICY.md`
+10. `docs/TEST_PLAN.md`
 
-## Current state
+## Current Git state
 
-- M1-M9 were already committed at base commit `5f76d6a`.
-- M10 presentation/report refinement is implemented in the working tree.
-- M11 integrated release acceptance is implemented in the working tree.
-- No migration or knowledge-base source change is part of this delivery.
-- Changes are intentionally left uncommitted for the project owner to run the final local gate,
-  review, commit, and push.
+- Branch: `release/v1.0.0`.
+- M1-M9 base: `5f76d6a`.
+- M10-M11 commit: `d2eb3d4` (`feat: complete M10 presentation and M11 release validation`).
+- The final Version 1 UX refinement is intentionally left as uncommitted working-tree changes for
+  the project owner to test, review, commit, and push.
+- No migration or knowledge-base source-workbook change belongs to the final UX refinement.
+- `VERSION` declares product release `1.0.0`.
+
+## Final Version 1 UX refinement
+
+The final refinement separates platform capability from an individual exam result:
+
+- The Overview no longer shows the full 21-rule capability table or the mostly fixed
+  evaluated/limited/planned counts.
+- The Overview shows only a concise completion message relevant to the current analysis.
+- A separate **What the Platform Evaluates** page documents 14 available checks, one check with a
+  defined limitation, and six planned/deferred checks.
+- Planned or deferred platform capability is never presented as failure of the uploaded exam.
+- The user-facing Overview no longer shows arithmetic working for the score. The governed scoring
+  contract remains unchanged and remains documented and auditable.
 
 ## First action for the next coding agent
 
@@ -38,23 +53,23 @@ git diff
 git diff --cached
 ```
 
-Do not reset, clean, stash, revert, overwrite, or regenerate the M10-M11 working tree. Inspect it as
-intentional prior work.
-
-Then run the required local completion gate in `docs/M10_M11_VERIFICATION.md`. Fix only verified
-failures with the smallest coherent changes and add/update tests for each fix.
+Do not reset, clean, stash, revert, overwrite, or regenerate the Version 1 working tree. Inspect it
+as intentional prior work. Run the completion gate in `docs/OWNER_FINAL_CHECKLIST.md`, and fix only
+verified failures with the smallest coherent change and corresponding tests.
 
 ## Important implementation locations
 
 ### Frontend
 
-- `frontend/src/features/analysis-results/FindingCard.tsx`
+- `frontend/src/features/analysis-results/OverviewSection.tsx`
+- `frontend/src/features/analysis-results/RuleCoveragePanel.tsx`
 - `frontend/src/features/analysis-results/SemanticConfidenceBadge.tsx`
 - `frontend/src/features/analysis-results/SemanticEvaluationDetails.tsx`
-- `frontend/src/features/analysis-results/RuleCoveragePanel.tsx`
-- `frontend/src/features/analysis-results/OverviewSection.tsx`
-- `frontend/src/features/analysis-results/useAnalysisResultsData.ts`
+- `frontend/src/features/platform-scope/platformScopeData.ts`
+- `frontend/src/routes/EvaluationScopeRoute.tsx`
+- `frontend/src/components/layout/PrimaryNavigation.tsx`
 - `frontend/src/styles/results.css`
+- `frontend/src/styles/evaluation-scope.css`
 
 ### Backend/reporting
 
@@ -76,22 +91,18 @@ failures with the smallest coherent changes and add/update tests for each fix.
 - Derived mappings reference confirmed evidence, remain advisory, and never overwrite source facts.
 - No AI evaluation before exact extraction-review confirmation.
 - Exam PDF plus populated TP-153 remain required.
-- RULE015, RULE017, RULE020, and the undefined two-or-more-CLO RULE006 branch remain deferred.
+- Unsupported/deferred rules remain documented; do not delete them from the knowledge base merely
+  because Version 1 does not execute them.
 
-## Suggested commit sequence after all checks pass
+## Final commit and push after validation
 
 ```powershell
-git add backend/app backend/tests frontend/src docs README.md CLAUDE.md
-git status --short
-git diff --cached --stat
-git commit -m "feat: complete M10 presentation and reporting"
-
 git add -A
 git status --short
 git diff --cached --stat
-git commit -m "test: complete M11 integrated release validation"
-git push origin main
+git commit -m "feat: finalize AI Exam Quality Platform v1.0.0"
+git push -u origin release/v1.0.0
 ```
 
-The owner may instead use one coherent M10-M11 commit. Never commit `.env`, uploads, generated
-reports, package caches, virtual environments, real exams, or private TP-153 files.
+Never commit `.env`, uploads, generated reports, package caches, virtual environments, real exams,
+or private TP-153 files. Do not force-push.

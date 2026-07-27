@@ -7,9 +7,9 @@ describe('ScoreRing', () => {
     render(<ScoreRing score="78.60" denominator={5} />)
 
     expect(screen.getByText('78.60%')).toBeVisible()
-    expect(screen.getByText('Based on 5 verified applicable rules')).toBeVisible()
+    expect(screen.getByText('Based on 5 verified checks')).toBeVisible()
     expect(screen.getByRole('img')).toHaveAccessibleName(
-      'Overall Exam Quality Score: 78.60%. Based on 5 verified applicable rules.',
+      'Overall Exam Quality Score: 78.60%. Based on 5 verified checks.',
     )
   })
 
@@ -19,7 +19,7 @@ describe('ScoreRing', () => {
     expect(screen.getByText('Insufficient Evidence')).toBeVisible()
     expect(screen.queryByText('0%')).not.toBeInTheDocument()
     expect(screen.getByRole('img')).toHaveAccessibleName(
-      'Overall Exam Quality Score: Insufficient Evidence. Based on 0 verified applicable rules.',
+      'Overall Exam Quality Score: Insufficient Evidence. No verified checks were available.',
     )
   })
 })

@@ -4,6 +4,7 @@ const NAVIGATION_ITEMS = [
   { to: '/dashboard', label: 'Dashboard', end: true },
   { to: '/analyses', label: 'Analyses', end: true },
   { to: '/analyses/new', label: 'New Analysis', end: true },
+  { to: '/evaluation-scope', label: 'What We Evaluate', end: true },
 ] as const
 
 interface PrimaryNavigationProps {

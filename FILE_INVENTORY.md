@@ -9,6 +9,9 @@
 - `docs/M10_M11_IMPLEMENTATION_REPORT.md`
 - `docs/M10_M11_VERIFICATION.md`
 - `docs/OWNER_FINAL_CHECKLIST.md`
+- `docs/RELEASE_V1.md`
+- `docs/V2_ROADMAP.md`
+- `VERSION`
 - Earlier milestone reports under `docs/` remain part of the audit trail.
 
 ## Product and technical documentation
@@ -31,7 +34,8 @@
 ## Implemented application
 
 - React/TypeScript frontend with upload, processing, extraction review, history, results,
-  evidence, recommendations, runtime rule coverage, denominator transparency, and reports.
+  evidence, recommendations, concise analysis-completion messaging, a separate **What the Platform Evaluates**
+  page, and reports.
 - Python/FastAPI backend with owner-scoped analysis APIs, secure PDF upload, extraction review,
   governed deterministic/semantic evaluation, scoring, coverage audit, and PDF reporting.
 - PostgreSQL application persistence, ChromaDB adapter, offline deterministic development vector
