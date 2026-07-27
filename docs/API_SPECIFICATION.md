@@ -12,6 +12,20 @@ without changing the public API contract.
 ## Health
 - `GET /health`
 
+
+## Authentication
+- `POST /auth/register` create a Faculty Member account and return a bearer session.
+- `POST /auth/login` authenticate email/password and return a bearer session.
+- `GET /auth/me` return the verified current Faculty Member.
+- `POST /auth/logout` revoke all currently issued access tokens for the account.
+- `POST /auth/password-reset/request` return a generic anti-enumeration response and create a
+  single-use reset token for an eligible account.
+- `POST /auth/password-reset/confirm` consume the reset token, replace the password hash, and revoke
+  earlier access tokens.
+
+All analysis and report endpoints require `Authorization: Bearer <token>`. Development identity
+headers are no longer accepted.
+
 ## Analyses
 - `POST /analyses` create metadata.
 - `POST /analyses/{id}/files` upload exam and TP-153.

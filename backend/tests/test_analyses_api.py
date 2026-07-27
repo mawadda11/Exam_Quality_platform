@@ -36,7 +36,7 @@ def test_create_analysis_malformed_auth_header_returns_401(client: TestClient) -
     response = client.post(
         "/api/v1/analyses",
         json=VALID_ANALYSIS_PAYLOAD,
-        headers={"X-Dev-User-Email": "not-an-email"},
+        headers={"Authorization": "Bearer not-a-valid-token"},
     )
     assert response.status_code == 401
 

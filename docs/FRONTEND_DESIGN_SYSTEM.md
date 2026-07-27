@@ -630,7 +630,7 @@ its documented backend milestone, except a separately approved defect fix.
 
 ### Known Version 1 frontend limitations
 
-- Development identity is a temporary header adapter, not authentication.
+- Version 2 uses verified Faculty Member accounts and protected routes; the Version 1 development identity control has been removed.
 - Option A can leave an abandoned queued record when a user does not complete both uploads.
 - Browser-selected files that have not been uploaded do not survive refresh.
 - Uploaded files cannot be replaced or deleted because the current API has no such contract.

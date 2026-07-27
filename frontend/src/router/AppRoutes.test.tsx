@@ -3,7 +3,10 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as analysesApi from '../api/analyses'
+import * as authApi from '../api/auth'
+import { setStoredAccessToken } from '../api/authToken'
 import { ApiError } from '../api/client'
+import { AuthProvider } from '../features/auth/AuthProvider'
 import type {
   AnalysisResponse,
   AnalysisScoreResponse,
@@ -13,6 +16,7 @@ import type {
 import { AppRoutes } from './AppRoutes'
 
 vi.mock('../api/analyses')
+vi.mock('../api/auth')
 
 const QUEUED_ANALYSIS: AnalysisResponse = {
   id: 'analysis-1',
@@ -144,8 +148,10 @@ function LocationControls() {
 function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <AppRoutes />
-      <LocationControls />
+      <AuthProvider>
+        <AppRoutes />
+        <LocationControls />
+      </AuthProvider>
     </MemoryRouter>,
   )
 }
@@ -163,6 +169,18 @@ function mockResults(): void {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  window.localStorage.clear()
+  setStoredAccessToken('test-access-token')
+  vi.mocked(authApi.getCurrentFaculty).mockResolvedValue({
+    id: 'user-1',
+    email: 'faculty@university.edu',
+    display_name: 'Dr Faculty',
+    institution: 'Example University',
+    department: 'Computing',
+    user_type: 'Faculty Member',
+    email_verified: false,
+    created_at: '2026-01-01T00:00:00Z',
+  })
   vi.mocked(analysesApi.listAnalyses).mockResolvedValue([])
   vi.mocked(analysesApi.getExtractionReview).mockResolvedValue(EXTRACTION_REVIEW)
   mockResults()
@@ -212,7 +230,9 @@ describe('AppRoutes', () => {
     render(
       <StrictMode>
         <MemoryRouter initialEntries={['/dashboard']}>
-          <AppRoutes />
+          <AuthProvider>
+            <AppRoutes />
+          </AuthProvider>
         </MemoryRouter>
       </StrictMode>,
     )
@@ -513,9 +533,11 @@ describe('AppRoutes', () => {
     expect(analysesApi.getAnalysis).toHaveBeenCalledTimes(2)
   })
 
-  it('shows a safe fallback for an unknown application route', () => {
+  it('shows a safe fallback for an unknown application route', async () => {
     renderAt('/not-a-route')
 
-    expect(screen.getByRole('heading', { name: 'Page not found' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'Page not found' }),
+    ).toBeInTheDocument()
   })
 })

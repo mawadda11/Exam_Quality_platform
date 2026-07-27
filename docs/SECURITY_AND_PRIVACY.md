@@ -3,14 +3,22 @@
 ## Upload controls
 Validate extension, declared MIME, PDF magic bytes, maximum size, parser readability, file count, and safe filename handling. Use generated storage keys and quarantine before processing.
 
-## Authorization
-Every analysis, file, evidence item, finding, and report is scoped to its Faculty Member owner. Download endpoints re-check ownership authorization.
+## Authentication and authorization
+Faculty Members register with email and password. Passwords are Argon2id-hashed and never logged.
+Signed bearer tokens include expiry, issuer, audience, and a server-checked token version. Logout
+and password reset revoke earlier access tokens. Password-reset tokens are random, stored only as
+SHA-256 hashes, expire, and are single-use.
+
+Every analysis, file, evidence item, finding, and report is scoped to its Faculty Member owner.
+Download endpoints re-check ownership authorization and cross-owner requests return the same 404 as
+a missing resource. Staging/production must add rate limiting and security monitoring at the
+deployment boundary.
 
 ## Data protection
 Use TLS in deployed environments, encrypted managed storage where available, database encryption controls, strong secrets, and least-privilege service accounts.
 
 ## Logging
-Log IDs, stages, durations, error classes, and safe summaries. Do not log full exam/TP-153 text, prompts containing source content, API keys, or signed download URLs.
+Log IDs, stages, durations, error classes, and safe summaries. Do not log full exam/Course Specification text, prompts containing source content, passwords, access tokens, password-reset tokens, API keys, or signed download URLs.
 
 ## Retention
 Default configurable retention is documented through `FILE_RETENTION_DAYS`. Implement deletion jobs and audit-safe metadata according to institutional policy before production use.

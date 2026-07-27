@@ -30,7 +30,7 @@ describe('AppShell', () => {
     expect(screen.getByRole('main')).toHaveAttribute('tabindex', '-1')
   })
 
-  it('keeps the temporary development identity explicit without auth controls', () => {
+  it('does not expose the removed development identity control', () => {
     render(
       <MemoryRouter initialEntries={['/dashboard']}>
         <Routes>
@@ -41,9 +41,7 @@ describe('AppShell', () => {
       </MemoryRouter>,
     )
 
-    expect(screen.getByText(/development identity \(temporary, not real sign-in\)/i))
-      .toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /sign out/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: /profile/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/development identity/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/development identity/i)).not.toBeInTheDocument()
   })
 })

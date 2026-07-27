@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from alembic.config import Config
-from sqlalchemy import Table, UniqueConstraint, create_engine, event, inspect
+from sqlalchemy import Table, UniqueConstraint, create_engine, event, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -22,6 +24,7 @@ EXPECTED_TABLES = {
     "analyses",
     "uploaded_files",
     "processing_events",
+    "password_reset_tokens",
     "extraction_review_revisions",
     "findings",
     "reports",
@@ -144,6 +147,38 @@ def test_extraction_review_foundation_is_migrated(tmp_path: Path) -> None:
     )
 
 
+def test_faculty_authentication_foundation_is_migrated(tmp_path: Path) -> None:
+    sqlite_url = f"sqlite:///{tmp_path / 'faculty_auth.db'}"
+    command.upgrade(_alembic_config(sqlite_url), "head")
+
+    engine = create_engine(sqlite_url)
+    inspector = inspect(engine)
+    user_columns = {column["name"] for column in inspector.get_columns("users")}
+    reset_columns = {column["name"] for column in inspector.get_columns("password_reset_tokens")}
+    reset_constraints = {
+        tuple(constraint["column_names"])
+        for constraint in inspector.get_unique_constraints("password_reset_tokens")
+    }
+    engine.dispose()
+
+    assert {
+        "password_hash",
+        "is_active",
+        "email_verified",
+        "token_version",
+        "last_login_at",
+    } <= user_columns
+    assert {
+        "id",
+        "user_id",
+        "token_hash",
+        "expires_at",
+        "used_at",
+        "created_at",
+    } <= reset_columns
+    assert ("token_hash",) in reset_constraints
+
+
 def test_migration_enforces_dual_file_unique_constraint(tmp_path: Path) -> None:
     sqlite_url = f"sqlite:///{tmp_path / 'migration_constraint.db'}"
     command.upgrade(_alembic_config(sqlite_url), "head")
@@ -245,3 +280,48 @@ def test_migration_downgrade_removes_all_tables(tmp_path: Path) -> None:
     engine.dispose()
 
     assert not (EXPECTED_TABLES & tables)
+
+
+def test_auth_migration_preserves_existing_version1_user(tmp_path: Path) -> None:
+    sqlite_url = f"sqlite:///{tmp_path / 'v1_to_v2_auth.db'}"
+    cfg = _alembic_config(sqlite_url)
+    command.upgrade(cfg, "0008")
+
+    engine = create_engine(sqlite_url)
+    user_id = uuid.uuid4()
+    now = datetime.now(UTC)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO users "
+                "(id, email, display_name, institution, department, user_type, "
+                "created_at, updated_at) "
+                "VALUES (:id, :email, :name, NULL, NULL, :user_type, :created_at, :updated_at)"
+            ),
+            {
+                "id": user_id.hex,
+                "email": "legacy@university.edu",
+                "name": "Legacy Faculty",
+                "user_type": "Faculty Member",
+                "created_at": now,
+                "updated_at": now,
+            },
+        )
+    engine.dispose()
+
+    command.upgrade(cfg, "head")
+    engine = create_engine(sqlite_url)
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT password_hash, is_active, email_verified, token_version "
+                "FROM users WHERE email = :email"
+            ),
+            {"email": "legacy@university.edu"},
+        ).one()
+    engine.dispose()
+
+    assert row.password_hash is None
+    assert row.is_active in (True, 1)
+    assert row.email_verified in (False, 0)
+    assert row.token_version == 0

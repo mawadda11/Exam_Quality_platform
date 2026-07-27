@@ -1,9 +1,9 @@
 import { Outlet, useLocation } from 'react-router-dom'
-import { DevIdentityBar } from '../DevIdentityBar'
 import { BrandMark } from '../ui/BrandMark'
 import { MobileNavigation } from './MobileNavigation'
 import { PrimaryNavigation } from './PrimaryNavigation'
 import { RouteFocusManager } from './RouteFocusManager'
+import { UserAccountPanel } from './UserAccountPanel'
 
 export function AppShell() {
   const location = useLocation()
@@ -16,6 +16,7 @@ export function AppShell() {
       <aside className="app-sidebar">
         <BrandMark />
         <PrimaryNavigation />
+        <UserAccountPanel />
       </aside>
 
       <header className="app-mobile-header">
@@ -25,7 +26,6 @@ export function AppShell() {
 
       <main className="app-workspace" id="main-content" tabIndex={-1}>
         <RouteFocusManager />
-        <DevIdentityBar />
         <div className="app-route-content">
           <Outlet />
         </div>

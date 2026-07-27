@@ -5,6 +5,7 @@ from app.models.course import Course
 from app.models.evidence import Evidence
 from app.models.extraction_review_revision import ExtractionReviewRevision
 from app.models.finding import Finding, FindingEvidence
+from app.models.password_reset_token import PasswordResetToken
 from app.models.processing_event import ProcessingEvent
 from app.models.question import Question
 from app.models.report import Report
@@ -21,6 +22,7 @@ __all__ = [
     "ExtractionReviewRevision",
     "Finding",
     "FindingEvidence",
+    "PasswordResetToken",
     "ProcessingEvent",
     "Question",
     "Report",

@@ -397,3 +397,48 @@ export interface ExtractionReviewConfirmResponse {
   confirmed_revision_number: number
   state: ProcessingStage
 }
+
+export interface FacultyUserResponse {
+  id: string
+  email: string
+  display_name: string
+  institution: string | null
+  department: string | null
+  user_type: 'Faculty Member'
+  email_verified: boolean
+  created_at: string
+}
+
+export interface RegisterRequest {
+  email: string
+  password: string
+  display_name: string
+  institution?: string | null
+  department?: string | null
+}
+
+export interface LoginRequest {
+  email: string
+  password: string
+}
+
+export interface AuthSessionResponse {
+  access_token: string
+  token_type: 'bearer'
+  expires_in: number
+  user: FacultyUserResponse
+}
+
+export interface PasswordResetRequestResponse {
+  message: string
+  debug_reset_token: string | null
+}
+
+export interface PasswordResetConfirmRequest {
+  token: string
+  new_password: string
+}
+
+export interface MessageResponse {
+  message: string
+}

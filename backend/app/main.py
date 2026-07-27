@@ -2,13 +2,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.analyses import router as analyses_router
+from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.api.reports import router as reports_router
-from app.core.config import get_settings
+from app.core.config import get_settings, validate_runtime_settings
 from app.core.errors import register_exception_handlers
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name, version="1.0.0")
+validate_runtime_settings(settings)
+app = FastAPI(title=settings.app_name, version="2.0.0-arabic-pilot")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origin_list,
@@ -17,6 +19,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(health_router, prefix=settings.api_prefix)
+app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(analyses_router, prefix=settings.api_prefix)
 app.include_router(reports_router, prefix=settings.api_prefix)
 register_exception_handlers(app)

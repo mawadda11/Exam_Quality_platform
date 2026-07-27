@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { BrandMark } from '../ui/BrandMark'
 import { PrimaryNavigation } from './PrimaryNavigation'
+import { UserAccountPanel } from './UserAccountPanel'
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -91,6 +92,7 @@ export function MobileNavigation() {
               </button>
             </div>
             <PrimaryNavigation onNavigate={closeAndReturnFocus} />
+            <UserAccountPanel />
           </div>
         </>
       )}

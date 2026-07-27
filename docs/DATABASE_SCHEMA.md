@@ -7,7 +7,7 @@ and continue processing. M6-M9 reuse the same nullable semantic columns and popu
 database migration is required.
 
 ## Core tables
-- `users`: Faculty Member identity, institution, and department. Version 1 does not require multi-role authorization.
+- `users`: Faculty Member identity, institution, department, password hash, activation state, token version, and last login. Version 1 does not require multi-role authorization.
 - `courses`: course code/name, department, program.
 - `analyses`: course/user, exam type, term, state, predecessor, timestamps.
 - `uploaded_files`: analysis, type, original name, storage key, MIME, size, hash.
@@ -21,6 +21,7 @@ database migration is required.
 - `finding_evidence`: many-to-many trace links.
 - `reports`: storage key, generated time, format, KB version.
 - `processing_events`: stage, state, safe message, timestamps.
+- `password_reset_tokens`: hashed single-use reset token, owner, expiry, and used time.
 - `extraction_review_revisions`: immutable analysis-local, versioned extraction snapshots.
 
 ## Constraints
@@ -110,3 +111,14 @@ deterministic findings may keep both semantic fields null.
 
 These additions are unnecessary for the bounded Version 1 workflow. Derived mappings remain
 analysis details on their authoritative Finding and never use Exam or TP-153 source provenance.
+
+
+## Version 2 Batch 1 authentication persistence
+
+Migration `0009` adds nullable `users.password_hash` for safe Version 1 upgrades, plus non-null
+`is_active`, `email_verified`, and `token_version`, and nullable `last_login_at`. New public accounts
+always receive a password hash. Existing development identities receive no invented credential.
+
+`password_reset_tokens` stores only SHA-256 hashes of random reset tokens. Each row belongs to one
+user and contains `expires_at` and nullable `used_at`; confirmation is rejected after expiry or first
+use. Password reset increments `users.token_version`, invalidating older bearer tokens.

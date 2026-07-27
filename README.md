@@ -1,19 +1,10 @@
 # AI Exam Quality Platform
 
-**Current product release: v1.0.0** — the first complete controlled Version 1 release.
+**Current stable release: v1.0.0** — Version 2 is under development on `develop/v2.0.0-arabic-pilot`.
 
 Evidence-based Midterm and Final exam quality-analysis platform for Faculty Members. Deterministic aggregation and ten governed advisory semantic/hybrid evaluators produce traceable
 findings; the faculty member retains final academic responsibility.
 
-## Start with Claude Code
-1. Upload this repository to GitHub.
-2. Confirm the 11 approved knowledge-base `.xlsx` files are present in `knowledge_base/source/`.
-3. Open the repository in VS Code.
-4. Start Claude Code in the repository root.
-5. Paste the contents of `CLAUDE_CODE_PROMPT.md`.
-6. Ask Claude Code to inspect the repository and implement one milestone at a time.
-
-Claude Code automatically reads `CLAUDE.md` in the repository root.
 
 ## Current implementation status
 
@@ -46,6 +37,9 @@ docker compose up --build
 - Backend API: http://localhost:8000
 - API docs: http://localhost:8000/docs
 
+Create a Faculty Member account from the registration page. In local development, password-reset
+requests show a development reset link. Staging/production require SMTP settings from `.env.example`.
+
 Without Docker (native backend dev server): PostgreSQL must still run somewhere reachable at
 `localhost:5432` (via `docker compose up -d postgres`, or a native install) - see "Running
 PostgreSQL locally" and the backend commands in `CLAUDE.md`.
@@ -66,5 +60,5 @@ See [RAG and AI Design](docs/RAG_AND_AI_DESIGN.md) for the provider, validation,
 - `infrastructure/`: deployment-related configuration.
 
 ## Important
-This remains a development system, not a production accreditation or approval platform. Do not add
+This remains a controlled pilot under development, not a production accreditation or approval platform. Do not add
 real exam files or secrets to Git.
