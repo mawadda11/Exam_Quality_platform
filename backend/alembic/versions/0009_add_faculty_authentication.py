@@ -49,9 +49,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     )
     op.create_index("ix_password_reset_tokens_user_id", "password_reset_tokens", ["user_id"])
-    op.create_index(
-        "ix_password_reset_tokens_expires_at", "password_reset_tokens", ["expires_at"]
-    )
+    op.create_index("ix_password_reset_tokens_expires_at", "password_reset_tokens", ["expires_at"])
 
 
 def downgrade() -> None:
