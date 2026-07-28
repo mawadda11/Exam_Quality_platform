@@ -10,6 +10,7 @@ import { buildLookups } from './lookups'
 import { MarksStructureSection } from './MarksStructureSection'
 import { OverviewSection } from './OverviewSection'
 import { QuestionsSection } from './QuestionsSection'
+import { StructuredEvidenceSection } from './StructuredEvidenceSection'
 import { ReportSection } from './ReportSection'
 import { ResultResourceState } from './ResultResourceState'
 import { ResultsHeader } from './ResultsHeader'
@@ -162,6 +163,10 @@ export function AnalysisResults({
               />
             )}
           </ResultResourceState>
+        )}
+
+        {section === 'supporting-evidence' && (
+          <StructuredEvidenceSection analysisId={analysis.id} />
         )}
 
         {section === 'findings-recommendations' && (

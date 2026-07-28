@@ -52,7 +52,15 @@ JUDGMENT_SEMANTIC_RULE_IDS = {
     "RULE021",
 }
 SEMANTIC_RULE_IDS = RELATIONSHIP_SEMANTIC_RULE_IDS | JUDGMENT_SEMANTIC_RULE_IDS
-DETERMINISTIC_RULE_IDS = {"RULE005", "RULE009", "RULE018", "RULE019"}
+DETERMINISTIC_RULE_IDS = {
+    "RULE005",
+    "RULE009",
+    "RULE014",
+    "RULE016",
+    "RULE018",
+    "RULE019",
+    "RULE022",
+}
 UNCONDITIONAL_RULE_IDS = SEMANTIC_RULE_IDS | DETERMINISTIC_RULE_IDS
 
 
@@ -138,7 +146,7 @@ def test_complete_inputs_execute_all_unconditional_m6_m9_rules_and_reduce_not_ve
 
     assert set(findings) == UNCONDITIONAL_RULE_IDS
     assert "RULE006" not in findings  # documented partial branch for 2+ CLOs
-    assert len(findings) == 14
+    assert len(findings) == 17
 
     for rule_id in ("RULE001", "RULE005", "RULE007", "RULE009"):
         assert findings[rule_id]["status"] == "Satisfied"
@@ -158,9 +166,9 @@ def test_complete_inputs_execute_all_unconditional_m6_m9_rules_and_reduce_not_ve
     assert coverage.status_code == 200
     body = coverage.json()
     assert body["total_rules"] == 21
-    assert body["evaluated_rules"] == 14
+    assert body["evaluated_rules"] == 17
     assert body["conditional_capability_gap_rules"] == 1
-    assert body["unsupported_rules"] == 6
+    assert body["unsupported_rules"] == 3
     assert body["not_run_rules"] == 0
     assert body["runtime_integrity_ok"] is True
 

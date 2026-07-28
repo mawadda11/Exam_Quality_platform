@@ -7,9 +7,16 @@ from io import BytesIO
 
 import pdfplumber
 
-from app.core.domain import AcademicStatus, ExamType, UploadedFileType
+from app.core.domain import AcademicStatus, ExamType, ReportLanguage, UploadedFileType
 from app.services.knowledge_base.reference_data import RecommendationDisplay
-from app.services.reporting.content import EvidenceCitation, ReportContent, ReportFindingEntry
+from app.services.reporting.content import (
+    EvidenceCitation,
+    ReportContent,
+    ReportDocumentReferenceEntry,
+    ReportFindingEntry,
+    ReportSupportingAnnotationEntry,
+    ReportSupportingMaterialEntry,
+)
 from app.services.reporting.pdf import render_report_pdf
 
 GENERATED_AT = datetime(2026, 7, 24, 12, 0, tzinfo=UTC)
@@ -70,6 +77,53 @@ def test_render_report_pdf_produces_a_valid_pdf_document() -> None:
 def test_render_report_pdf_handles_zero_findings() -> None:
     pdf_bytes = render_report_pdf(_content(findings=()))
     assert pdf_bytes.startswith(b"%PDF")
+
+
+def test_structured_evidence_is_present_in_english_and_arabic_reports() -> None:
+    structured_content = _content(
+        capability_version="v2-b4-structured-evidence",
+        supporting_materials=(
+            ReportSupportingMaterialEntry(
+                identifier=uuid.uuid4(),
+                material_type="figure",
+                page_number=2,
+                source_text="SELECT student_id FROM results",
+                confidence=0.94,
+                extraction_method="direct_text",
+            ),
+        ),
+        supporting_annotations=(
+            ReportSupportingAnnotationEntry(
+                annotation_type="caption",
+                original_text="الشكل 1: Relational Database Schema",
+                page_number=2,
+                confidence=0.93,
+            ),
+        ),
+        document_references=(
+            ReportDocumentReferenceEntry(
+                original_text="Refer to Figure 1",
+                target_type="figure",
+                target_label="Figure 1",
+                page_number=1,
+                confidence=0.96,
+                resolution_status="resolved",
+                candidate_count=1,
+            ),
+        ),
+    )
+
+    english = render_report_pdf(structured_content, language=ReportLanguage.ENGLISH)
+    arabic = render_report_pdf(structured_content, language=ReportLanguage.ARABIC)
+    english_text = _pdf_text(english)
+    arabic_text = _pdf_text(arabic)
+
+    for text in (english_text, arabic_text):
+        assert "SELECT student_id FROM results" in text
+        assert "Relational Database Schema" in text
+        assert "Refer to Figure 1" in text
+        assert "v2-b4-structured-evidence" in text
+    assert english != arabic
 
 
 def test_render_report_pdf_handles_a_finding_with_evidence_and_recommendation() -> None:

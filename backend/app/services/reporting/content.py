@@ -11,7 +11,7 @@ relationships independently.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -25,7 +25,10 @@ from app.core.domain import (
 )
 from app.models.analysis import Analysis
 from app.models.assessment_record import AssessmentRecord
+from app.models.document_reference import DocumentReference
 from app.models.finding import Finding
+from app.models.supporting_material import SupportingMaterial
+from app.models.supporting_material_annotation import SupportingMaterialAnnotation
 from app.schemas.finding import FindingEvaluationDetails
 from app.schemas.rule_coverage import RuleCoverageAuditResponse
 from app.services.knowledge_base.manifest import KB_VERSION
@@ -35,6 +38,10 @@ from app.services.knowledge_base.reference_data import (
     get_requirement_display,
 )
 from app.services.rules.scoring import calculate_overall_score, count_statuses
+from app.services.rules.versioning import (
+    LEGACY_CAPABILITY_VERSION,
+    effective_capability_version,
+)
 
 
 @dataclass(frozen=True)
@@ -67,6 +74,35 @@ class ReportAssessmentRecordEntry:
     activity: str | None
     percentage: float | None
     page_number: int
+
+
+@dataclass(frozen=True)
+class ReportSupportingMaterialEntry:
+    identifier: uuid.UUID
+    material_type: str
+    page_number: int
+    source_text: str
+    confidence: float
+    extraction_method: str
+
+
+@dataclass(frozen=True)
+class ReportSupportingAnnotationEntry:
+    annotation_type: str
+    original_text: str
+    page_number: int
+    confidence: float
+
+
+@dataclass(frozen=True)
+class ReportDocumentReferenceEntry:
+    original_text: str
+    target_type: str
+    target_label: str
+    page_number: int
+    confidence: float
+    resolution_status: str
+    candidate_count: int
 
 
 @dataclass(frozen=True)
@@ -119,6 +155,10 @@ class ReportContent:
     findings: tuple[ReportFindingEntry, ...]
     assessment_records: tuple[ReportAssessmentRecordEntry, ...] = ()
     rule_coverage: RuleCoverageAuditResponse | None = None
+    supporting_materials: tuple[ReportSupportingMaterialEntry, ...] = ()
+    supporting_annotations: tuple[ReportSupportingAnnotationEntry, ...] = ()
+    document_references: tuple[ReportDocumentReferenceEntry, ...] = ()
+    capability_version: str = LEGACY_CAPABILITY_VERSION
 
     @property
     def missing_evidence(self) -> tuple[ReportFindingEntry, ...]:
@@ -225,6 +265,54 @@ def _assessment_entry(record: AssessmentRecord) -> ReportAssessmentRecordEntry:
     )
 
 
+def _supporting_material_entry(record: SupportingMaterial) -> ReportSupportingMaterialEntry:
+    return ReportSupportingMaterialEntry(
+        identifier=record.id,
+        material_type=record.material_type.value,
+        page_number=record.page_number,
+        source_text=record.source_text,
+        confidence=record.confidence,
+        extraction_method=record.extraction_method,
+    )
+
+
+def _supporting_annotation_entry(
+    record: SupportingMaterialAnnotation,
+    presentation_text: str | None = None,
+) -> ReportSupportingAnnotationEntry:
+    return ReportSupportingAnnotationEntry(
+        annotation_type=record.annotation_type.value,
+        original_text=presentation_text or record.original_text,
+        page_number=record.page_number,
+        confidence=record.confidence,
+    )
+
+
+def _document_reference_entry(
+    record: DocumentReference,
+    confirmed_review_id: uuid.UUID | None,
+) -> ReportDocumentReferenceEntry:
+    candidates = [
+        item
+        for item in record.association_candidates
+        if item.review_revision_id == confirmed_review_id
+    ]
+    exact = [item for item in candidates if item.exact_label_match]
+    selected = [item for item in exact if item.selected]
+    resolution = (
+        "resolved" if len(selected) == 1 else ("ambiguous" if len(exact) > 1 else "unresolved")
+    )
+    return ReportDocumentReferenceEntry(
+        original_text=record.original_text,
+        target_type=record.target_type.value,
+        target_label=record.target_label,
+        page_number=record.page_number,
+        confidence=record.confidence,
+        resolution_status=resolution,
+        candidate_count=len(candidates),
+    )
+
+
 def assemble_report_content(
     analysis: Analysis,
     findings: Sequence[Finding],
@@ -233,6 +321,10 @@ def assemble_report_content(
     *,
     assessment_records: Sequence[AssessmentRecord] = (),
     rule_coverage: RuleCoverageAuditResponse | None = None,
+    supporting_materials: Sequence[SupportingMaterial] = (),
+    supporting_annotations: Sequence[SupportingMaterialAnnotation] = (),
+    supporting_annotation_texts: Mapping[uuid.UUID, str] | None = None,
+    document_references: Sequence[DocumentReference] = (),
 ) -> ReportContent:
     statuses = [f.status for f in findings]
     score_result = calculate_overall_score(statuses)
@@ -258,4 +350,19 @@ def assemble_report_content(
         findings=entries,
         assessment_records=tuple(_assessment_entry(item) for item in assessment_records),
         rule_coverage=rule_coverage,
+        supporting_materials=tuple(
+            _supporting_material_entry(item) for item in supporting_materials
+        ),
+        supporting_annotations=tuple(
+            _supporting_annotation_entry(
+                item,
+                (supporting_annotation_texts or {}).get(item.id),
+            )
+            for item in supporting_annotations
+        ),
+        document_references=tuple(
+            _document_reference_entry(item, analysis.confirmed_review_id)
+            for item in document_references
+        ),
+        capability_version=effective_capability_version(analysis),
     )

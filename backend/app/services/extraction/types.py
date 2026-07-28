@@ -4,6 +4,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from app.core.domain import (
+    ReferenceTargetType,
+    SupportingAnnotationType,
+    SupportingMaterialType,
+)
 from app.services.extraction.language_detection import TextLanguage
 
 
@@ -62,11 +67,53 @@ class ExtractedEvidence:
 
 
 @dataclass(frozen=True)
+class ExtractedSupportingMaterial:
+    local_key: str
+    material_type: SupportingMaterialType
+    page_number: int
+    source_text: str
+    confidence: float
+    geometry: Geometry | None
+    extraction_method: str
+    question_number_label: str | None = None
+
+
+@dataclass(frozen=True)
+class ExtractedSupportingAnnotation:
+    local_key: str
+    material_local_key: str | None
+    annotation_type: SupportingAnnotationType
+    original_text: str
+    normalized_label: str | None
+    page_number: int
+    confidence: float
+    geometry: Geometry | None
+    extraction_method: str
+
+
+@dataclass(frozen=True)
+class ExtractedDocumentReference:
+    local_key: str
+    target_type: ReferenceTargetType
+    original_text: str
+    target_label: str
+    normalized_target_label: str
+    page_number: int
+    confidence: float
+    geometry: Geometry | None
+    extraction_method: str
+    question_number_label: str | None = None
+
+
+@dataclass(frozen=True)
 class ExtractionResult:
     questions: list[ExtractedQuestion]
     evidence: list[ExtractedEvidence]
     document_language: TextLanguage = TextLanguage.UNKNOWN
     page_diagnostics: list[PageExtractionDiagnostic] = field(default_factory=list)
+    supporting_materials: list[ExtractedSupportingMaterial] = field(default_factory=list)
+    supporting_annotations: list[ExtractedSupportingAnnotation] = field(default_factory=list)
+    document_references: list[ExtractedDocumentReference] = field(default_factory=list)
 
 
 class ExamExtractor(Protocol):
@@ -81,6 +128,8 @@ class ExtractedClo:
     page_number: int
     confidence: float
     geometry: Geometry | None
+    source_text: str | None = None
+    extraction_method: str = "direct_text"
 
 
 @dataclass(frozen=True)
@@ -91,6 +140,8 @@ class ExtractedTopic:
     page_number: int
     confidence: float
     geometry: Geometry | None
+    source_text: str | None = None
+    extraction_method: str = "direct_text"
 
 
 @dataclass(frozen=True)
@@ -101,6 +152,8 @@ class ExtractedAssessmentRecord:
     page_number: int
     confidence: float
     geometry: Geometry | None
+    source_text: str | None = None
+    extraction_method: str = "direct_text"
 
 
 @dataclass(frozen=True)
@@ -126,6 +179,14 @@ class Tp153MissingEvidence:
 
 
 @dataclass(frozen=True)
+class CourseSpecificationWarning:
+    code: str
+    page_number: int
+    message: str
+    confidence: float
+
+
+@dataclass(frozen=True)
 class Tp153ExtractionResult:
     clos: list[ExtractedClo]
     topics: list[ExtractedTopic]
@@ -135,6 +196,7 @@ class Tp153ExtractionResult:
     layout_family: str = "unknown"
     document_language: TextLanguage = TextLanguage.UNKNOWN
     page_diagnostics: list[PageExtractionDiagnostic] = field(default_factory=list)
+    review_warnings: list[CourseSpecificationWarning] = field(default_factory=list)
 
 
 class Tp153Extractor(Protocol):

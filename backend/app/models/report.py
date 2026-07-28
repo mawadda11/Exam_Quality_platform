@@ -47,6 +47,7 @@ class Report(Base):
     size_bytes: Mapped[int] = mapped_column(BigInteger)
     sha256_hash: Mapped[str] = mapped_column(String(64))
     kb_version: Mapped[str] = mapped_column(String(50))
+    capability_version: Mapped[str | None] = mapped_column(String(100), default=None)
     score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=None)
     score_label: Mapped[str | None] = mapped_column(String(50), default=None)
     denominator: Mapped[int] = mapped_column(Integer)

@@ -14,15 +14,30 @@ import { localizeInterfaceError, localizeServerMessage } from '../../i18n/locali
 import type {
   ExtractionReviewClo,
   ExtractionReviewConfirmResponse,
+  ExtractionReviewDocumentReference,
   ExtractionReviewQuestion,
   ExtractionReviewResponse,
   ExtractionReviewSnapshot,
+  ExtractionReviewSupportingAnnotation,
+  ExtractionReviewSupportingMaterial,
   ExtractionReviewTopic,
 } from '../../types/api'
 
-type ReviewTab = 'questions' | 'clos' | 'topics'
-type EditableCollection = ReviewTab
-type ReviewRecord = ExtractionReviewQuestion | ExtractionReviewClo | ExtractionReviewTopic
+type ReviewTab = 'questions' | 'clos' | 'topics' | 'structured'
+type EditableCollection =
+  | 'questions'
+  | 'clos'
+  | 'topics'
+  | 'supporting_materials'
+  | 'supporting_annotations'
+  | 'document_references'
+type ReviewRecord =
+  | ExtractionReviewQuestion
+  | ExtractionReviewClo
+  | ExtractionReviewTopic
+  | ExtractionReviewSupportingMaterial
+  | ExtractionReviewSupportingAnnotation
+  | ExtractionReviewDocumentReference
 
 interface ExtractionReviewWorkspaceProps {
   analysisId: string
@@ -124,7 +139,7 @@ function updateSnapshotRecord(
   }
 
 
-  const items = snapshot[collection] as ReviewRecord[]
+  const items = (snapshot[collection] ?? []) as ReviewRecord[]
   return {
     ...snapshot,
     [collection]: replaceRecord(items, sourceRecordId, patch),
@@ -457,6 +472,145 @@ function TopicsPanel({
   )
 }
 
+interface StructuredEvidencePanelProps {
+  snapshot: ExtractionReviewSnapshot
+  disabled: boolean
+  onChange: (
+    collection: EditableCollection,
+    id: string,
+    patch: Partial<ReviewRecord>,
+  ) => void
+}
+
+function StructuredEvidencePanel({
+  snapshot,
+  disabled,
+  onChange,
+}: StructuredEvidencePanelProps) {
+  const { locale, t } = useI18n()
+  const materials = snapshot.supporting_materials ?? []
+  const annotations = snapshot.supporting_annotations ?? []
+  const references = snapshot.document_references ?? []
+  const associations = snapshot.reference_associations ?? []
+  return (
+    <div className="review-record-list">
+      <h2>{t('Supporting materials')} ({materials.length})</h2>
+      {materials.map((item) => (
+        <Card as="article" key={item.source_record_id} className="review-record-card">
+          <label>
+            <input
+              type="checkbox"
+              checked={item.included}
+              disabled={disabled}
+              onChange={(event) =>
+                onChange('supporting_materials', item.source_record_id, {
+                  included: event.target.checked,
+                })
+              }
+            />
+            {t('Include')} {t(item.material_type.replace('_', ' '))}
+          </label>
+          <p>{t('Page')} {item.page_number} · {t('Confidence')} {Math.round(item.extraction_confidence * 100)}%</p>
+          {item.source_text && (
+            <>
+              <strong>{t('Original source text')}</strong>
+              <pre dir="auto">{item.source_text}</pre>
+            </>
+          )}
+        </Card>
+      ))}
+
+      <h2>{t('Labels and captions')} ({annotations.length})</h2>
+      {annotations.map((item) => (
+        <Card as="article" key={item.source_record_id} className="review-record-card">
+          <label>
+            <input
+              type="checkbox"
+              checked={item.included}
+              disabled={disabled}
+              onChange={(event) =>
+                onChange('supporting_annotations', item.source_record_id, {
+                  included: event.target.checked,
+                })
+              }
+            />
+            {t('Include')} {t(item.annotation_type)}
+          </label>
+          <label>
+            {t('Extracted text')}
+            <textarea
+              value={item.original_text}
+              disabled={disabled || !item.included}
+              dir="auto"
+              className="bidi-plaintext"
+              onChange={(event) =>
+                onChange('supporting_annotations', item.source_record_id, {
+                  original_text: event.target.value,
+                })
+              }
+            />
+          </label>
+        </Card>
+      ))}
+
+      <h2>{t('Explicit references')} ({references.length})</h2>
+      {references.map((item) => (
+        <Card as="article" key={item.source_record_id} className="review-record-card">
+          <label>
+            <input
+              type="checkbox"
+              checked={item.included}
+              disabled={disabled}
+              onChange={(event) =>
+                onChange('document_references', item.source_record_id, {
+                  included: event.target.checked,
+                })
+              }
+            />
+            {t('Include reference')}
+          </label>
+          <strong>{t('Original source text')}</strong>
+          <p dir="auto">{item.original_text}</p>
+          <label>
+            {t('Target label')}
+            <input
+              value={item.target_label}
+              disabled={disabled || !item.included}
+              dir="auto"
+              onChange={(event) =>
+                onChange('document_references', item.source_record_id, {
+                  target_label: event.target.value,
+                })
+              }
+            />
+          </label>
+          <p>{t('Resolution')}: {t(item.resolution_status)}</p>
+        </Card>
+      ))}
+
+      <h2>{t('Association candidates')} ({associations.length})</h2>
+      <ul className="review-warning-list">
+        {associations.map((item) => (
+          <li key={item.source_record_id}>
+            {t(item.basis)} · {item.selected ? t('Selected exact target') : t('Review candidate')}
+            {item.ambiguity_reason
+              ? ` · ${
+                  locale === 'ar'
+                    ? t(
+                        item.basis === 'proximity_support'
+                          ? 'Proximity is supporting evidence only.'
+                          : 'Multiple exact targets share this label.',
+                      )
+                    : item.ambiguity_reason
+                }`
+              : ''}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 
 export function ExtractionReviewWorkspace({
   analysisId,
@@ -539,6 +693,13 @@ export function ExtractionReviewWorkspace({
     { id: 'questions', label: `${t('Questions')} (${draft.questions.length})` },
     { id: 'clos', label: `${t('CLOs')} (${draft.clos.length})` },
     { id: 'topics', label: `${t('Topics')} (${draft.topics.length})` },
+    {
+      id: 'structured',
+      label: `${t('Materials & References')} (${
+        (draft.supporting_materials ?? []).length +
+        (draft.document_references ?? []).length
+      })`,
+    },
   ]
 
   function changeRecord(
@@ -667,6 +828,13 @@ export function ExtractionReviewWorkspace({
             original={review.original_snapshot.topics}
             disabled={!review.can_edit}
             onChange={(id, patch) => changeRecord('topics', id, patch)}
+          />
+        )}
+        {activeTab === 'structured' && (
+          <StructuredEvidencePanel
+            snapshot={draft}
+            disabled={!review.can_edit}
+            onChange={changeRecord}
           />
         )}
       </section>

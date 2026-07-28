@@ -51,6 +51,7 @@ class RuleCoverageAuditResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     analysis_id: UUID
+    capability_version: str = "v2-b3"
     scope: Literal["exam_facing_rules"] = "exam_facing_rules"
     total_rules: int = Field(ge=0)
     evaluated_rules: int = Field(ge=0)

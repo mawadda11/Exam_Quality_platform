@@ -25,6 +25,7 @@ def test_create_analysis_returns_201_with_expected_shape(client: TestClient) -> 
     assert body["tp153_uploaded"] is False
     assert body["ready_for_analysis"] is False
     assert body["uploaded_files"] == []
+    assert body["capability_version"] == "v2-b4-structured-evidence"
 
 
 def test_create_analysis_missing_auth_header_returns_401(client: TestClient) -> None:

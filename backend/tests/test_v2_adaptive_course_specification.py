@@ -114,3 +114,43 @@ def test_missing_sections_never_create_placeholder_domain_rows() -> None:
         "topics",
         "assessment_records",
     }
+
+
+def test_mixed_reordered_layout_preserves_pages_confidence_and_provenance() -> None:
+    result = AdaptiveCourseSpecificationExtractor().parse_lines(
+        [
+            _line("طرق التقييم", page=4),
+            _line("Midterm | Written exam | 30%", page=4, confidence=0.91),
+            _line("Course Topics", page=2),
+            _line("T1 | هياكل البيانات | 4 hours", page=2, confidence=0.87),
+            _line("مخرجات التعلم", page=3),
+            _line("CLO1 | Explain هياكل البيانات | PLO2", page=3, confidence=0.89),
+        ]
+    )
+
+    assert result.document_language == TextLanguage.MIXED
+    assert result.layout_family == "table_led"
+    assert result.clos[0].page_number == 3
+    assert result.clos[0].confidence == 0.801
+    assert result.clos[0].geometry is not None
+    assert result.topics[0].page_number == 2
+    assert result.assessment_records[0].page_number == 4
+    assert result.missing_sections == []
+
+
+def test_duplicate_and_low_confidence_records_emit_review_warnings() -> None:
+    result = AdaptiveCourseSpecificationExtractor().parse_lines(
+        [
+            _line("Course Learning Outcomes"),
+            _line("CLO1: Explain databases.", confidence=0.68),
+            _line("CLO1: Apply databases.", confidence=0.9),
+            _line("Course Topics"),
+            _line("T1: Database foundations - 3 hours"),
+            _line("Assessment Methods"),
+            _line("Midterm | Written exam | 30%"),
+        ]
+    )
+
+    warning_codes = {warning.code for warning in result.review_warnings}
+    assert "duplicate_conflicting_code" in warning_codes
+    assert all(warning.page_number >= 1 for warning in result.review_warnings)

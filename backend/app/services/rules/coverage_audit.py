@@ -18,10 +18,16 @@ from app.schemas.rule_coverage import (
     RuleRuntimeDisposition,
 )
 from app.services.rules.capability_manifest import CAPABILITY_MANIFEST, SupportStatus
+from app.services.rules.versioning import LEGACY_CAPABILITY_VERSION
+
+_BATCH4_RULE_IDS = {"RULE014", "RULE016", "RULE022"}
 
 
 def build_rule_coverage_audit(
-    analysis_id: UUID, findings: Sequence[Finding]
+    analysis_id: UUID,
+    findings: Sequence[Finding],
+    *,
+    capability_version: str = LEGACY_CAPABILITY_VERSION,
 ) -> RuleCoverageAuditResponse:
     findings_by_rule = {finding.rule_id: finding for finding in findings}
     if len(findings_by_rule) != len(findings):
@@ -33,6 +39,15 @@ def build_rule_coverage_audit(
         if finding is not None:
             disposition = RuleRuntimeDisposition.EVALUATED
             reason = capability.reason
+        elif (
+            capability_version == LEGACY_CAPABILITY_VERSION
+            and capability.rule_id in _BATCH4_RULE_IDS
+        ):
+            disposition = RuleRuntimeDisposition.UNSUPPORTED
+            reason = (
+                f"{capability.rule_id} was not part of the stored {capability_version} "
+                "capability set used for this analysis."
+            )
         elif capability.support_status is SupportStatus.UNSUPPORTED:
             disposition = RuleRuntimeDisposition.UNSUPPORTED
             reason = capability.reason
@@ -78,6 +93,7 @@ def build_rule_coverage_audit(
 
     return RuleCoverageAuditResponse(
         analysis_id=analysis_id,
+        capability_version=capability_version,
         total_rules=len(entries),
         evaluated_rules=evaluated,
         conditional_capability_gap_rules=conditional,

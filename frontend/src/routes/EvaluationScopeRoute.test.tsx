@@ -8,9 +8,9 @@ describe('EvaluationScopeRoute', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'What the Platform Evaluates' }))
       .toBeInTheDocument()
-    expect(screen.getByText('14')).toBeInTheDocument()
+    expect(screen.getByText('17')).toBeInTheDocument()
     expect(screen.getByText('1')).toBeInTheDocument()
-    expect(screen.getByText('6')).toBeInTheDocument()
+    expect(screen.getByText('3')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Available checks' }))
       .toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Planned capabilities' }))

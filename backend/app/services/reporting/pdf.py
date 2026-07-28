@@ -62,6 +62,7 @@ _EN = {
     "analysis_id": "Analysis ID",
     "generated": "Generated",
     "kb_version": "KB version",
+    "capability_version": "Capability version",
     "scope": "Scope",
     "scope_text": (
         "This report is limited to the uploaded examination and its populated TP-153 Course "
@@ -85,6 +86,15 @@ _EN = {
         "insufficient - not because the exam failed the requirement."
     ),
     "findings": "Findings",
+    "structured_evidence": "Supporting materials and cross-references",
+    "materials": "Supporting materials",
+    "annotations": "Labels and captions",
+    "references": "Explicit references",
+    "material_type": "Material type",
+    "extraction_method": "Extraction method",
+    "confidence": "Extraction confidence",
+    "resolution": "Resolution",
+    "candidates": "Candidates",
     "no_findings": "No findings are available for this analysis.",
     "semantic_confidence": "Semantic confidence",
     "confidence_note": "categorical only; not a score, severity, priority, probability, or weight",
@@ -125,6 +135,7 @@ _AR = {
     "analysis_id": "معرّف التحليل",
     "generated": "تاريخ الإنشاء",
     "kb_version": "إصدار قاعدة المعرفة",
+    "capability_version": "إصدار القدرات",
     "scope": "نطاق التقرير",
     "scope_text": (
         "يقتصر هذا التقرير على الاختبار المرفوع وتوصيف المقرر TP-153 المعبأ. ولا يقيّم "
@@ -147,6 +158,15 @@ _AR = {
         "وليس لأن الاختبار أخفق في المتطلب."
     ),
     "findings": "نتائج التقييم",
+    "structured_evidence": "المواد المساندة والإحالات المرجعية",
+    "materials": "المواد المساندة",
+    "annotations": "التسميات والعناوين التوضيحية",
+    "references": "الإحالات الصريحة",
+    "material_type": "نوع المادة",
+    "extraction_method": "طريقة الاستخراج",
+    "confidence": "ثقة الاستخراج",
+    "resolution": "حالة التحديد",
+    "candidates": "المرشحون",
     "no_findings": "لا توجد نتائج تقييم متاحة لهذا التحليل.",
     "semantic_confidence": "الثقة الدلالية",
     "confidence_note": "تصنيف وصفي فقط، وليست درجة أو شدة أو أولوية أو احتمالًا أو وزنًا",
@@ -196,6 +216,23 @@ def _confidence(value: str, language: ReportLanguage) -> str:
     if language is not ReportLanguage.ARABIC:
         return value
     return {"High": "مرتفع", "Medium": "متوسط", "Low": "منخفض"}.get(value, value)
+
+
+def _structured_label(value: str, language: ReportLanguage) -> str:
+    if language is not ReportLanguage.ARABIC:
+        return value.replace("_", " ").title()
+    return {
+        "figure": "شكل",
+        "table": "جدول",
+        "code_block": "مقطع شفرة",
+        "label": "تسمية",
+        "caption": "عنوان توضيحي",
+        "resolved": "محدد بصورة فريدة",
+        "ambiguous": "ملتبس",
+        "unresolved": "غير محدد",
+        "direct_text": "نص مباشر",
+        "ocr": "تعرّف ضوئي",
+    }.get(value, value)
 
 
 def _first_existing_font(candidates: tuple[Path, ...]) -> Path:
@@ -479,6 +516,75 @@ def _render_finding(
     pdf.ln(3)
 
 
+def _render_structured_evidence(
+    pdf: FPDF,
+    content: ReportContent,
+    language: ReportLanguage,
+) -> None:
+    strings = _strings(language)
+    if not (
+        content.supporting_materials
+        or content.supporting_annotations
+        or content.document_references
+    ):
+        return
+    _heading(pdf, strings["structured_evidence"])
+    if content.supporting_materials:
+        _subheading(pdf, f"{strings['materials']} ({len(content.supporting_materials)})")
+        for material_entry in content.supporting_materials:
+            _paragraph(
+                pdf,
+                f"{_structured_label(material_entry.material_type, language)} | "
+                f"{strings['page']} {material_entry.page_number} | "
+                f"{strings['confidence']}: {material_entry.confidence:.2f} | "
+                f"{strings['extraction_method']}: "
+                f"{_structured_label(material_entry.extraction_method, language)}",
+                size=9,
+            )
+            if material_entry.source_text:
+                _paragraph(
+                    pdf,
+                    f"{strings['original_wording']}: {material_entry.source_text}",
+                    style="I",
+                    size=8,
+                )
+    if content.supporting_annotations:
+        _subheading(pdf, f"{strings['annotations']} ({len(content.supporting_annotations)})")
+        for annotation_entry in content.supporting_annotations:
+            _paragraph(
+                pdf,
+                f"{_structured_label(annotation_entry.annotation_type, language)} | "
+                f"{strings['page']} {annotation_entry.page_number} | "
+                f"{strings['confidence']}: {annotation_entry.confidence:.2f}",
+                size=9,
+            )
+            _paragraph(
+                pdf,
+                f"{strings['original_wording']}: {annotation_entry.original_text}",
+                style="I",
+                size=8,
+            )
+    if content.document_references:
+        _subheading(pdf, f"{strings['references']} ({len(content.document_references)})")
+        for reference_entry in content.document_references:
+            _paragraph(
+                pdf,
+                f"{_structured_label(reference_entry.target_type, language)} | "
+                f"{strings['page']} {reference_entry.page_number} | "
+                f"{strings['resolution']}: "
+                f"{_structured_label(reference_entry.resolution_status, language)} | "
+                f"{strings['candidates']}: {reference_entry.candidate_count}",
+                size=9,
+            )
+            _paragraph(
+                pdf,
+                f"{strings['original_wording']}: {reference_entry.original_text}",
+                style="I",
+                size=8,
+            )
+    pdf.ln(2)
+
+
 def render_report_pdf(
     content: ReportContent,
     *,
@@ -505,7 +611,8 @@ def render_report_pdf(
         pdf,
         f"{strings['analysis_id']}: {content.analysis_id} | {strings['generated']}: "
         f"{content.generated_at.isoformat(timespec='seconds')} | {strings['kb_version']}: "
-        f"{content.kb_version}",
+        f"{content.kb_version} | {strings['capability_version']}: "
+        f"{content.capability_version}",
         size=9,
     )
     pdf.ln(2)
@@ -543,6 +650,8 @@ def render_report_pdf(
                 size=10,
             )
         pdf.ln(2)
+
+    _render_structured_evidence(pdf, content, language)
 
     _heading(pdf, f"{strings['findings']} ({len(content.findings)})")
     if not content.findings:

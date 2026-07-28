@@ -1,0 +1,147 @@
+"""Geometry-aware PDF reading order without mutating source spans.
+
+Some digital PDF producers store Arabic glyphs in visual order while also
+placing Latin fragments according to an RTL paragraph flow.  pdfplumber's
+default text is useful audit source, but is not always suitable for matching.
+This module keeps those source spans untouched and derives a second,
+geometry-based reading representation solely for parsing.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Any
+
+from pdfplumber.page import Page
+
+from app.services.extraction.types import Geometry
+
+_ARABIC = re.compile(r"[\u0600-\u06ff]")
+_SPACE_BEFORE_PUNCTUATION = re.compile(r"\s+([,.;:!?،؛])")
+_SPACE_AFTER_OPEN = re.compile(r"([\[(])\s+")
+_SPACE_BEFORE_CLOSE = re.compile(r"\s+([\])])")
+_LINE_TOLERANCE = 6.5
+
+
+@dataclass(frozen=True)
+class PdfLayoutLine:
+    raw_text: str
+    reading_text: str
+    page_number: int
+    geometry: Geometry
+    source_spans: tuple[str, ...]
+
+
+def _bbox_key(word: dict[str, Any]) -> tuple[float, float, float, float]:
+    return (
+        round(float(word["x0"]), 2),
+        round(float(word["top"]), 2),
+        round(float(word["x1"]), 2),
+        round(float(word["bottom"]), 2),
+    )
+
+
+def _geometry(words: list[dict[str, Any]]) -> Geometry:
+    return Geometry(
+        x0=min(float(word["x0"]) for word in words),
+        top=min(float(word["top"]) for word in words),
+        x1=max(float(word["x1"]) for word in words),
+        bottom=max(float(word["bottom"]) for word in words),
+    )
+
+
+def _clean_join(tokens: list[str]) -> str:
+    value = " ".join(token for token in tokens if token).strip()
+    value = _SPACE_BEFORE_PUNCTUATION.sub(r"\1", value)
+    value = _SPACE_AFTER_OPEN.sub(r"\1", value)
+    value = _SPACE_BEFORE_CLOSE.sub(r"\1", value)
+    return value
+
+
+def _inside_bbox(word: dict[str, Any], bbox: tuple[float, float, float, float]) -> bool:
+    x0, top, x1, bottom = bbox
+    center_x = (float(word["x0"]) + float(word["x1"])) / 2
+    center_y = (float(word["top"]) + float(word["bottom"])) / 2
+    return x0 <= center_x <= x1 and top <= center_y <= bottom
+
+
+def extract_layout_lines(
+    page: Page,
+    *,
+    page_number: int,
+    bbox: tuple[float, float, float, float] | None = None,
+) -> list[PdfLayoutLine]:
+    default_words = list(page.extract_words(use_text_flow=False))
+    rtl_words = list(page.extract_words(use_text_flow=False, char_dir="rtl"))
+    flow_words = list(page.extract_words(use_text_flow=True))
+    if bbox is not None:
+        default_words = [word for word in default_words if _inside_bbox(word, bbox)]
+        rtl_words = [word for word in rtl_words if _inside_bbox(word, bbox)]
+        flow_words = [word for word in flow_words if _inside_bbox(word, bbox)]
+    if not default_words and not rtl_words:
+        return []
+
+    default_by_bbox = {_bbox_key(word): word for word in default_words}
+    merged_words: list[dict[str, Any]] = []
+    for rtl_word in rtl_words:
+        default_word = default_by_bbox.get(_bbox_key(rtl_word))
+        rtl_text = str(rtl_word["text"])
+        default_text = str(default_word["text"]) if default_word is not None else rtl_text
+        logical_text = rtl_text if _ARABIC.search(rtl_text + default_text) else default_text
+        merged_words.append(
+            {
+                **rtl_word,
+                "raw_text": default_text,
+                "logical_text": logical_text,
+            }
+        )
+
+    groups: list[dict[str, Any]] = []
+    for word in sorted(merged_words, key=lambda item: (float(item["top"]), float(item["x0"]))):
+        top = float(word["top"])
+        group = (
+            groups[-1]
+            if groups and abs(top - float(groups[-1]["mean_top"])) <= _LINE_TOLERANCE
+            else None
+        )
+        if group is None:
+            groups.append({"mean_top": top, "words": [word]})
+            continue
+        group["words"].append(word)
+        group["mean_top"] = sum(float(item["top"]) for item in group["words"]) / len(group["words"])
+
+    lines: list[PdfLayoutLine] = []
+    for group in groups:
+        words = list(group["words"])
+        geometry = _geometry(words)
+        physical = sorted(words, key=lambda item: float(item["x0"]))
+        has_arabic = any(_ARABIC.search(str(item["logical_text"])) for item in words)
+        if has_arabic:
+            reading_tokens = [
+                str(item["logical_text"])
+                for item in sorted(words, key=lambda item: float(item["x0"]), reverse=True)
+            ]
+        else:
+            matching_flow = [
+                word
+                for word in flow_words
+                if float(word["bottom"]) >= geometry.top
+                and float(word["top"]) <= geometry.bottom
+                and float(word["x1"]) >= geometry.x0
+                and float(word["x0"]) <= geometry.x1
+            ]
+            reading_tokens = [str(word["text"]) for word in matching_flow]
+            if not reading_tokens:
+                reading_tokens = [str(item["logical_text"]) for item in physical]
+        source_spans = tuple(str(item["raw_text"]) for item in physical)
+        lines.append(
+            PdfLayoutLine(
+                raw_text=_clean_join(list(source_spans)),
+                reading_text=_clean_join(reading_tokens),
+                page_number=page_number,
+                geometry=geometry,
+                source_spans=source_spans,
+            )
+        )
+    return sorted(lines, key=lambda line: (line.geometry.top, line.geometry.x0))

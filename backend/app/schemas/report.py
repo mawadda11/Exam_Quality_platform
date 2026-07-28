@@ -25,6 +25,7 @@ class ReportResponse(BaseModel):
     format: ReportFormat
     language: ReportLanguage
     kb_version: str
+    capability_version: str | None
     score: Decimal | None
     score_label: str | None
     denominator: int

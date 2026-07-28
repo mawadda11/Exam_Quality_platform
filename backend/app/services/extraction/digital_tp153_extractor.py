@@ -23,6 +23,7 @@ from app.services.extraction.language_detection import (
     detect_text_language,
 )
 from app.services.extraction.ocr import OCR_RESOLUTION_DPI, OcrEngine, TesseractOcrEngine
+from app.services.extraction.pdf_layout import extract_layout_lines
 from app.services.extraction.text_normalization import (
     normalize_arabic_for_matching,
     parse_localized_number,
@@ -30,6 +31,7 @@ from app.services.extraction.text_normalization import (
 )
 from app.services.extraction.text_quality import assess_text_quality
 from app.services.extraction.types import (
+    CourseSpecificationWarning,
     ExtractedAssessmentRecord,
     ExtractedClo,
     ExtractedCourseField,
@@ -153,6 +155,11 @@ class CourseSpecificationLine:
     page_number: int
     confidence: float = 1.0
     geometry: Geometry | None = None
+    raw_cells: tuple[str, ...] = ()
+    reading_cells: tuple[str, ...] = ()
+    cell_roles: tuple[str | None, ...] = ()
+    table_section: str | None = None
+    extraction_method: str = "direct_text"
 
 
 def _geometry_from_match(match: dict[str, Any]) -> Geometry:
@@ -201,6 +208,63 @@ def _section_for_header(text: str) -> str | None:
     return None
 
 
+def _header_role(value: str) -> str | None:
+    normalized = normalize_arabic_for_matching(value).casefold()
+    if "assessment activity" in normalized or "نشاط التقييم" in normalized:
+        return "method"
+    if "weight" in normalized or "الوزن" in normalized or "النسبة" in normalized:
+        return "percentage"
+    if "notes" in normalized or "ملاحظات" in normalized:
+        return "notes"
+    if "related" in normalized and "clo" in normalized:
+        return "related_clos"
+    if "contact hours" in normalized or "ساعات الاتصال" in normalized:
+        return "hours"
+    if re.search(r"\btopic\b", normalized) or "الموضوع" in normalized:
+        return "topic"
+    if re.search(r"\bweek\b", normalized) or "الأسبوع" in normalized:
+        return "week"
+    if re.search(r"\bcode\b", normalized) or "رمز" in normalized:
+        return "code"
+    if "description" in normalized or "الوصف" in normalized:
+        return "description"
+    if "domain" in normalized or "المجال" in normalized:
+        return "domain"
+    return None
+
+
+def _table_section(roles: tuple[str | None, ...]) -> str | None:
+    role_set = {role for role in roles if role is not None}
+    if {"code", "description"}.issubset(role_set):
+        return "clos"
+    if {"topic", "hours", "week"}.issubset(role_set):
+        return "topics"
+    if {"method", "percentage", "week"}.issubset(role_set):
+        return "assessment_records"
+    return None
+
+
+def _row_source_text(cells: tuple[str, ...]) -> str:
+    return "\n--- cell ---\n".join(cells)
+
+
+def _compact_cell(value: str) -> str:
+    compact = " ".join(value.split()).strip(" /")
+    return re.sub(r"([\u0600-\u06ff])\s+ة\b", r"\1ة", compact)
+
+
+def _restore_ltr_runs(reading: str, raw: str) -> str:
+    restored = reading
+    for raw_line in raw.splitlines():
+        tokens = re.findall(r"[A-Za-z][A-Za-z0-9_-]*", raw_line)
+        if len(tokens) < 2:
+            continue
+        original = " ".join(tokens)
+        reversed_value = " ".join(reversed(tokens))
+        restored = restored.replace(reversed_value, original)
+    return restored
+
+
 def _scaled_confidence(line: CourseSpecificationLine, parser_confidence: float) -> float:
     return round(max(0.0, min(1.0, line.confidence * parser_confidence)), 4)
 
@@ -245,6 +309,68 @@ class AdaptiveCourseSpecificationExtractor:
                                 geometry=geometry,
                             )
                         )
+                    try:
+                        tables = page.find_tables()
+                    except Exception:
+                        tables = []
+                    for table in tables:
+                        extracted_rows = table.extract() or []
+                        if not extracted_rows:
+                            continue
+                        header_cells = tuple(cell or "" for cell in extracted_rows[0])
+                        header_roles = tuple(_header_role(cell) for cell in header_cells)
+                        table_section = _table_section(header_roles)
+                        if table_section is None:
+                            continue
+                        for row_index, row in enumerate(extracted_rows[1:], start=1):
+                            raw_cells = tuple(cell or "" for cell in row)
+                            if not any(cell.strip() for cell in raw_cells):
+                                continue
+                            row_object = table.rows[row_index]
+                            reading_cells: list[str] = []
+                            for cell_index, raw_cell in enumerate(raw_cells):
+                                cell_bbox = (
+                                    row_object.cells[cell_index]
+                                    if cell_index < len(row_object.cells)
+                                    else None
+                                )
+                                if cell_bbox is None:
+                                    reading_cells.append(_compact_cell(raw_cell))
+                                    continue
+                                cell_x0, cell_top, cell_x1, cell_bottom = cell_bbox
+                                cell_lines = extract_layout_lines(
+                                    page,
+                                    page_number=page_number,
+                                    bbox=(
+                                        float(cell_x0),
+                                        float(cell_top),
+                                        float(cell_x1),
+                                        float(cell_bottom),
+                                    ),
+                                )
+                                reading = "\n".join(
+                                    line.reading_text for line in cell_lines
+                                ).strip() or _compact_cell(raw_cell)
+                                reading_cells.append(_restore_ltr_runs(reading, raw_cell))
+                            x0, top, x1, bottom = row_object.bbox
+                            row_geometry = Geometry(
+                                float(x0),
+                                float(top),
+                                float(x1),
+                                float(bottom),
+                            )
+                            source_lines.append(
+                                CourseSpecificationLine(
+                                    text=" | ".join(reading_cells),
+                                    page_number=page_number,
+                                    confidence=0.95,
+                                    geometry=row_geometry,
+                                    raw_cells=raw_cells,
+                                    reading_cells=tuple(reading_cells),
+                                    cell_roles=header_roles,
+                                    table_section=table_section,
+                                )
+                            )
                     detection = detect_text_language(text)
                     diagnostics.append(
                         PageExtractionDiagnostic(
@@ -321,6 +447,22 @@ class AdaptiveCourseSpecificationExtractor:
                 header_seen = True
                 continue
 
+            if line.table_section is not None:
+                table_seen = True
+                if line.table_section == "clos":
+                    clo = self._parse_structured_clo(line)
+                    if clo is not None:
+                        clos.append(clo)
+                elif line.table_section == "topics":
+                    topic = self._parse_structured_topic(line)
+                    if topic is not None:
+                        topics.append(topic)
+                elif line.table_section == "assessment_records":
+                    assessment = self._parse_structured_assessment(line)
+                    if assessment is not None:
+                        assessment_records.append(assessment)
+                continue
+
             metadata = self._parse_metadata(line)
             if metadata is not None:
                 course_fields.append(metadata)
@@ -351,10 +493,39 @@ class AdaptiveCourseSpecificationExtractor:
                 assessment_records.extend(records)
                 compact_seen = compact_seen or current_section != "assessment_records"
 
+        review_warnings: list[CourseSpecificationWarning] = []
+        review_warnings.extend(self._duplicate_warnings(clos, "CLO"))
+        review_warnings.extend(self._duplicate_warnings(topics, "topic"))
         clos = self._dedupe_clos(clos)
         topics = self._dedupe_topics(topics)
         assessment_records = self._dedupe_assessments(assessment_records)
         course_fields = self._dedupe_course_fields(course_fields)
+        low_confidence_records = (
+            ("CLO", [(record.confidence, record.page_number) for record in clos]),
+            ("topic", [(record.confidence, record.page_number) for record in topics]),
+            (
+                "assessment record",
+                [(record.confidence, record.page_number) for record in assessment_records],
+            ),
+            (
+                "course field",
+                [(record.confidence, record.page_number) for record in course_fields],
+            ),
+        )
+        for collection_name, confidence_records in low_confidence_records:
+            for confidence, page_number in confidence_records:
+                if confidence < _LOW_CONFIDENCE_REVIEW:
+                    review_warnings.append(
+                        CourseSpecificationWarning(
+                            code="low_confidence_record",
+                            page_number=page_number,
+                            message=(
+                                f"A {collection_name} has low extraction confidence and "
+                                "should be checked against the Course Specification."
+                            ),
+                            confidence=confidence,
+                        )
+                    )
 
         section_records: dict[str, list[Any]] = {
             "clos": list(clos),
@@ -390,7 +561,29 @@ class AdaptiveCourseSpecificationExtractor:
             layout_family=layout_family,
             document_language=document_language,
             page_diagnostics=list(diagnostics or []),
+            review_warnings=review_warnings,
         )
+
+    @staticmethod
+    def _duplicate_warnings(
+        records: list[ExtractedClo] | list[ExtractedTopic],
+        label: str,
+    ) -> list[CourseSpecificationWarning]:
+        by_code: dict[str, list[ExtractedClo | ExtractedTopic]] = {}
+        for record in records:
+            code = record.code
+            if code is not None:
+                by_code.setdefault(code, []).append(record)
+        return [
+            CourseSpecificationWarning(
+                code="duplicate_conflicting_code",
+                page_number=items[0].page_number,
+                message=f"Conflicting source rows use the same {label} code {code}.",
+                confidence=min(item.confidence for item in items),
+            )
+            for code, items in by_code.items()
+            if len({item.text for item in items}) > 1
+        ]
 
     def _parse_metadata(self, line: CourseSpecificationLine) -> ExtractedCourseField | None:
         source = line.text.strip()
@@ -440,6 +633,77 @@ class AdaptiveCourseSpecificationExtractor:
             )
 
         return None
+
+    @staticmethod
+    def _role_cells(line: CourseSpecificationLine) -> dict[str, tuple[str, str]]:
+        return {
+            role: (line.reading_cells[index], line.raw_cells[index])
+            for index, role in enumerate(line.cell_roles)
+            if role is not None and index < len(line.reading_cells) and index < len(line.raw_cells)
+        }
+
+    def _parse_structured_clo(self, line: CourseSpecificationLine) -> ExtractedClo | None:
+        cells = self._role_cells(line)
+        code_value = _compact_cell(cells.get("code", ("", ""))[0])
+        code_match = _CLO_CODE.match(code_value)
+        description = _compact_cell(cells.get("description", ("", ""))[0])
+        if code_match is None or not description:
+            return None
+        return ExtractedClo(
+            code=_canonical_code("CLO", code_match.group("number")),
+            text=description,
+            program_outcome_reference=None,
+            page_number=line.page_number,
+            confidence=_scaled_confidence(line, 0.98),
+            geometry=line.geometry,
+            source_text=_row_source_text(line.raw_cells),
+            extraction_method=line.extraction_method,
+        )
+
+    def _parse_structured_topic(self, line: CourseSpecificationLine) -> ExtractedTopic | None:
+        cells = self._role_cells(line)
+        text = _compact_cell(cells.get("topic", ("", ""))[0])
+        hours_value = normalize_arabic_for_matching(cells.get("hours", ("", ""))[0])
+        hours_match = re.search(_NUMBER, hours_value)
+        if not text:
+            return None
+        return ExtractedTopic(
+            code=None,
+            text=text,
+            expected_hours=(
+                parse_localized_number(hours_match.group()) if hours_match is not None else None
+            ),
+            page_number=line.page_number,
+            confidence=_scaled_confidence(line, 0.98),
+            geometry=line.geometry,
+            source_text=_row_source_text(line.raw_cells),
+            extraction_method=line.extraction_method,
+        )
+
+    def _parse_structured_assessment(
+        self, line: CourseSpecificationLine
+    ) -> ExtractedAssessmentRecord | None:
+        cells = self._role_cells(line)
+        method = _compact_cell(cells.get("method", ("", ""))[0])
+        notes = _compact_cell(cells.get("notes", ("", ""))[0])
+        percentage_value = normalize_arabic_for_matching(cells.get("percentage", ("", ""))[0])
+        percentage_match = re.search(_NUMBER, percentage_value)
+        if not method:
+            return None
+        return ExtractedAssessmentRecord(
+            method=method,
+            activity=notes or None,
+            percentage=(
+                parse_localized_number(percentage_match.group())
+                if percentage_match is not None
+                else None
+            ),
+            page_number=line.page_number,
+            confidence=_scaled_confidence(line, 0.98),
+            geometry=line.geometry,
+            source_text=_row_source_text(line.raw_cells),
+            extraction_method=line.extraction_method,
+        )
 
     def _parse_topic(
         self,

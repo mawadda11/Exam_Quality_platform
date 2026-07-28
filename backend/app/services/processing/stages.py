@@ -10,6 +10,7 @@ not define a concentration threshold.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from app.models.clo import Clo
 from app.models.evidence import Evidence
 from app.models.question import Question
 from app.models.uploaded_file import UploadedFile
+from app.schemas.extraction_review import ExtractionReviewSnapshot
 from app.services.extraction.digital_pdf_extractor import PdfPlumberExamExtractor
 from app.services.extraction.digital_tp153_extractor import PdfPlumberTp153Extractor
 from app.services.extraction.persistence import persist_extraction_result
@@ -50,6 +52,9 @@ from app.services.rules.identifiers import (
     QUESTION_FORMAT_SUITABILITY,
     QUESTION_TO_CLO_MAPPING,
     QUESTION_TO_TOPIC_ALIGNMENT,
+    REFERENCED_MATERIAL_AVAILABILITY,
+    RESOLVABLE_CROSS_REFERENCES,
+    SUPPORTING_MATERIAL_ASSOCIATION,
     UNAMBIGUOUS_WORDING,
     RuleIdentifier,
 )
@@ -60,6 +65,12 @@ from app.services.rules.semantic_evaluators import (
     evaluate_semantic_judgment_rules,
     evaluate_semantic_relationship_rules,
 )
+from app.services.rules.structured_evidence import (
+    evaluate_referenced_material_availability,
+    evaluate_resolvable_cross_references,
+    evaluate_supporting_material_association,
+)
+from app.services.rules.versioning import batch4_structured_rules_enabled
 from app.services.storage.keys import resolve_storage_path
 
 # The RuleIdentifiers run_applying_rules actually evaluates at runtime.
@@ -82,6 +93,9 @@ RUNTIME_RULE_IDENTIFIERS: tuple[RuleIdentifier, ...] = (
     UNAMBIGUOUS_WORDING,
     COMPLETE_QUESTION_INFORMATION,
     COMPLETE_INSTRUCTIONS,
+    REFERENCED_MATERIAL_AVAILABILITY,
+    SUPPORTING_MATERIAL_ASSOCIATION,
+    RESOLVABLE_CROSS_REFERENCES,
 )
 
 
@@ -260,6 +274,44 @@ def run_applying_rules(analysis: Analysis, session: Session, settings: Settings)
         NUMBERING,
         evaluate_numbering(questions, evidence),
     )
+    if batch4_structured_rules_enabled(analysis):
+        assert analysis.confirmed_review is not None
+        confirmed_snapshot = ExtractionReviewSnapshot.model_validate_json(
+            json.dumps(analysis.confirmed_review.snapshot)
+        )
+        confirmed_revision_id = analysis.confirmed_review_id
+        assert confirmed_revision_id is not None
+        structured_results = (
+            (
+                REFERENCED_MATERIAL_AVAILABILITY,
+                evaluate_referenced_material_availability(
+                    session,
+                    analysis_id=analysis.id,
+                    snapshot=confirmed_snapshot,
+                    confirmed_revision_id=confirmed_revision_id,
+                ),
+            ),
+            (
+                SUPPORTING_MATERIAL_ASSOCIATION,
+                evaluate_supporting_material_association(
+                    session,
+                    analysis_id=analysis.id,
+                    snapshot=confirmed_snapshot,
+                    confirmed_revision_id=confirmed_revision_id,
+                ),
+            ),
+            (
+                RESOLVABLE_CROSS_REFERENCES,
+                evaluate_resolvable_cross_references(
+                    session,
+                    analysis_id=analysis.id,
+                    snapshot=confirmed_snapshot,
+                    confirmed_revision_id=confirmed_revision_id,
+                ),
+            ),
+        )
+        for identifier, structured_result in structured_results:
+            persist_finding(session, analysis.id, identifier, structured_result)
 
     runtime = get_semantic_runtime(settings)
     runtime.ensure_index()
@@ -300,8 +352,8 @@ def run_applying_rules(analysis: Analysis, session: Session, settings: Settings)
         kb_source_dir,
         validation_retries=settings.ai_validation_retries,
     )
-    for result in semantic_results:
-        persist_semantic_finding(session, analysis.id, result)
+    for semantic_result in semantic_results:
+        persist_semantic_finding(session, analysis.id, semantic_result)
 
 
 def run_generating_report(analysis: Analysis, session: Session, settings: Settings) -> None:
