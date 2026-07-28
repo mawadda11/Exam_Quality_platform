@@ -186,9 +186,7 @@ def test_exact_exam_fixture_review_saves_logical_text_without_mutating_raw_annot
         raw_values = {
             item.original_text for item in review.original_snapshot.supporting_annotations
         }
-        editable_values = {
-            item.original_text for item in review.snapshot.supporting_annotations
-        }
+        editable_values = {item.original_text for item in review.snapshot.supporting_annotations}
         assert any("1 لكشلا" in value for value in raw_values)
         assert "الشكل 1: Relational Database Schema" in editable_values
 

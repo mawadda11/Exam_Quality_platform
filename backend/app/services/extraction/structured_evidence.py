@@ -63,9 +63,7 @@ _CODE_LINE = re.compile(
     re.IGNORECASE,
 )
 _ARABIC_CHARACTER = re.compile(r"[\u0600-\u06ff]")
-_LOGICAL_ARABIC_LABEL = re.compile(
-    r"^\s*(?:الشكل|الجدول|الكود)\s*[0-9٠-٩۰-۹]+\s*(?::|$)"
-)
+_LOGICAL_ARABIC_LABEL = re.compile(r"^\s*(?:الشكل|الجدول|الكود)\s*[0-9٠-٩۰-۹]+\s*(?::|$)")
 _ENGLISH_LABELED_CAPTION = re.compile(
     r"(?:Fig(?:ure)?|Table|Code(?:\s+(?:Block|Listing))?)"
     r"\s*(?:No\.?|Number)?\s*[0-9]+\s*[:.\-–—]\s*"
@@ -191,9 +189,7 @@ def logical_annotation_text(original_text: str, normalized_label: str | None) ->
         )
         logical_match = _LABEL.match(logical_source)
         caption = (
-            logical_match.group("caption").strip()
-            if logical_match is not None
-            else logical_source
+            logical_match.group("caption").strip() if logical_match is not None else logical_source
         )
     caption = caption.strip(" \t\r\n:.-–—")
     label = f"{arabic_kind} {number}"

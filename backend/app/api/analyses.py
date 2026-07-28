@@ -616,14 +616,16 @@ def list_analysis_supporting_material_annotations(
     analysis: Annotated[Analysis, Depends(get_owned_analysis)],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[SupportingMaterialAnnotationResponse]:
-    rows = list(db.execute(
-        select(SupportingMaterialAnnotation)
-        .where(SupportingMaterialAnnotation.analysis_id == analysis.id)
-        .order_by(
-            SupportingMaterialAnnotation.page_number,
-            SupportingMaterialAnnotation.created_at,
-        )
-    ).scalars())
+    rows = list(
+        db.execute(
+            select(SupportingMaterialAnnotation)
+            .where(SupportingMaterialAnnotation.analysis_id == analysis.id)
+            .order_by(
+                SupportingMaterialAnnotation.page_number,
+                SupportingMaterialAnnotation.created_at,
+            )
+        ).scalars()
+    )
     reviewed_texts = confirmed_supporting_annotation_texts(db, analysis)
     if reviewed_texts is not None:
         rows = [row for row in rows if row.id in reviewed_texts]
