@@ -108,6 +108,20 @@ def persist_tp153_extraction_result(
             )
         )
 
+    for field in result.course_fields:
+        session.add(
+            Evidence(
+                analysis_id=analysis_id,
+                source_document=UploadedFileType.TP153,
+                evidence_type="course_specification_field",
+                page_number=field.page_number,
+                item_reference=field.field_name,
+                extracted_text=field.value,
+                geometry=field.geometry.to_dict() if field.geometry else None,
+                confidence=field.confidence,
+            )
+        )
+
     for missing in result.missing_sections:
         session.add(
             Evidence(

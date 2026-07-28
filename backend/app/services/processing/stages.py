@@ -22,12 +22,13 @@ from app.models.analysis import Analysis
 from app.models.clo import Clo
 from app.models.evidence import Evidence
 from app.models.question import Question
+from app.models.uploaded_file import UploadedFile
 from app.services.extraction.digital_pdf_extractor import PdfPlumberExamExtractor
 from app.services.extraction.digital_tp153_extractor import PdfPlumberTp153Extractor
 from app.services.extraction.persistence import persist_extraction_result
 from app.services.extraction.review_snapshot import materialize_initial_review_revision
 from app.services.extraction.tp153_persistence import persist_tp153_extraction_result
-from app.services.extraction.types import ExtractionError
+from app.services.extraction.types import ExtractionError, PageExtractionDiagnostic
 from app.services.knowledge_base.runtime import get_semantic_runtime
 from app.services.rules.clo_topic_coverage import (
     evaluate_applicable_clo_coverage_from_relationships,
@@ -84,6 +85,35 @@ RUNTIME_RULE_IDENTIFIERS: tuple[RuleIdentifier, ...] = (
 )
 
 
+def _record_extraction_metadata(
+    uploaded_file: UploadedFile,
+    *,
+    document_language: str,
+    diagnostics: list[PageExtractionDiagnostic],
+    parser_layout: str | None = None,
+) -> None:
+    methods = {item.extraction_method for item in diagnostics}
+    if len(methods) == 1:
+        extraction_method = next(iter(methods))
+    elif methods:
+        extraction_method = "mixed"
+    else:
+        extraction_method = None
+
+    average_confidence = (
+        sum(item.text_quality_confidence for item in diagnostics) / len(diagnostics)
+        if diagnostics
+        else None
+    )
+    uploaded_file.detected_language = document_language
+    uploaded_file.extraction_method = extraction_method
+    uploaded_file.extraction_confidence = (
+        round(average_confidence, 4) if average_confidence is not None else None
+    )
+    uploaded_file.review_recommended = any(item.review_recommended for item in diagnostics)
+    uploaded_file.parser_layout = parser_layout
+
+
 class ReviewConfirmationRequiredError(RuntimeError):
     """Raised when a post-confirmation stage is invoked before confirmation."""
 
@@ -117,6 +147,11 @@ def run_extracting_exam(analysis: Analysis, session: Session, settings: Settings
     pdf_path = resolve_storage_path(settings.upload_root, exam_file.storage_key)
     result = PdfPlumberExamExtractor().extract(pdf_path)
     persist_extraction_result(session, analysis.id, result)
+    _record_extraction_metadata(
+        exam_file,
+        document_language=result.document_language.value,
+        diagnostics=result.page_diagnostics,
+    )
 
 
 def run_extracting_tp153(analysis: Analysis, session: Session, settings: Settings) -> None:
@@ -130,6 +165,12 @@ def run_extracting_tp153(analysis: Analysis, session: Session, settings: Setting
     pdf_path = resolve_storage_path(settings.upload_root, tp153_file.storage_key)
     result = PdfPlumberTp153Extractor().extract(pdf_path)
     persist_tp153_extraction_result(session, analysis.id, result)
+    _record_extraction_metadata(
+        tp153_file,
+        document_language=result.document_language.value,
+        diagnostics=result.page_diagnostics,
+        parser_layout=result.layout_family,
+    )
 
 
 def run_building_evidence(analysis: Analysis, session: Session, settings: Settings) -> None:

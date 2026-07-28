@@ -7,6 +7,10 @@ uploaded exam, its findings, recommendations, and traceable evidence.
 
 from __future__ import annotations
 
+import os
+import re
+from pathlib import Path
+
 from fpdf import FPDF, XPos, YPos
 
 from app.services.reporting.content import (
@@ -15,6 +19,59 @@ from app.services.reporting.content import (
     ReportFindingEntry,
     ReportItemJudgment,
 )
+
+_REPORT_FONT_FAMILY = "ReportUnicode"
+_ARABIC_CHARACTER = re.compile(r"[\u0600-\u06ff]")
+
+_REPORT_FONT_CANDIDATES: dict[str, tuple[Path, ...]] = {
+    "": (
+        Path(os.getenv("REPORT_FONT_REGULAR_PATH", "")),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("C:/Windows/Fonts/arial.ttf"),
+    ),
+    "B": (
+        Path(os.getenv("REPORT_FONT_BOLD_PATH", "")),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("C:/Windows/Fonts/arialbd.ttf"),
+        Path("C:/Windows/Fonts/arial.ttf"),
+    ),
+    "I": (
+        Path(os.getenv("REPORT_FONT_ITALIC_PATH", "")),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("C:/Windows/Fonts/ariali.ttf"),
+        Path("C:/Windows/Fonts/arial.ttf"),
+    ),
+}
+
+
+def _first_existing_font(candidates: tuple[Path, ...]) -> Path:
+    for candidate in candidates:
+        if str(candidate) and candidate.is_file():
+            return candidate
+    raise RuntimeError(
+        "No Unicode report font was found. Install fonts-dejavu-core or configure "
+        "REPORT_FONT_REGULAR_PATH, REPORT_FONT_BOLD_PATH, and REPORT_FONT_ITALIC_PATH."
+    )
+
+
+def _configure_report_fonts(pdf: FPDF) -> None:
+    for style, candidates in _REPORT_FONT_CANDIDATES.items():
+        pdf.add_font(
+            family=_REPORT_FONT_FAMILY,
+            style=style,
+            fname=str(_first_existing_font(candidates)),
+        )
+    # HarfBuzz shaping is required for joined Arabic glyphs and correct
+    # bidirectional ordering. uharfbuzz is a declared runtime dependency in
+    # pyproject.toml, so a deployment must not silently emit broken Arabic.
+    pdf.set_text_shaping(True)
+
+
+def _set_font(pdf: FPDF, *, style: str = "", size: int = 11) -> None:
+    pdf.set_font(_REPORT_FONT_FAMILY, style=style, size=size)
+
 
 _SCOPE_DISCLAIMER = (
     "This report is limited to the uploaded examination and its populated TP-153 Course "
@@ -26,20 +83,36 @@ _SCOPE_DISCLAIMER = (
 
 
 def _heading(pdf: FPDF, text: str) -> None:
-    pdf.set_font("Helvetica", style="B", size=13)
+    _set_font(pdf, style="B", size=13)
     pdf.multi_cell(0, 9, text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_font("Helvetica", size=11)
+    _set_font(pdf, size=11)
 
 
 def _subheading(pdf: FPDF, text: str) -> None:
-    pdf.set_font("Helvetica", style="B", size=11)
+    _set_font(pdf, style="B", size=11)
     pdf.multi_cell(0, 7, text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_font("Helvetica", size=10)
+    _set_font(pdf, size=10)
+
+
+def _is_predominantly_arabic(text: str) -> bool:
+    arabic_count = len(_ARABIC_CHARACTER.findall(text))
+    latin_count = sum(char.isascii() and char.isalpha() for char in text)
+    return arabic_count > latin_count
 
 
 def _paragraph(pdf: FPDF, text: str, *, style: str = "", size: int = 11) -> None:
-    pdf.set_font("Helvetica", style=style, size=size)
-    pdf.multi_cell(0, 6, text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    _set_font(pdf, style=style, size=size)
+    # Whole Arabic paragraphs are right-aligned. Mixed evidence/citation lines
+    # remain left-aligned while fpdf2 shapes their Arabic fragments correctly.
+    alignment = "R" if _is_predominantly_arabic(text) else "L"
+    pdf.multi_cell(
+        0,
+        6,
+        text,
+        align=alignment,
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
+    )
 
 
 def _score_line(content: ReportContent) -> str:
@@ -103,7 +176,7 @@ def _render_item_judgment(
 
 
 def _render_finding(pdf: FPDF, entry: ReportFindingEntry) -> None:
-    pdf.set_font("Helvetica", style="B", size=11)
+    _set_font(pdf, style="B", size=11)
     pdf.multi_cell(
         0,
         6,
@@ -111,7 +184,7 @@ def _render_finding(pdf: FPDF, entry: ReportFindingEntry) -> None:
         new_x=XPos.LMARGIN,
         new_y=YPos.NEXT,
     )
-    pdf.set_font("Helvetica", style="I", size=9)
+    _set_font(pdf, style="I", size=9)
     pdf.multi_cell(
         0,
         5,
@@ -186,9 +259,10 @@ def _render_finding(pdf: FPDF, entry: ReportFindingEntry) -> None:
 def render_report_pdf(content: ReportContent) -> bytes:
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
+    _configure_report_fonts(pdf)
     pdf.add_page()
 
-    pdf.set_font("Helvetica", style="B", size=16)
+    _set_font(pdf, style="B", size=16)
     pdf.multi_cell(
         0,
         10,

@@ -220,3 +220,60 @@ def test_render_report_pdf_keeps_internal_assessments_and_coverage_out_of_user_r
     assert "TP-153 Assessment Source Records" not in text
     assert "Rule Execution Coverage" not in text
     assert "Earned credit:" not in text
+
+
+def test_render_report_pdf_supports_arabic_and_mixed_unicode_evidence() -> None:
+    entry = _finding_entry(
+        requirement_name="وضوح السؤال",
+        explanation="السؤال يطلب كتابة استعلام SQL ويحتوي على دليل عربي واضح.",
+        evidence=(
+            EvidenceCitation(
+                source_document=UploadedFileType.EXAM,
+                evidence_type="question_text",
+                page_number=1,
+                item_reference="س٣ / Q3",
+            ),
+        ),
+        recommendations=(
+            RecommendationDisplay(
+                recommendation_id="REC-AR",
+                rule_id="RULE018",
+                title="مراجعة الصياغة",
+                text="حافظ على النص العربي وأسماء SQL دون استبدال الأحرف.",
+                target_user="Faculty",
+                recommendation_type="Corrective",
+            ),
+        ),
+    )
+    pdf_bytes = render_report_pdf(
+        _content(
+            course_name="قواعد البيانات المتقدمة",
+            term="الفصل الثاني ٢٠٢٦",
+            findings=(entry,),
+        )
+    )
+
+    assert pdf_bytes.startswith(b"%PDF")
+    assert pdf_bytes.rstrip().endswith(b"%%EOF")
+    assert len(pdf_bytes) > 0
+
+
+def test_report_renderer_enables_harfbuzz_and_detects_arabic_paragraphs(monkeypatch) -> None:
+    from fpdf import FPDF
+
+    from app.services.reporting import pdf as report_pdf
+
+    calls: list[bool] = []
+
+    def fake_set_text_shaping(self: FPDF, use_shaping_engine: bool = True, **_: object) -> None:
+        calls.append(use_shaping_engine)
+
+    monkeypatch.setattr(FPDF, "set_text_shaping", fake_set_text_shaping)
+    rendered = report_pdf.render_report_pdf(
+        _content(course_name="قواعد البيانات المتقدمة", term="الفصل الثاني ٢٠٢٦")
+    )
+
+    assert rendered.startswith(b"%PDF")
+    assert calls == [True]
+    assert report_pdf._is_predominantly_arabic("اختبار نصفي") is True
+    assert report_pdf._is_predominantly_arabic("Related evidence: اختبار نصفي") is False

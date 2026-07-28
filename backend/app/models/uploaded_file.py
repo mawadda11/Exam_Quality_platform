@@ -4,7 +4,17 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, String, UniqueConstraint, Uuid
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    String,
+    UniqueConstraint,
+    Uuid,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.domain import UploadedFileType, enum_values
@@ -43,6 +53,11 @@ class UploadedFile(Base):
     mime_type: Mapped[str] = mapped_column(String(100))
     size_bytes: Mapped[int] = mapped_column(BigInteger)
     sha256_hash: Mapped[str] = mapped_column(String(64))
+    detected_language: Mapped[str | None] = mapped_column(String(20), default=None)
+    extraction_method: Mapped[str | None] = mapped_column(String(20), default=None)
+    extraction_confidence: Mapped[float | None] = mapped_column(Float, default=None)
+    review_recommended: Mapped[bool] = mapped_column(Boolean, default=False)
+    parser_layout: Mapped[str | None] = mapped_column(String(40), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     analysis: Mapped[Analysis] = relationship(back_populates="files")

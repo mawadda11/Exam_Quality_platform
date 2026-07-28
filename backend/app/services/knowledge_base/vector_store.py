@@ -7,12 +7,64 @@ its official source identity, record hash, KB version, and aggregate KB hash.
 
 from __future__ import annotations
 
+import hashlib
+import math
 import re
+import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 _COLLECTION_NAME = "knowledge_base"
+_EMBEDDING_DIMENSION = 384
+_UNICODE_TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
+
+
+def _normalize_embedding_text(text: str) -> str:
+    """Normalize Latin and Arabic text without external model dependencies."""
+
+    normalized = unicodedata.normalize("NFKC", text).casefold()
+    # Arabic diacritics and tatweel should not create different vectors.
+    normalized = re.sub(r"[\u0640\u064b-\u065f\u0670\u06d6-\u06ed]", "", normalized)
+    return " ".join(_UNICODE_TOKEN.findall(normalized))
+
+
+def _local_embedding(text: str) -> list[float]:
+    """Return a deterministic Unicode-aware hashed embedding.
+
+    Chroma's default client embedding function downloads an ONNX model on the
+    first request. That is unsuitable for an offline/local pilot and can fail
+    with a network timeout. This compact feature-hashing vector performs no
+    network I/O, supports Arabic tokens, and remains stable across processes.
+    """
+
+    normalized = _normalize_embedding_text(text)
+    vector = [0.0] * _EMBEDDING_DIMENSION
+    tokens = normalized.split()
+    features: list[str] = []
+    for token in tokens:
+        features.append(f"w:{token}")
+        padded = f"^{token}$"
+        for width in (3, 4):
+            if len(padded) < width:
+                continue
+            features.extend(
+                f"c{width}:{padded[index : index + width]}"
+                for index in range(len(padded) - width + 1)
+            )
+
+    # Keep empty or punctuation-only input valid and deterministic.
+    if not features:
+        features = ["empty"]
+
+    for feature in features:
+        digest = hashlib.sha256(feature.encode("utf-8")).digest()
+        index = int.from_bytes(digest[:4], "big") % _EMBEDDING_DIMENSION
+        sign = 1.0 if digest[4] & 1 else -1.0
+        vector[index] += sign
+
+    norm = math.sqrt(sum(value * value for value in vector))
+    return [value / norm for value in vector] if norm else vector
 
 
 @dataclass(frozen=True)
@@ -147,7 +199,7 @@ def _build_chroma_http_client(*, host: str, port: int) -> Any:
 
 
 class ChromaVectorStore:
-    """HTTP-backed Chroma implementation using its bundled local embeddings."""
+    """HTTP-backed Chroma implementation with offline deterministic embeddings."""
 
     def __init__(self, *, host: str, port: int) -> None:
         self._client = _build_chroma_http_client(host=host, port=port)
@@ -160,6 +212,7 @@ class ChromaVectorStore:
         self._collection.upsert(
             ids=[record.record_id for record in records],
             documents=[record.text for record in records],
+            embeddings=[_local_embedding(record.text) for record in records],
             metadatas=[_metadata(record) for record in records],
         )
 
@@ -186,7 +239,7 @@ class ChromaVectorStore:
             rule_id=rule_id,
         )
         results = self._collection.query(
-            query_texts=[text],
+            query_embeddings=[_local_embedding(text)],
             n_results=n_results,
             where=where,
         )
