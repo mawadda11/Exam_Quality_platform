@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import {
   confirmExtractionReview,
   getExtractionReview,
   saveExtractionReview,
 } from '../../api/analyses'
-import { ApiError } from '../../api/client'
 import { Alert } from '../../components/ui/Alert'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { PageState } from '../../components/ui/PageState'
 import { Tabs, type TabItem } from '../../components/ui/Tabs'
+import { useI18n } from '../../i18n/I18nProvider'
+import { localizeInterfaceError, localizeServerMessage } from '../../i18n/localizeError'
 import type {
   ExtractionReviewClo,
   ExtractionReviewConfirmResponse,
@@ -130,9 +131,10 @@ function updateSnapshotRecord(
   } as ExtractionReviewSnapshot
 }
 
-function confidenceLabel(value: number): string {
-  return `${Math.round(value * 100)}% extraction confidence`
+function confidencePercent(value: number): string {
+  return `${Math.round(value * 100)}%`
 }
+
 
 function optionalNumber(value: string): number | null {
   return value.trim() === '' ? null : Number(value)
@@ -144,6 +146,8 @@ function RecordHeader({
   pageNumber,
   confidence,
   disabled,
+  includeControlDisabled = false,
+  hierarchyLabel,
   onIncludedChange,
   onRestore,
 }: {
@@ -152,15 +156,21 @@ function RecordHeader({
   pageNumber: number
   confidence: number
   disabled: boolean
+  includeControlDisabled?: boolean
+  hierarchyLabel?: string
   onIncludedChange: (included: boolean) => void
   onRestore: () => void
 }) {
+  const { t } = useI18n()
   return (
     <div className="review-record-header">
       <div>
-        <h3>{title}</h3>
+        <div className="review-record-title-line">
+          <h3><bdi>{title}</bdi></h3>
+          {hierarchyLabel && <span className="review-hierarchy-badge">{hierarchyLabel}</span>}
+        </div>
         <p className="review-source-anchor">
-          Page {pageNumber} · {confidenceLabel(confidence)}
+          {t('Page')} {pageNumber} · {confidencePercent(confidence)} {t('extraction confidence')}
         </p>
       </div>
       <div className="review-record-controls">
@@ -168,28 +178,31 @@ function RecordHeader({
           <input
             type="checkbox"
             checked={included}
-            disabled={disabled}
+            disabled={disabled || includeControlDisabled}
             onChange={(event) => onIncludedChange(event.target.checked)}
           />
-          Include in analysis
+          {t('Include in analysis')}
         </label>
         <Button variant="ghost" disabled={disabled} onClick={onRestore}>
-          Restore machine value
+          {t('Restore machine value')}
         </Button>
       </div>
     </div>
   )
 }
 
+
 function EmptyCollection({ label }: { label: string }) {
+  const { t } = useI18n()
   return (
     <PageState
       state="empty"
-      title={`No ${label} extracted`}
-      message="The empty collection is preserved as source evidence; do not create replacement official records here."
+      title={`${t('No')} ${t(label)}`}
+      message={t('The empty collection is preserved as source evidence; do not create replacement official records here.')}
     />
   )
 }
+
 
 function QuestionsPanel({
   items,
@@ -202,65 +215,105 @@ function QuestionsPanel({
   disabled: boolean
   onChange: (id: string, patch: Partial<ExtractionReviewQuestion>) => void
 }) {
-  if (!items.length) return <EmptyCollection label="questions" />
+  const { t } = useI18n()
+  if (!items.length) return <EmptyCollection label="Questions" />
   const originals = new Map(original.map((item) => [item.source_record_id, item]))
+  const childrenByParent = new Map<string, ExtractionReviewQuestion[]>()
+  for (const item of items) {
+    if (!item.parent_source_record_id) continue
+    const children = childrenByParent.get(item.parent_source_record_id) ?? []
+    children.push(item)
+    childrenByParent.set(item.parent_source_record_id, children)
+  }
+  const itemsById = new Map(items.map((item) => [item.source_record_id, item]))
+  function depth(item: ExtractionReviewQuestion): number {
+    let current = item.parent_source_record_id
+    let result = 0
+    while (current && itemsById.has(current)) {
+      result += 1
+      current = itemsById.get(current)?.parent_source_record_id ?? null
+    }
+    return result
+  }
+
   return (
     <div className="review-record-list">
-      {items.map((item) => (
-        <Card as="article" className={!item.included ? 'review-record review-record--excluded' : 'review-record'} key={item.source_record_id}>
-          <RecordHeader
-            title={item.number_label}
-            included={item.included}
-            pageNumber={item.page_number}
-            confidence={item.extraction_confidence}
-            disabled={disabled}
-            onIncludedChange={(included) => onChange(item.source_record_id, { included })}
-            onRestore={() => {
-              const value = originals.get(item.source_record_id)
-              if (value) onChange(item.source_record_id, value)
-            }}
-          />
-          <div className="review-form-grid">
-            <label>
-              Question number
-              <input
-                value={item.number_label}
-                disabled={disabled || !item.included}
-                onChange={(event) =>
-                  onChange(item.source_record_id, { number_label: event.target.value })
-                }
-              />
-            </label>
-            <label>
-              Marks
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={item.marks ?? ''}
-                disabled={disabled || !item.included}
-                onChange={(event) =>
-                  onChange(item.source_record_id, { marks: optionalNumber(event.target.value) })
-                }
-              />
-            </label>
-            <label className="review-field-wide">
-              Question text
-              <textarea
-                rows={4}
-                value={item.question_text}
-                disabled={disabled || !item.included}
-                onChange={(event) =>
-                  onChange(item.source_record_id, { question_text: event.target.value })
-                }
-              />
-            </label>
-          </div>
-        </Card>
-      ))}
+      {items.map((item) => {
+        const children = childrenByParent.get(item.source_record_id) ?? []
+        const isContainer = children.length > 0
+        const childMarks = children.reduce((total, child) => total + (child.marks ?? 0), 0)
+        return (
+          <Card
+            as="article"
+            className={`${!item.included ? 'review-record review-record--excluded' : 'review-record'}${isContainer ? ' review-record--container' : ''}`}
+            key={item.source_record_id}
+            style={{ '--question-depth': depth(item) } as CSSProperties}
+          >
+            <RecordHeader
+              title={item.number_label}
+              included={item.included}
+              pageNumber={item.page_number}
+              confidence={item.extraction_confidence}
+              disabled={disabled}
+              includeControlDisabled={isContainer}
+              hierarchyLabel={isContainer ? t('Parent / Container Question') : item.parent_source_record_id ? t('Child question') : undefined}
+              onIncludedChange={(included) => onChange(item.source_record_id, { included })}
+              onRestore={() => {
+                const value = originals.get(item.source_record_id)
+                if (value) onChange(item.source_record_id, value)
+              }}
+            />
+            {isContainer && (
+              <Alert variant="info" title={t('Parent / Container Question')}>
+                <p>{t('This structural question groups the sub-questions below and is not scored as an independent semantic item.')}</p>
+                <p>{t('Sub-question marks total')}: <strong>{childMarks}</strong></p>
+              </Alert>
+            )}
+            <div className="review-form-grid">
+              <label>
+                {t('Question number')}
+                <input
+                  dir="auto"
+                  value={item.number_label}
+                  disabled={disabled || !item.included}
+                  onChange={(event) =>
+                    onChange(item.source_record_id, { number_label: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                {t('Marks')}
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={item.marks ?? ''}
+                  disabled={disabled || !item.included || isContainer}
+                  onChange={(event) =>
+                    onChange(item.source_record_id, { marks: optionalNumber(event.target.value) })
+                  }
+                />
+              </label>
+              <label className="review-field-wide">
+                {t('Question text')}
+                <textarea
+                  dir="auto"
+                  rows={4}
+                  value={item.question_text}
+                  disabled={disabled || !item.included}
+                  onChange={(event) =>
+                    onChange(item.source_record_id, { question_text: event.target.value })
+                  }
+                />
+              </label>
+            </div>
+          </Card>
+        )
+      })}
     </div>
   )
 }
+
 
 function ClosPanel({
   items,
@@ -273,6 +326,7 @@ function ClosPanel({
   disabled: boolean
   onChange: (id: string, patch: Partial<ExtractionReviewClo>) => void
 }) {
+  const { t } = useI18n()
   if (!items.length) return <EmptyCollection label="CLOs" />
   const originals = new Map(original.map((item) => [item.source_record_id, item]))
   return (
@@ -293,15 +347,16 @@ function ClosPanel({
           />
           <div className="review-form-grid">
             <label>
-              CLO code
+              {t('CLO code')}
               <input
+                dir="auto"
                 value={item.code}
                 disabled={disabled || !item.included}
                 onChange={(event) => onChange(item.source_record_id, { code: event.target.value })}
               />
             </label>
             <label>
-              Program outcome reference
+              {t('Program outcome reference')}
               <input
                 value={item.program_outcome_reference ?? ''}
                 disabled={disabled || !item.included}
@@ -313,8 +368,9 @@ function ClosPanel({
               />
             </label>
             <label className="review-field-wide">
-              CLO text
+              {t('CLO text')}
               <textarea
+                dir="auto"
                 rows={4}
                 value={item.text}
                 disabled={disabled || !item.included}
@@ -339,6 +395,7 @@ function TopicsPanel({
   disabled: boolean
   onChange: (id: string, patch: Partial<ExtractionReviewTopic>) => void
 }) {
+  const { t } = useI18n()
   if (!items.length) return <EmptyCollection label="topics" />
   const originals = new Map(original.map((item) => [item.source_record_id, item]))
   return (
@@ -359,7 +416,7 @@ function TopicsPanel({
           />
           <div className="review-form-grid">
             <label>
-              Topic code
+              {t('Topic code')}
               <input
                 value={item.code ?? ''}
                 disabled={disabled || !item.included}
@@ -369,7 +426,7 @@ function TopicsPanel({
               />
             </label>
             <label>
-              Expected hours
+              {t('Expected hours')}
               <input
                 type="number"
                 min="0"
@@ -384,8 +441,9 @@ function TopicsPanel({
               />
             </label>
             <label className="review-field-wide">
-              Topic text
+              {t('Topic text')}
               <textarea
+                dir="auto"
                 rows={4}
                 value={item.text}
                 disabled={disabled || !item.included}
@@ -404,6 +462,7 @@ export function ExtractionReviewWorkspace({
   analysisId,
   onConfirmed,
 }: ExtractionReviewWorkspaceProps) {
+  const { locale, t } = useI18n()
   const [review, setReview] = useState<ExtractionReviewResponse | null>(null)
   const [draft, setDraft] = useState<ExtractionReviewSnapshot | null>(null)
   const [activeTab, setActiveTab] = useState<ReviewTab>('questions')
@@ -421,11 +480,7 @@ export function ExtractionReviewWorkspace({
       setReview(response)
       setDraft(cloneSnapshot(response.snapshot))
     } catch (loadError) {
-      setError(
-        loadError instanceof ApiError
-          ? loadError.detail
-          : 'Could not load the extraction review.',
-      )
+      setError(localizeInterfaceError(loadError, locale, t, 'Could not load extraction review'))
     } finally {
       setIsLoading(false)
     }
@@ -441,11 +496,7 @@ export function ExtractionReviewWorkspace({
       })
       .catch((loadError: unknown) => {
         if (cancelled) return
-        setError(
-          loadError instanceof ApiError
-            ? loadError.detail
-            : 'Could not load the extraction review.',
-        )
+        setError(localizeInterfaceError(loadError, locale, t, 'Could not load extraction review'))
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false)
@@ -453,7 +504,7 @@ export function ExtractionReviewWorkspace({
     return () => {
       cancelled = true
     }
-  }, [analysisId])
+  }, [analysisId, locale, t])
 
   const isDirty = useMemo(
     () => Boolean(review && draft && JSON.stringify(review.snapshot) !== JSON.stringify(draft)),
@@ -464,8 +515,8 @@ export function ExtractionReviewWorkspace({
     return (
       <PageState
         state="loading"
-        title="Loading extraction review"
-        message="Retrieving the immutable review revision and source anchors…"
+        title={t('Loading extraction review')}
+        message={t('Retrieving the immutable review revision and source anchors…')}
       />
     )
   }
@@ -473,11 +524,11 @@ export function ExtractionReviewWorkspace({
     return (
       <PageState
         state="error"
-        title="Could not load extraction review"
-        message={error ?? 'The extraction review is unavailable.'}
+        title={t('Could not load extraction review')}
+        message={error ?? t('The extraction review is unavailable.')}
         action={
           <Button variant="secondary" onClick={() => void loadReview()}>
-            Retry review
+            {t('Retry review')}
           </Button>
         }
       />
@@ -485,9 +536,9 @@ export function ExtractionReviewWorkspace({
   }
 
   const tabs: TabItem<ReviewTab>[] = [
-    { id: 'questions', label: `Questions (${draft.questions.length})` },
-    { id: 'clos', label: `CLOs (${draft.clos.length})` },
-    { id: 'topics', label: `Topics (${draft.topics.length})` },
+    { id: 'questions', label: `${t('Questions')} (${draft.questions.length})` },
+    { id: 'clos', label: `${t('CLOs')} (${draft.clos.length})` },
+    { id: 'topics', label: `${t('Topics')} (${draft.topics.length})` },
   ]
 
   function changeRecord(
@@ -510,13 +561,9 @@ export function ExtractionReviewWorkspace({
       const saved = await saveExtractionReview(analysisId, review.revision_id, draft)
       setReview(saved)
       setDraft(cloneSnapshot(saved.snapshot))
-      setNotice(`Revision ${saved.revision_number} saved.`)
+      setNotice(`${t('Revision')} ${saved.revision_number} ${t('saved')}.`)
     } catch (saveError) {
-      setError(
-        saveError instanceof ApiError
-          ? saveError.detail
-          : 'Could not save the extraction review.',
-      )
+      setError(localizeInterfaceError(saveError, locale, t, 'Could not save the extraction review.'))
     } finally {
       setIsSaving(false)
     }
@@ -531,11 +578,12 @@ export function ExtractionReviewWorkspace({
       const response = await confirmExtractionReview(analysisId, review.revision_id)
       onConfirmed(response)
     } catch (confirmError) {
-      setError(
-        confirmError instanceof ApiError
-          ? confirmError.detail
-          : 'Could not confirm the extraction review.',
-      )
+      setError(localizeInterfaceError(
+        confirmError,
+        locale,
+        t,
+        'Could not confirm the extraction review.',
+      ))
     } finally {
       setIsConfirming(false)
     }
@@ -543,40 +591,44 @@ export function ExtractionReviewWorkspace({
 
   return (
     <div className="extraction-review-workspace">
-      <Alert variant="info" title="Transcription review only">
-        Correct only what is visibly present in the uploaded Exam and TP-153. Confirmation does
-        not approve academic alignment and does not create missing official course information.
+      <Alert variant="info" title={t('Transcription review only')}>
+        {t('Correct only what is visibly present in the uploaded Exam and TP-153. Confirmation does not approve academic alignment and does not create missing official course information.')}
       </Alert>
 
-      <div className="review-summary-bar" aria-label="Extraction review revision status">
-        <span>Revision {review.revision_number}</span>
-        <span>{isDirty ? 'Unsaved changes' : 'All changes saved'}</span>
-        <span>{review.is_confirmed ? 'Confirmed' : 'Open for review'}</span>
+      <div className="review-summary-bar" aria-label={t('Extraction review revision status')}>
+        <span>{t('Revision')} {review.revision_number}</span>
+        <span>{isDirty ? t('Unsaved changes') : t('All changes saved')}</span>
+        <span>{review.is_confirmed ? t('Confirmed') : t('Open for review')}</span>
       </div>
 
       {review.warnings.length > 0 && (
-        <Alert variant="warning" title="Items requiring attention">
+        <Alert variant="warning" title={t('Items requiring attention')}>
           <ul className="review-warning-list">
             {review.warnings.map((warning, index) => (
               <li key={`${warning.code}-${warning.source_record_id ?? 'collection'}-${index}`}>
-                {warning.message}
+                {localizeServerMessage(
+                  warning.message,
+                  locale,
+                  t,
+                  'Items requiring attention',
+                )}
               </li>
             ))}
           </ul>
         </Alert>
       )}
       {review.confirmation_blockers.map((blocker) => (
-        <Alert variant="warning" title="Confirmation unavailable" key={blocker}>
-          {blocker}
+        <Alert variant="warning" title={t('Confirmation unavailable')} key={blocker}>
+          {localizeServerMessage(blocker, locale, t, 'Confirmation unavailable')}
         </Alert>
       ))}
       {error && (
-        <Alert variant="error" title="Review action failed">
+        <Alert variant="error" title={t('Review action failed')}>
           {error}
         </Alert>
       )}
       {notice && (
-        <Alert variant="success" title="Review saved">
+        <Alert variant="success" title={t('Review saved')}>
           {notice}
         </Alert>
       )}
@@ -585,7 +637,7 @@ export function ExtractionReviewWorkspace({
         items={tabs}
         value={activeTab}
         onValueChange={setActiveTab}
-        ariaLabel="Extraction review sections"
+        ariaLabel={t('Review Extraction')}
       />
       <section
         id={`tabpanel-${activeTab}`}
@@ -621,26 +673,26 @@ export function ExtractionReviewWorkspace({
 
       <div className="review-sticky-actions">
         <div>
-          <strong>{isDirty ? 'Save this revision before confirming.' : 'Revision is saved.'}</strong>
-          <p>Confirmation permanently closes extraction editing for this analysis.</p>
+          <strong>{isDirty ? t('Save this revision before confirming.') : t('Revision is saved.')}</strong>
+          <p>{t('Confirmation permanently closes extraction editing for this analysis.')}</p>
         </div>
         <div className="review-action-buttons">
           <Button
             variant="secondary"
             disabled={!review.can_edit || !isDirty}
             isLoading={isSaving}
-            loadingLabel="Saving revision…"
+            loadingLabel={t('Saving revision…')}
             onClick={() => void handleSave()}
           >
-            Save New Revision
+            {t('Save New Revision')}
           </Button>
           <Button
             disabled={!review.can_confirm || isDirty}
             isLoading={isConfirming}
-            loadingLabel="Confirming…"
+            loadingLabel={t('Confirming…')}
             onClick={() => void handleConfirm()}
           >
-            Confirm Extraction and Continue
+            {t('Confirm Extraction and Continue')}
           </Button>
         </div>
       </div>

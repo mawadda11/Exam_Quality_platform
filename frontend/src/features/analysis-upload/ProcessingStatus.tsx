@@ -1,12 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getAnalysisProgress, runAnalysis } from '../../api/analyses'
-import { ApiError } from '../../api/client'
+import { getAnalysisProgress, retryAnalysis, runAnalysis } from '../../api/analyses'
 import { Alert } from '../../components/ui/Alert'
 import { Button } from '../../components/ui/Button'
 import { ProgressStepper, type ProgressStep } from '../../components/ui/ProgressStepper'
-import type { AnalysisResponse, ProcessingStage } from '../../types/api'
+import { useI18n } from '../../i18n/I18nProvider'
+import { localizeInterfaceError, localizeServerMessage } from '../../i18n/localizeError'
+import type { AnalysisResponse, ProcessingStage, ProgressResponse } from '../../types/api'
 
 const TERMINAL_STAGES: ProcessingStage[] = ['review_ready', 'completed', 'failed']
+
+const FAILURE_MESSAGE_KEYS: Record<string, string> = {
+  FILE_VALIDATION_FAILED: 'The stored files could not be validated. Check that both PDFs are available, then retry.',
+  EXAM_EXTRACTION_FAILED: 'The examination could not be extracted. Review the PDF and retry.',
+  TP153_EXTRACTION_FAILED: 'The TP-153 Course Specification could not be extracted. Review the PDF and retry.',
+  EVIDENCE_BUILD_FAILED: 'The confirmed extraction could not be converted into analysis evidence. Retry the analysis.',
+  KNOWLEDGE_RETRIEVAL_FAILED: 'The controlled knowledge base could not be prepared. Retry the analysis.',
+  RULE_EVALUATION_FAILED: 'The governed evaluation could not be completed. Retry the analysis.',
+  FINALIZATION_FAILED: 'The analysis could not be finalized. Retry the analysis.',
+}
+
 const ORDERED_PROCESSING_STAGES: ProcessingStage[] = [
   'validating',
   'extracting_exam',
@@ -27,15 +39,6 @@ interface ProcessingStatusProps {
   onAnalysisStarted?: (analysis: AnalysisResponse) => void
 }
 
-function processingSteps(currentState: ProcessingStage): ProgressStep[] {
-  const currentIndex = ORDERED_PROCESSING_STAGES.indexOf(currentState)
-  return ORDERED_PROCESSING_STAGES.map((stage, index) => ({
-    id: stage,
-    label: stage,
-    status: index < currentIndex ? 'complete' : index === currentIndex ? 'current' : 'upcoming',
-  }))
-}
-
 export function ProcessingStatus({
   analysisId,
   initialState,
@@ -43,12 +46,20 @@ export function ProcessingStatus({
   onStateChange,
   onAnalysisStarted,
 }: ProcessingStatusProps) {
+  const { locale, t } = useI18n()
   const onStateChangeRef = useRef(onStateChange)
   const [state, setState] = useState<ProcessingStage>(initialState)
   const [message, setMessage] = useState<string | null>(null)
+  const [failure, setFailure] = useState<Pick<ProgressResponse, 'failed_stage' | 'error_code' | 'can_retry'>>({
+    failed_stage: null,
+    error_code: null,
+    can_retry: false,
+  })
   const [isStarting, setIsStarting] = useState(false)
+  const [isRetrying, setIsRetrying] = useState(false)
   const [startRequested, setStartRequested] = useState(false)
-  const [startError, setStartError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [retryNotice, setRetryNotice] = useState<string | null>(null)
   const [connectivityDegraded, setConnectivityDegraded] = useState(false)
   const [failureDetailsLoaded, setFailureDetailsLoaded] = useState(false)
 
@@ -79,6 +90,11 @@ export function ProcessingStatus({
         setConnectivityDegraded(false)
         applyState(progress.state)
         setMessage(progress.message)
+        setFailure({
+          failed_stage: progress.failed_stage,
+          error_code: progress.error_code,
+          can_retry: progress.can_retry,
+        })
         if (progress.state === 'failed') setFailureDetailsLoaded(true)
         shouldContinue = !TERMINAL_STAGES.includes(progress.state)
       } catch {
@@ -96,18 +112,20 @@ export function ProcessingStatus({
       cancelled = true
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [
-    analysisId,
-    applyState,
-    hasStarted,
-    isTerminal,
-    needsFailureDetails,
-    pollIntervalMs,
-  ])
+  }, [analysisId, applyState, hasStarted, isTerminal, needsFailureDetails, pollIntervalMs])
+
+  function processingSteps(currentState: ProcessingStage): ProgressStep[] {
+    const currentIndex = ORDERED_PROCESSING_STAGES.indexOf(currentState)
+    return ORDERED_PROCESSING_STAGES.map((stage, index) => ({
+      id: stage,
+      label: t(stage),
+      status: index < currentIndex ? 'complete' : index === currentIndex ? 'current' : 'upcoming',
+    }))
+  }
 
   async function handleStart(): Promise<void> {
     setIsStarting(true)
-    setStartError(null)
+    setActionError(null)
     try {
       const response = await runAnalysis(analysisId)
       setStartRequested(true)
@@ -115,11 +133,29 @@ export function ProcessingStatus({
       onAnalysisStarted?.(response)
     } catch (error) {
       setStartRequested(false)
-      setStartError(
-        error instanceof ApiError ? error.detail : 'Could not start the analysis.',
-      )
+      setActionError(localizeInterfaceError(error, locale, t, 'Could not start analysis'))
     } finally {
       setIsStarting(false)
+    }
+  }
+
+  async function handleRetry(): Promise<void> {
+    setIsRetrying(true)
+    setActionError(null)
+    setRetryNotice(null)
+    try {
+      const response = await retryAnalysis(analysisId)
+      setFailureDetailsLoaded(false)
+      setFailure({ failed_stage: null, error_code: null, can_retry: false })
+      setMessage(null)
+      setRetryNotice(t('Retry accepted'))
+      setStartRequested(true)
+      applyState(response.state)
+      onAnalysisStarted?.(response)
+    } catch (error) {
+      setActionError(localizeInterfaceError(error, locale, t, 'Analysis processing failed'))
+    } finally {
+      setIsRetrying(false)
     }
   }
 
@@ -129,47 +165,71 @@ export function ProcessingStatus({
         <Button
           onClick={() => void handleStart()}
           isLoading={isStarting}
-          loadingLabel="Starting…"
+          loadingLabel={t('Starting…')}
         >
-          Start Analysis
+          {t('Start Analysis')}
         </Button>
       )}
 
       {hasStarted && (
         <>
           {state !== 'failed' && state !== 'queued' && (
-            <div className="processing-progress" tabIndex={0} aria-label="Processing stages">
+            <div className="processing-progress" tabIndex={0} aria-label={t('Processing stages')}>
               <ProgressStepper
                 steps={processingSteps(state)}
-                ariaLabel="Analysis processing progress"
+                ariaLabel={t('Analysis processing progress')}
               />
             </div>
           )}
           <p className="processing-stage" role="status">
-            Current backend stage: <strong>{state}</strong>
+            {t('Current backend stage')}: <strong>{t(state)}</strong>
           </p>
         </>
       )}
 
       {connectivityDegraded && (
-        <Alert variant="warning" title="Connection interrupted">
-          Progress could not be refreshed. Polling will retry automatically.
+        <Alert variant="warning" title={t('Connection interrupted')}>
+          {t('Progress could not be refreshed. Polling will retry automatically.')}
         </Alert>
       )}
-      {state === 'failed' && message && (
-        <Alert variant="error" title="Analysis processing failed">
-          {message}
+      {state === 'failed' && (
+        <Alert variant="error" title={t('Analysis processing failed')}>
+          <p>
+            {failure.error_code
+              ? t(FAILURE_MESSAGE_KEYS[failure.error_code] ?? 'Analysis processing failed')
+              : localizeServerMessage(message, locale, t, 'Analysis processing failed')}
+          </p>
+          {failure.failed_stage && (
+            <p>
+              {t('Current backend stage')}: <strong>{t(failure.failed_stage)}</strong>
+            </p>
+          )}
+          {failure.error_code && <p><bdi>{failure.error_code}</bdi></p>}
+          {failure.can_retry && (
+            <Button
+              variant="secondary"
+              isLoading={isRetrying}
+              loadingLabel={t('Retrying…')}
+              onClick={() => void handleRetry()}
+            >
+              {t('Retry Analysis')}
+            </Button>
+          )}
+        </Alert>
+      )}
+      {retryNotice && (
+        <Alert variant="success" title={t('Retry accepted')}>
+          {retryNotice}
         </Alert>
       )}
       {state === 'review_ready' && (
-        <Alert variant="info" title="Extraction ready for review">
-          The extracted Exam and TP-153 evidence is ready. Continue to the dedicated
-          review workspace to correct transcription, save a revision, and confirm it.
+        <Alert variant="info" title={t('Extraction ready for review')}>
+          {t('The extracted Exam and TP-153 evidence is ready. Continue to the dedicated review workspace to correct transcription, save a revision, and confirm it.')}
         </Alert>
       )}
-      {startError && (
-        <Alert variant="error" title="Could not start analysis">
-          {startError}
+      {actionError && (
+        <Alert variant="error" title={t('Could not start analysis')}>
+          {actionError}
         </Alert>
       )}
     </div>

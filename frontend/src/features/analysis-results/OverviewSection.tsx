@@ -10,6 +10,7 @@ import type {
 import { ReanalysisAction } from './ReanalysisAction'
 import { RuleCoveragePanel } from './RuleCoveragePanel'
 import type { ResultResource } from './useAnalysisResultsData'
+import { useI18n } from '../../i18n/I18nProvider'
 
 interface OverviewSectionProps {
   analysis: AnalysisResponse
@@ -36,12 +37,13 @@ export function OverviewSection({
   onRetryRuleCoverage,
   onReanalysisCreated,
 }: OverviewSectionProps) {
+  const { t } = useI18n()
   return (
     <div className="overview-section results-section-stack">
       <div className="results-section-heading">
         <div>
-          <h2>Overview</h2>
-          <p>A summary of the quality checks completed for this exam.</p>
+          <h2>{t('Overview')}</h2>
+          <p>{t('A summary of the quality checks completed for this exam.')}</p>
         </div>
       </div>
 
@@ -50,12 +52,12 @@ export function OverviewSection({
           <ScoreRing
             score={score.score}
             denominator={score.denominator}
-            emptyLabel={score.label ?? 'Insufficient Evidence'}
+            emptyLabel={t(score.label ?? 'Insufficient Evidence')}
           />
         </Card>
 
         <Card as="section" className="overview-status-card">
-          <h3>Evaluation results</h3>
+          <h3>{t('Evaluation results')}</h3>
           <ul className="status-count-grid">
             {statusCounts(score).map(([status, count]) => (
               <li key={status}>
@@ -65,13 +67,12 @@ export function OverviewSection({
             ))}
           </ul>
           <div className="score-transparency">
-            <h4>About this score</h4>
+            <h4>{t('About this score')}</h4>
             <p>
-              This score summarizes the checks the platform was able to verify for this exam.
+              {t('This score summarizes the checks the platform was able to verify for this exam.')}
             </p>
             <p className="results-supporting-text">
-              Results that could not be verified or did not apply remain visible, but they do not
-              lower the score. Checks that are not yet available are also excluded.
+              {t('Results that could not be verified or did not apply remain visible, but they do not lower the score. Checks that are not yet available are also excluded.')}
             </p>
           </div>
         </Card>

@@ -142,3 +142,43 @@ def test_registered_faculty_accounts_are_strictly_isolated(client: TestClient) -
     assert client.get(f"/api/v1/analyses/{analysis_id}", headers=second_headers).status_code == 404
     assert client.get("/api/v1/analyses", headers=second_headers).json() == []
     assert len(client.get("/api/v1/analyses", headers=first_headers).json()) == 1
+
+
+def test_registration_and_preferences_preserve_selected_language(client: TestClient) -> None:
+    registered = client.post(
+        "/api/v1/auth/register",
+        json={
+            **REGISTER_PAYLOAD,
+            "email": "arabic-preference@university.edu",
+            "preferred_language": "ar",
+        },
+    )
+    assert registered.status_code == 201
+    body = registered.json()
+    assert body["user"]["preferred_language"] == "ar"
+    headers = {"Authorization": f"Bearer {body['access_token']}"}
+
+    updated = client.patch(
+        "/api/v1/auth/preferences",
+        headers=headers,
+        json={"preferred_language": "en"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["preferred_language"] == "en"
+
+    me = client.get("/api/v1/auth/me", headers=headers)
+    assert me.status_code == 200
+    assert me.json()["preferred_language"] == "en"
+
+
+def test_preferences_reject_unsupported_language(client: TestClient) -> None:
+    registered = client.post(
+        "/api/v1/auth/register",
+        json={**REGISTER_PAYLOAD, "email": "bad-language@university.edu"},
+    ).json()
+    response = client.patch(
+        "/api/v1/auth/preferences",
+        headers={"Authorization": f"Bearer {registered['access_token']}"},
+        json={"preferred_language": "fr"},
+    )
+    assert response.status_code == 422

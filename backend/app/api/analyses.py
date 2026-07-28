@@ -40,7 +40,7 @@ from app.schemas.finding import FindingResponse
 from app.schemas.progress import ProgressResponse
 from app.schemas.question import QuestionResponse
 from app.schemas.recommendation import RecommendationResponse
-from app.schemas.report import ReportResponse
+from app.schemas.report import ReportCreateRequest, ReportResponse
 from app.schemas.rule_coverage import RuleCoverageAuditResponse
 from app.schemas.score import AnalysisScoreResponse
 from app.schemas.topic import TopicResponse
@@ -62,7 +62,9 @@ from app.services.knowledge_base.reference_data import (
 from app.services.processing.runner import (
     run_analysis_pipeline,
     run_post_confirmation_pipeline,
+    run_retry_pipeline,
 )
+from app.services.processing.stages import POST_CONFIRMATION_STAGES
 from app.services.reporting.content import assemble_report_content
 from app.services.reporting.pdf import render_report_pdf
 from app.services.reporting.storage import store_report_pdf
@@ -257,6 +259,95 @@ def run_analysis(
     return AnalysisResponse.from_model(_load_with_relations(db, analysis.id))
 
 
+@router.post(
+    "/{analysis_id}/retry", response_model=AnalysisResponse, status_code=status.HTTP_202_ACCEPTED
+)
+def retry_analysis(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    background_tasks: BackgroundTasks,
+) -> AnalysisResponse:
+    if analysis.state != ProcessingStage.FAILED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only a failed analysis can be retried.",
+        )
+
+    latest_failure = db.execute(
+        select(ProcessingEvent)
+        .where(
+            ProcessingEvent.analysis_id == analysis.id,
+            ProcessingEvent.stage == ProcessingStage.FAILED,
+        )
+        .order_by(ProcessingEvent.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if (
+        latest_failure is None
+        or latest_failure.failed_stage is None
+        or not latest_failure.retryable
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This failure does not have a safe retry boundary.",
+        )
+    if not analysis.ready_for_analysis:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The original examination and TP-153 files are required before retrying.",
+        )
+    unavailable_files = [
+        uploaded.original_filename
+        for uploaded in analysis.files
+        if not resolve_storage_path(settings.upload_root, uploaded.storage_key).is_file()
+    ]
+    if unavailable_files:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The original uploaded files are unavailable. Upload them in a new analysis.",
+        )
+    if (
+        latest_failure.failed_stage in POST_CONFIRMATION_STAGES
+        and analysis.confirmed_review_id is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The confirmed extraction revision required for retry is unavailable.",
+        )
+
+    retry_stage = latest_failure.failed_stage
+    confirmed_review_id = analysis.confirmed_review_id
+    claim = cast(
+        CursorResult[Any],
+        db.execute(
+            update(Analysis)
+            .where(
+                Analysis.id == analysis.id,
+                Analysis.state == ProcessingStage.FAILED,
+            )
+            .values(state=retry_stage)
+            .execution_options(synchronize_session=False)
+        ),
+    )
+    if claim.rowcount != 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A retry or another processing action has already started.",
+        )
+    db.add(
+        ProcessingEvent(
+            analysis_id=analysis.id,
+            stage=retry_stage,
+            message="Retry accepted. Processing will resume from the failed stage.",
+        )
+    )
+    db.commit()
+    db.expire_all()
+    background_tasks.add_task(run_retry_pipeline, analysis.id, retry_stage, confirmed_review_id)
+    return AnalysisResponse.from_model(_load_with_relations(db, analysis.id))
+
+
 def _review_http_error(exc: Exception) -> HTTPException:
     if isinstance(exc, ExtractionReviewRevisionNotFoundError):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
@@ -423,6 +514,13 @@ def get_analysis_progress(
         analysis_id=analysis.id,
         state=analysis.state,
         message=latest_event.message if latest_event else None,
+        failed_stage=latest_event.failed_stage if latest_event else None,
+        error_code=latest_event.error_code if latest_event else None,
+        can_retry=bool(
+            analysis.state == ProcessingStage.FAILED
+            and latest_event is not None
+            and latest_event.retryable
+        ),
         updated_at=analysis.updated_at,
     )
 
@@ -570,7 +668,9 @@ def create_report(
     analysis: Annotated[Analysis, Depends(get_owned_analysis)],
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
+    payload: ReportCreateRequest | None = None,
 ) -> ReportResponse:
+    payload = payload or ReportCreateRequest()
     # M10 decision: on-demand only, triggered by this explicit action - never
     # generated automatically by the processing pipeline. Regenerating
     # creates a new Report row rather than replacing an existing one (see
@@ -599,7 +699,7 @@ def create_report(
         assessment_records=assessment_records,
         rule_coverage=coverage,
     )
-    pdf_bytes = render_report_pdf(content)
+    pdf_bytes = render_report_pdf(content, language=payload.language)
 
     report_id = uuid.uuid4()
     stored = store_report_pdf(
@@ -613,6 +713,7 @@ def create_report(
         id=report_id,
         analysis_id=analysis.id,
         format=ReportFormat.PDF,
+        language=payload.language,
         storage_key=stored.storage_key,
         size_bytes=stored.size_bytes,
         sha256_hash=stored.sha256_hash,

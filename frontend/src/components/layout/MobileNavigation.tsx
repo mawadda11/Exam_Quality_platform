@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { BrandMark } from '../ui/BrandMark'
 import { PrimaryNavigation } from './PrimaryNavigation'
 import { UserAccountPanel } from './UserAccountPanel'
+import { LanguageSwitcher } from '../../i18n/LanguageSwitcher'
+import { useI18n } from '../../i18n/I18nProvider'
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 export function MobileNavigation() {
+  const { t } = useI18n()
   const [isOpen, setIsOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const drawerRef = useRef<HTMLDivElement>(null)
@@ -57,7 +61,7 @@ export function MobileNavigation() {
         className="mobile-navigation-trigger"
         aria-expanded={isOpen}
         aria-controls="mobile-navigation-drawer"
-        aria-label="Open navigation"
+        aria-label={t('Open navigation')}
         onClick={() => setIsOpen(true)}
       >
         <span aria-hidden="true">☰</span>
@@ -68,7 +72,7 @@ export function MobileNavigation() {
           <button
             type="button"
             className="mobile-navigation-backdrop"
-            aria-label="Close navigation"
+            aria-label={t('Close navigation')}
             onClick={closeAndReturnFocus}
           />
           <div
@@ -77,7 +81,7 @@ export function MobileNavigation() {
             className="mobile-navigation-drawer"
             role="dialog"
             aria-modal="true"
-            aria-label="Application navigation"
+            aria-label={t('Application navigation')}
             onKeyDown={handleDrawerKeyDown}
           >
             <div className="mobile-navigation-heading">
@@ -85,13 +89,22 @@ export function MobileNavigation() {
               <button
                 type="button"
                 className="mobile-navigation-close"
-                aria-label="Close navigation"
+                aria-label={t('Close navigation')}
                 onClick={closeAndReturnFocus}
               >
                 ×
               </button>
             </div>
+            <Link
+              className="ui-button app-new-analysis-action"
+              to="/analyses/new"
+              onClick={closeAndReturnFocus}
+            >
+              <span aria-hidden="true">+</span>
+              {t('New Analysis')}
+            </Link>
             <PrimaryNavigation onNavigate={closeAndReturnFocus} />
+            <LanguageSwitcher />
             <UserAccountPanel />
           </div>
         </>

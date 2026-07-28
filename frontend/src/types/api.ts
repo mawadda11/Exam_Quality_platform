@@ -2,6 +2,9 @@ export type ExamType = 'Midterm' | 'Final'
 
 export type UploadedFileType = 'exam' | 'tp153'
 
+export type Locale = 'ar' | 'en'
+export type ReportLanguage = Locale
+
 export type ProcessingStage =
   | 'queued'
   | 'validating'
@@ -80,6 +83,9 @@ export interface ProgressResponse {
   analysis_id: string
   state: ProcessingStage
   message: string | null
+  failed_stage: ProcessingStage | null
+  error_code: string | null
+  can_retry: boolean
   updated_at: string
 }
 
@@ -271,6 +277,7 @@ export interface ReportResponse {
   id: string
   analysis_id: string
   format: ReportFormat
+  language: ReportLanguage
   kb_version: string
   score: string | null
   score_label: string | null
@@ -405,6 +412,7 @@ export interface FacultyUserResponse {
   institution: string | null
   department: string | null
   user_type: 'Faculty Member'
+  preferred_language: Locale
   email_verified: boolean
   created_at: string
 }
@@ -415,6 +423,7 @@ export interface RegisterRequest {
   display_name: string
   institution?: string | null
   department?: string | null
+  preferred_language?: Locale
 }
 
 export interface LoginRequest {

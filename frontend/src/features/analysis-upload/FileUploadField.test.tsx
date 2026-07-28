@@ -65,7 +65,7 @@ describe('FileUploadField', () => {
       target: { files: [file] },
     })
 
-    expect(await screen.findByText(/must be a \.pdf file/i)).toBeInTheDocument()
+    expect(await screen.findByText(/must be a PDF/i)).toBeInTheDocument()
     expect(screen.getByText('rejected')).toBeInTheDocument()
     expect(analysesApi.uploadAnalysisFile).not.toHaveBeenCalled()
   })

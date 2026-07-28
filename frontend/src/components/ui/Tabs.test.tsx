@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { Tabs } from './Tabs'
 
 const ITEMS = [
@@ -22,6 +22,10 @@ function ControlledTabs() {
 }
 
 describe('Tabs', () => {
+  beforeEach(() => {
+    document.documentElement.dir = 'ltr'
+  })
+
   it('supports click selection with a single tab stop', () => {
     render(<ControlledTabs />)
     fireEvent.click(screen.getByRole('tab', { name: 'Questions' }))
@@ -50,5 +54,16 @@ describe('Tabs', () => {
 
     fireEvent.keyDown(report, { key: 'Home' })
     expect(screen.getByRole('tab', { name: 'Overview' })).toHaveFocus()
+  })
+
+  it('reverses horizontal arrow movement for RTL reading order', () => {
+    document.documentElement.dir = 'rtl'
+    render(<ControlledTabs />)
+    const overview = screen.getByRole('tab', { name: 'Overview' })
+    overview.focus()
+
+    fireEvent.keyDown(overview, { key: 'ArrowLeft' })
+
+    expect(screen.getByRole('tab', { name: 'Questions' })).toHaveFocus()
   })
 })

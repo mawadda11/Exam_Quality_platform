@@ -125,3 +125,17 @@ Finding is `not_run`, which is a system coverage gap rather than academic Not Ve
 
 Explicit source mappings remain source evidence. AI-derived relationships are labeled derived,
 reference confirmed IDs, and never overwrite a source mapping or source record.
+
+## Version 2 Batch 3 bilingual and recovery additions
+
+- `PATCH /auth/preferences` updates the authenticated Faculty Member's `preferred_language` using
+  the controlled `ar` / `en` language codes.
+- `GET /analyses/{id}/progress` additionally returns nullable `failed_stage`, nullable safe
+  `error_code`, and `can_retry`.
+- `POST /analyses/{id}/retry` atomically resumes an owner-scoped failed analysis from its last
+  durable failed-stage boundary. Existing uploads and the exact confirmed review revision are reused;
+  file re-upload is not required. A non-failed analysis, missing source files, unsafe boundary, or
+  concurrent retry returns `409`.
+- `POST /analyses/{id}/reports` accepts an optional `{ "language": "ar" | "en" }` body. Generated
+  report metadata includes the selected language. Static report presentation is localized while
+  governed source evidence and official knowledge-base wording remain source-faithful.

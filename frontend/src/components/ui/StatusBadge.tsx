@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n/I18nProvider'
 import type { AcademicStatus } from '../../types/api'
 
 interface StatusPresentation {
@@ -14,6 +15,7 @@ const STATUS_PRESENTATION: Record<AcademicStatus, StatusPresentation> = {
 }
 
 export function StatusBadge({ status }: { status: AcademicStatus }) {
+  const { t } = useI18n()
   const presentation = STATUS_PRESENTATION[status]
 
   return (
@@ -22,7 +24,7 @@ export function StatusBadge({ status }: { status: AcademicStatus }) {
       data-academic-status={status}
     >
       <span aria-hidden="true">{presentation.icon}</span>
-      <span>{status}</span>
+      <span>{t(status)}</span>
     </span>
   )
 }

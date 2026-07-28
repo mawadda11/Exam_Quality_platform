@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOptionalAuth } from '../../features/auth/AuthProvider'
+import { useI18n } from '../../i18n/I18nProvider'
 
 export function UserAccountPanel() {
+  const { t } = useI18n()
   const auth = useOptionalAuth()
   const navigate = useNavigate()
   const [isSigningOut, setIsSigningOut] = useState(false)
@@ -18,7 +20,7 @@ export function UserAccountPanel() {
   }
 
   return (
-    <section className="user-account-panel" aria-label="Signed-in faculty account">
+    <section className="user-account-panel" aria-label={t('Faculty Member')}>
       <div className="user-account-avatar" aria-hidden="true">
         {user.display_name.slice(0, 1).toUpperCase()}
       </div>
@@ -32,7 +34,7 @@ export function UserAccountPanel() {
         disabled={isSigningOut}
         onClick={() => void handleLogout()}
       >
-        {isSigningOut ? 'Signing out…' : 'Sign out'}
+        {isSigningOut ? t('Signing out…') : t('Sign out')}
       </button>
     </section>
   )

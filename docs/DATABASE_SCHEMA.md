@@ -122,3 +122,18 @@ always receive a password hash. Existing development identities receive no inven
 `password_reset_tokens` stores only SHA-256 hashes of random reset tokens. Each row belongs to one
 user and contains `expires_at` and nullable `used_at`; confirmation is rejected after expiry or first
 use. Password reset increments `users.token_version`, invalidating older bearer tokens.
+
+## Version 2 Batch 3 bilingual and retry metadata
+
+Migration `0011` adds:
+
+- `users.preferred_language`: non-null controlled `ar` / `en` preference, defaulting to Arabic for
+  upgraded and newly created accounts unless explicitly changed;
+- `processing_events.failed_stage`: nullable exact pipeline stage that failed;
+- `processing_events.error_code`: nullable safe stable failure code;
+- `processing_events.retryable`: non-null operational retry eligibility flag;
+- `reports.language`: non-null language of the immutable generated PDF snapshot.
+
+Failure events retain only safe user-facing metadata. Server exception details remain in protected
+logs. Retry does not overwrite the confirmed extraction revision, prior events, completed reports,
+or source uploads.

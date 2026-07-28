@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react'
+import { useI18n } from '../../i18n/I18nProvider'
 
 export type ProgressStepStatus = 'complete' | 'current' | 'upcoming'
 
@@ -17,6 +18,7 @@ export function ProgressStepper({
   steps,
   ariaLabel = 'Progress',
 }: ProgressStepperProps) {
+  const { t } = useI18n()
   const style = { '--step-count': Math.max(steps.length, 1) } as CSSProperties
 
   return (
@@ -32,7 +34,7 @@ export function ProgressStepper({
             {step.status === 'complete' ? '✓' : index + 1}
           </span>
           <span>{step.label}</span>
-          {step.status === 'current' && <span className="visually-hidden">Current step</span>}
+          {step.status === 'current' && <span className="visually-hidden">{t('Current step')}</span>}
         </li>
       ))}
     </ol>

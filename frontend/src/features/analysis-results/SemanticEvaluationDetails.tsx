@@ -1,3 +1,5 @@
+import { useI18n } from '../../i18n/I18nProvider'
+import { OriginalTextDisclosure } from '../../components/ui/OriginalTextDisclosure'
 import type {
   FindingEvidenceRef,
   FindingItemJudgmentDetails,
@@ -5,23 +7,24 @@ import type {
 } from '../../types/api'
 import { StatusBadge } from './StatusBadge'
 
-function evidenceLabel(evidence: FindingEvidenceRef): string {
-  const source = evidence.source_document === 'exam' ? 'Exam' : 'TP-153'
-  return `${evidence.item_reference} · ${source} page ${evidence.page_number} · ${evidence.evidence_type}`
-}
-
-function MissingEvidenceReference({ evidenceId }: { evidenceId: string }) {
+function EvidenceReference({ evidence }: { evidence: FindingEvidenceRef }) {
+  const { t } = useI18n()
+  const source = evidence.source_document === 'exam' ? t('Exam') : 'TP-153'
   return (
-    <span className="semantic-evidence-reference semantic-evidence-reference--missing">
-      Evidence reference unavailable in this response: <bdi>{evidenceId}</bdi>
+    <span className="semantic-evidence-reference">
+      <bdi dir="auto">
+        {evidence.item_reference} · {source} {t('page')} {evidence.page_number} ·{' '}
+        {evidence.evidence_type}
+      </bdi>
     </span>
   )
 }
 
-function EvidenceReference({ evidence }: { evidence: FindingEvidenceRef }) {
+function MissingEvidenceReference({ evidenceId }: { evidenceId: string }) {
+  const { t } = useI18n()
   return (
-    <span className="semantic-evidence-reference">
-      <bdi dir="auto">{evidenceLabel(evidence)}</bdi>
+    <span className="semantic-evidence-reference semantic-evidence-reference--missing">
+      {t('Evidence reference unavailable in this response')}: <bdi>{evidenceId}</bdi>
     </span>
   )
 }
@@ -32,11 +35,8 @@ interface ItemJudgmentProps {
   relationshipRule: boolean
 }
 
-function ItemJudgment({
-  judgment,
-  evidenceById,
-  relationshipRule,
-}: ItemJudgmentProps) {
+function ItemJudgment({ judgment, evidenceById, relationshipRule }: ItemJudgmentProps) {
+  const { locale, t } = useI18n()
   const source = evidenceById.get(judgment.source_evidence_id)
   const targets = judgment.target_evidence_ids.map((id) => ({
     id,
@@ -48,21 +48,24 @@ function ItemJudgment({
     <li className="semantic-item-judgment">
       <div className="semantic-item-judgment-header">
         <strong>
-          {isDerivedRelationship
-            ? 'AI-derived advisory relationship'
-            : 'Governed semantic item judgment'}
+          {t(
+            isDerivedRelationship
+              ? 'Derived advisory relationship'
+              : 'Governed semantic item judgment',
+          )}
         </strong>
         <StatusBadge status={judgment.status} />
       </div>
       {isDerivedRelationship && (
         <p className="semantic-derived-notice">
-          This relationship is an analysis output. It is not an official TP-153 mapping and does
-          not overwrite source evidence.
+          {t(
+            'This relationship is an analysis output. It is not an official TP-153 mapping and does not overwrite source evidence.',
+          )}
         </p>
       )}
       <dl className="semantic-item-evidence">
         <div>
-          <dt>Source evidence</dt>
+          <dt>{t('Source evidence')}</dt>
           <dd>
             {source ? (
               <EvidenceReference evidence={source} />
@@ -72,10 +75,12 @@ function ItemJudgment({
           </dd>
         </div>
         <div>
-          <dt>{isDerivedRelationship ? 'Related controlled evidence' : 'Target evidence'}</dt>
+          <dt>
+            {t(isDerivedRelationship ? 'Related controlled evidence' : 'Target evidence')}
+          </dt>
           <dd>
             {targets.length === 0 ? (
-              <span>No target relationship was asserted.</span>
+              <span>{t('No target relationship was asserted.')}</span>
             ) : (
               <ul className="semantic-target-list">
                 {targets.map(({ id, evidence }) => (
@@ -92,14 +97,19 @@ function ItemJudgment({
           </dd>
         </div>
       </dl>
-      <p className="semantic-item-reasoning" dir="auto">
-        <strong>Concise reasoning:</strong> {judgment.reasoning}
+      <p className="semantic-item-reasoning">
+        <strong>{t('Concise reasoning')}:</strong>{' '}
+        {locale === 'ar'
+          ? t('The linked evidence supports the item-level judgment shown above.')
+          : judgment.reasoning}
       </p>
+      <OriginalTextDisclosure>{judgment.reasoning}</OriginalTextDisclosure>
     </li>
   )
 }
 
 export function SemanticEvaluationDetails({ finding }: { finding: FindingResponse }) {
+  const { locale, t } = useI18n()
   const details = finding.evaluation_details
   if (!details) return null
 
@@ -108,17 +118,22 @@ export function SemanticEvaluationDetails({ finding }: { finding: FindingRespons
 
   return (
     <div className="semantic-evaluation-details">
-      <p className="semantic-reasoning" dir="auto">
-        <strong>Governed decision reasoning:</strong> {details.reasoning}
+      <p className="semantic-reasoning">
+        <strong>{t('Governed decision reasoning')}:</strong>{' '}
+        {locale === 'ar'
+          ? t('The decision is based on the governed requirement and the evidence linked below.')
+          : details.reasoning}
       </p>
+      <OriginalTextDisclosure>{details.reasoning}</OriginalTextDisclosure>
 
       {details.confidence_basis.length > 0 && (
         <div className="semantic-confidence-basis">
-          <strong>Confidence basis</strong>
+          <strong>{t('Confidence basis')}</strong>
           <ul>
             {details.confidence_basis.map((basis) => (
-              <li key={basis} dir="auto">
-                {basis}
+              <li key={basis}>
+                {locale === 'ar' ? t('Confidence reflects the quality and completeness of the linked evidence.') : basis}
+                <OriginalTextDisclosure>{basis}</OriginalTextDisclosure>
               </li>
             ))}
           </ul>
@@ -126,10 +141,12 @@ export function SemanticEvaluationDetails({ finding }: { finding: FindingRespons
       )}
 
       <div className="semantic-item-judgments-section">
-        <strong>Evidence-linked item judgments ({details.item_judgments.length})</strong>
+        <strong>
+          {t('Evidence-linked item judgments')} ({details.item_judgments.length})
+        </strong>
         {details.item_judgments.length === 0 ? (
           <p className="results-supporting-text">
-            No item-level relationship or judgment was retained for this finding.
+            {t('No item-level relationship or judgment was retained for this finding.')}
           </p>
         ) : (
           <ol className="semantic-item-judgments">
@@ -147,7 +164,7 @@ export function SemanticEvaluationDetails({ finding }: { finding: FindingRespons
 
       {details.retrieved_knowledge_ids.length > 0 && (
         <p className="semantic-kb-references">
-          Controlled KB references:{' '}
+          {t('Controlled KB references')}:{' '}
           {details.retrieved_knowledge_ids.map((id, index) => (
             <span key={id}>
               {index > 0 && ', '}

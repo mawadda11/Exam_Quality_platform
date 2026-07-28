@@ -29,8 +29,9 @@ export function Tabs<T extends string>({
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number): void {
     let targetIndex: number | null = null
-    if (event.key === 'ArrowRight') targetIndex = (index + 1) % items.length
-    if (event.key === 'ArrowLeft') targetIndex = (index - 1 + items.length) % items.length
+    const direction = document.documentElement.dir === 'rtl' ? -1 : 1
+    if (event.key === 'ArrowRight') targetIndex = (index + direction + items.length) % items.length
+    if (event.key === 'ArrowLeft') targetIndex = (index - direction + items.length) % items.length
     if (event.key === 'Home') targetIndex = 0
     if (event.key === 'End') targetIndex = items.length - 1
     if (targetIndex === null) return

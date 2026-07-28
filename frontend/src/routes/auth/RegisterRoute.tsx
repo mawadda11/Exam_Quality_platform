@@ -1,12 +1,14 @@
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
-import { ApiError } from '../../api/client'
 import { Alert } from '../../components/ui/Alert'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { useAuth } from '../../features/auth/AuthProvider'
+import { useI18n } from '../../i18n/I18nProvider'
+import { localizeInterfaceError } from '../../i18n/localizeError'
 
 export function RegisterRoute() {
+  const { locale, t } = useI18n()
   const auth = useAuth()
   const navigate = useNavigate()
   const [displayName, setDisplayName] = useState('')
@@ -24,7 +26,7 @@ export function RegisterRoute() {
     event.preventDefault()
     setError(null)
     if (password !== confirmPassword) {
-      setError('Passwords do not match.')
+      setError(t('Passwords do not match.'))
       return
     }
     setSubmitting(true)
@@ -38,7 +40,7 @@ export function RegisterRoute() {
       })
       navigate('/dashboard', { replace: true })
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.detail : 'Account creation failed.')
+      setError(localizeInterfaceError(caught, locale, t, 'Could not create account'))
     } finally {
       setSubmitting(false)
     }
@@ -47,13 +49,13 @@ export function RegisterRoute() {
   return (
     <Card as="section" variant="raised" className="auth-card auth-card--wide">
       <div className="auth-card-heading">
-        <p className="auth-eyebrow">Faculty registration</p>
-        <h1>Create your account</h1>
-        <p>Each faculty member receives a private dashboard and analysis history.</p>
+        <p className="auth-eyebrow">{t('Faculty registration')}</p>
+        <h1>{t('Create your account')}</h1>
+        <p>{t('Each faculty member receives a private dashboard and analysis history.')}</p>
       </div>
 
       {error && (
-        <Alert variant="error" title="Could not create account">
+        <Alert variant="error" title={t('Could not create account')}>
           <p>{error}</p>
         </Alert>
       )}
@@ -61,7 +63,7 @@ export function RegisterRoute() {
       <form className="auth-form" onSubmit={(event) => void handleSubmit(event)}>
         <div className="auth-form-grid">
           <label className="auth-field">
-            <span>Full name</span>
+            <span>{t('Full name')}</span>
             <input
               type="text"
               autoComplete="name"
@@ -73,7 +75,7 @@ export function RegisterRoute() {
             />
           </label>
           <label className="auth-field">
-            <span>Email address</span>
+            <span>{t('Email address')}</span>
             <input
               type="email"
               autoComplete="email"
@@ -83,7 +85,7 @@ export function RegisterRoute() {
             />
           </label>
           <label className="auth-field">
-            <span>Institution <small>optional</small></span>
+            <span>{t('Institution')} <small>{t('optional')}</small></span>
             <input
               type="text"
               autoComplete="organization"
@@ -93,7 +95,7 @@ export function RegisterRoute() {
             />
           </label>
           <label className="auth-field">
-            <span>Department <small>optional</small></span>
+            <span>{t('Department')} <small>{t('optional')}</small></span>
             <input
               type="text"
               maxLength={200}
@@ -102,7 +104,7 @@ export function RegisterRoute() {
             />
           </label>
           <label className="auth-field">
-            <span>Password</span>
+            <span>{t('Password')}</span>
             <input
               type="password"
               autoComplete="new-password"
@@ -115,7 +117,7 @@ export function RegisterRoute() {
             />
           </label>
           <label className="auth-field">
-            <span>Confirm password</span>
+            <span>{t('Confirm password')}</span>
             <input
               type="password"
               autoComplete="new-password"
@@ -128,15 +130,15 @@ export function RegisterRoute() {
           </label>
         </div>
         <p id="password-guidance" className="auth-guidance">
-          Use at least 12 characters with at least one letter and one number.
+          {t('Use at least 12 characters with at least one letter and one number.')}
         </p>
-        <Button type="submit" isLoading={submitting} loadingLabel="Creating account…">
-          Create account
+        <Button type="submit" isLoading={submitting} loadingLabel={t('Creating account…')}>
+          {t('Create account')}
         </Button>
       </form>
 
       <p className="auth-switch">
-        Already have an account? <Link to="/login">Sign in</Link>
+        {t('Already have an account?')} <Link to="/login">{t('Sign in')}</Link>
       </p>
     </Card>
   )

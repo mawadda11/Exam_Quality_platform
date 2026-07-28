@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { createReanalysis } from '../../api/analyses'
-import { ApiError } from '../../api/client'
 import { Alert } from '../../components/ui/Alert'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
+import { useI18n } from '../../i18n/I18nProvider'
+import { localizeInterfaceError } from '../../i18n/localizeError'
 import type { AnalysisResponse } from '../../types/api'
 
 interface ReanalysisActionProps {
@@ -11,11 +12,8 @@ interface ReanalysisActionProps {
   onCreated: (reanalysis: AnalysisResponse) => void
 }
 
-/** "Create a linked reanalysis for a revised examination" (PRD). The
- * revised exam always has to be uploaded fresh (M10 decision) - this action
- * only creates the new, linked analysis; the upload flow for it happens
- * exactly like any other analysis once onCreated switches the view. */
 export function ReanalysisAction({ analysisId, onCreated }: ReanalysisActionProps) {
+  const { locale, t } = useI18n()
   const [reuseTp153, setReuseTp153] = useState(true)
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -27,7 +25,7 @@ export function ReanalysisAction({ analysisId, onCreated }: ReanalysisActionProp
       const reanalysis = await createReanalysis(analysisId, { reuse_tp153: reuseTp153 })
       onCreated(reanalysis)
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : 'Could not create the reanalysis.')
+      setError(localizeInterfaceError(err, locale, t, 'Could not create the reanalysis.'))
     } finally {
       setIsCreating(false)
     }
@@ -35,28 +33,28 @@ export function ReanalysisAction({ analysisId, onCreated }: ReanalysisActionProp
 
   return (
     <Card as="section" className="reanalysis-action">
-      <h2>Analyze a revised exam</h2>
+      <h2>{t('Analyze a revised exam')}</h2>
       <p>
-        Create a reanalysis linked to analysis <bdi>{analysisId}</bdi>. This analysis and its
-        reports remain unchanged.
+        {t('Create a reanalysis linked to analysis')} <bdi>{analysisId}</bdi>.{' '}
+        {t('This analysis and its reports remain unchanged.')}
       </p>
       <label className="reanalysis-reuse-option">
         <input
           type="checkbox"
           checked={reuseTp153}
-          onChange={(e) => setReuseTp153(e.target.checked)}
+          onChange={(event) => setReuseTp153(event.target.checked)}
         />
-        Reuse the previous TP-153 (uncheck to upload a new one)
+        {t('Reuse the previous TP-153 (uncheck to upload a new one)')}
       </label>
       <Button
         onClick={() => void handleCreate()}
         isLoading={isCreating}
-        loadingLabel="Creating…"
+        loadingLabel={t('Creating…')}
       >
-        Create Reanalysis
+        {t('Create Reanalysis')}
       </Button>
       {error && (
-        <Alert variant="error" title="Could not create reanalysis">
+        <Alert variant="error" title={t('Could not create reanalysis')}>
           {error}
         </Alert>
       )}

@@ -106,7 +106,7 @@ describe('AnalysisUploadFlow', () => {
     expect(screen.getByText(/browser will require you to select that file again/i))
       .toBeInTheDocument()
     expect(
-      screen.getByText(/english-language examination and tp-153 pdf files are supported/i),
+      screen.getByText( /arabic, english, and mixed examination and tp-153 pdf files are supported/i),
     ).toBeInTheDocument()
     expect(screen.getAllByText('missing')).toHaveLength(2)
   })

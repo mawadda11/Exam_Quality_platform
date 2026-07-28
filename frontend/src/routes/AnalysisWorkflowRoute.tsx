@@ -7,7 +7,6 @@ import {
   useParams,
 } from 'react-router-dom'
 import { getAnalysis } from '../api/analyses'
-import { ApiError } from '../api/client'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { PageHeader } from '../components/ui/PageHeader'
@@ -18,6 +17,8 @@ import { ProcessingStatus } from '../features/analysis-upload/ProcessingStatus'
 import { ExtractionReviewWorkspace } from '../features/extraction-review/ExtractionReviewWorkspace'
 import { ReviewStartSummary } from '../features/analysis-upload/ReviewStartSummary'
 import { routeForAnalysis } from '../router/analysisRouting'
+import { useI18n } from '../i18n/I18nProvider'
+import { localizeInterfaceError } from '../i18n/localizeError'
 import type {
   AnalysisResponse,
   ExtractionReviewConfirmResponse,
@@ -31,6 +32,7 @@ type AnalysisLoadState =
   | { status: 'ready'; analysis: AnalysisResponse }
 
 export function AnalysisRouteLayout() {
+  const { locale, t } = useI18n()
   const { analysisId } = useParams()
   const [state, setState] = useState<AnalysisLoadState>({ status: 'loading' })
 
@@ -47,20 +49,20 @@ export function AnalysisRouteLayout() {
         setState({
           status: 'error',
           analysisId,
-          message: error instanceof ApiError ? error.detail : 'Could not load this analysis.',
+          message: localizeInterfaceError(error, locale, t, 'Could not load this analysis.'),
         })
       })
     return () => {
       cancelled = true
     }
-  }, [analysisId])
+  }, [analysisId, locale, t])
 
   const refreshAnalysis = useCallback(async (): Promise<AnalysisResponse> => {
-    if (!analysisId) throw new Error('No analysis identifier was provided.')
+    if (!analysisId) throw new Error(t('No analysis identifier was provided.'))
     const analysis = await getAnalysis(analysisId)
     setState({ status: 'ready', analysis })
     return analysis
-  }, [analysisId])
+  }, [analysisId, t])
 
   const replaceAnalysis = useCallback((analysis: AnalysisResponse): void => {
     setState({ status: 'ready', analysis })
@@ -85,7 +87,7 @@ export function AnalysisRouteLayout() {
         status: 'error',
         analysisId,
         message:
-          error instanceof ApiError ? error.detail : 'Could not load this analysis.',
+          localizeInterfaceError(error, locale, t, 'Could not load this analysis.'),
       })
     }
   }
@@ -95,8 +97,8 @@ export function AnalysisRouteLayout() {
       <div className="route-content-compact">
         <PageState
           state="error"
-          title="Could not open analysis"
-          message="No analysis identifier was provided."
+          title={t('Could not open analysis')}
+          message={t('No analysis identifier was provided.')}
         />
       </div>
     )
@@ -112,8 +114,8 @@ export function AnalysisRouteLayout() {
       <div className="route-content-compact">
         <PageState
           state="loading"
-          title="Loading analysis"
-          message="Retrieving the selected analysis…"
+          title={t('Loading analysis')}
+          message={t('Retrieving the selected analysis…')}
         />
       </div>
     )
@@ -124,15 +126,15 @@ export function AnalysisRouteLayout() {
       <div className="route-content-compact">
         <PageState
           state="error"
-          title="Could not open analysis"
+          title={t('Could not open analysis')}
           message={state.message}
           action={
             <div className="route-actions">
               <Button variant="secondary" onClick={() => void retryAnalysisLoad()}>
-                Retry analysis
+                {t('Retry analysis')}
               </Button>
               <Link className="ui-button ui-button--secondary" to="/analyses">
-                Return to Analyses
+                {t('Return to Analyses')}
               </Link>
             </div>
           }
@@ -159,6 +161,7 @@ export function AnalysisIndexRoute() {
 }
 
 export function AnalysisDocumentsRoute() {
+  const { t } = useI18n()
   const { analysis, refreshAnalysis } = useAnalysisRoute()
 
   if (analysis.state !== 'queued') {
@@ -172,8 +175,8 @@ export function AnalysisDocumentsRoute() {
   return (
     <div className="route-stack route-content-form">
       <PageHeader
-        title="Upload Documents"
-        description="Upload the examination PDF and populated TP-153 required by this analysis."
+        title={t('Upload Documents')}
+        description={t('Upload the examination PDF and populated TP-153 required by this analysis.')}
       />
       <div className="analysis-workflow-stepper">
         <AnalysisWorkflowStepper currentStep="documents" />
@@ -184,7 +187,7 @@ export function AnalysisDocumentsRoute() {
       {analysis.ready_for_analysis && (
         <div className="workflow-route-actions workflow-route-actions--end">
           <Link className="ui-button" to={`/analyses/${analysis.id}/start`}>
-            Continue to Review and Start
+            {t('Continue to Review and Start')}
           </Link>
         </div>
       )}
@@ -193,6 +196,7 @@ export function AnalysisDocumentsRoute() {
 }
 
 export function AnalysisStartRoute() {
+  const { t } = useI18n()
   const { analysis, replaceAnalysis } = useAnalysisRoute()
   const navigate = useNavigate()
 
@@ -208,8 +212,8 @@ export function AnalysisStartRoute() {
   return (
     <div className="route-stack route-content-form">
       <PageHeader
-        title="Review and Start"
-        description="Review the persisted information and explicitly start the analysis when ready."
+        title={t('Review and Start')}
+        description={t('Review the persisted information and explicitly start the analysis when ready.')}
       />
       <div className="analysis-workflow-stepper">
         <AnalysisWorkflowStepper currentStep="review" />
@@ -219,7 +223,7 @@ export function AnalysisStartRoute() {
       </Card>
       <div className="workflow-route-actions">
         <Link className="ui-button ui-button--secondary" to={`/analyses/${analysis.id}/documents`}>
-          Back to Upload Documents
+          {t('Back to Upload Documents')}
         </Link>
         <ProcessingStatus
           analysisId={analysis.id}
@@ -232,6 +236,7 @@ export function AnalysisStartRoute() {
 }
 
 export function AnalysisExtractionReviewRoute() {
+  const { t } = useI18n()
   const { analysis, updateAnalysisState } = useAnalysisRoute()
   const navigate = useNavigate()
 
@@ -247,8 +252,8 @@ export function AnalysisExtractionReviewRoute() {
   return (
     <div className="route-stack route-content-wide">
       <PageHeader
-        title="Review Extracted Evidence"
-        description="Correct source transcription, exclude false positives, and confirm the exact revision before academic analysis begins."
+        title={t('Review Extracted Evidence')}
+        description={t('Correct source transcription, exclude false positives, and confirm the exact revision before academic analysis begins.')}
       />
       <div className="analysis-workflow-stepper">
         <AnalysisWorkflowStepper currentStep="extraction" />
@@ -263,6 +268,7 @@ export function AnalysisExtractionReviewRoute() {
 }
 
 export function AnalysisProgressRoute() {
+  const { t } = useI18n()
   const { analysis, updateAnalysisState } = useAnalysisRoute()
   const navigate = useNavigate()
 
@@ -291,15 +297,15 @@ export function AnalysisProgressRoute() {
   return (
     <div className="route-stack route-content-compact">
       <PageHeader
-        title="Analysis Progress"
-        description="Processing continues through the existing backend workflow."
+        title={t('Analysis Progress')}
+        description={t('Processing continues through the existing backend workflow.')}
       />
       <div className="analysis-workflow-stepper">
         <AnalysisWorkflowStepper currentStep={beforeReview ? 'extraction' : 'complete'} />
       </div>
       <Card as="section" className="route-card">
         <h2>
-          <bdi>{analysis.course.code}</bdi> — {analysis.exam_type}
+          <bdi>{analysis.course.code}</bdi> — {t(analysis.exam_type)}
         </h2>
         <ProcessingStatus
           analysisId={analysis.id}

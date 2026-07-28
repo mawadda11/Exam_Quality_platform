@@ -1,12 +1,14 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { confirmPasswordReset } from '../../api/auth'
-import { ApiError } from '../../api/client'
 import { Alert } from '../../components/ui/Alert'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
+import { useI18n } from '../../i18n/I18nProvider'
+import { localizeInterfaceError } from '../../i18n/localizeError'
 
 export function ResetPasswordRoute() {
+  const { locale, t } = useI18n()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token') ?? ''
@@ -19,11 +21,11 @@ export function ResetPasswordRoute() {
     event.preventDefault()
     setError(null)
     if (!token) {
-      setError('This reset link is missing its security token.')
+      setError(t('Invalid reset link'))
       return
     }
     if (password !== confirmPassword) {
-      setError('Passwords do not match.')
+      setError(t('Passwords do not match.'))
       return
     }
     setSubmitting(true)
@@ -31,7 +33,7 @@ export function ResetPasswordRoute() {
       await confirmPasswordReset({ token, new_password: password })
       navigate('/login', { replace: true, state: { passwordReset: true } })
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.detail : 'Could not reset your password.')
+      setError(localizeInterfaceError(caught, locale, t, 'Could not reset password'))
     } finally {
       setSubmitting(false)
     }
@@ -40,25 +42,25 @@ export function ResetPasswordRoute() {
   return (
     <Card as="section" variant="raised" className="auth-card">
       <div className="auth-card-heading">
-        <p className="auth-eyebrow">Account recovery</p>
-        <h1>Choose a new password</h1>
-        <p>The link is single-use and expires after the configured reset period.</p>
+        <p className="auth-eyebrow">{t('Account recovery')}</p>
+        <h1>{t('Choose a new password')}</h1>
+        <p>{t('The link is single-use and expires after the configured reset period.')}</p>
       </div>
 
       {!token && (
-        <Alert variant="warning" title="Invalid reset link">
-          <p>Request a new password reset link before continuing.</p>
+        <Alert variant="warning" title={t('Invalid reset link')}>
+          <p>{t('Request a new password reset link before continuing.')}</p>
         </Alert>
       )}
       {error && (
-        <Alert variant="error" title="Could not reset password">
+        <Alert variant="error" title={t('Could not reset password')}>
           <p>{error}</p>
         </Alert>
       )}
 
       <form className="auth-form" onSubmit={(event) => void handleSubmit(event)}>
         <label className="auth-field">
-          <span>New password</span>
+          <span>{t('New password')}</span>
           <input
             type="password"
             autoComplete="new-password"
@@ -71,7 +73,7 @@ export function ResetPasswordRoute() {
           />
         </label>
         <label className="auth-field">
-          <span>Confirm new password</span>
+          <span>{t('Confirm new password')}</span>
           <input
             type="password"
             autoComplete="new-password"
@@ -83,19 +85,19 @@ export function ResetPasswordRoute() {
             onChange={(event) => setConfirmPassword(event.target.value)}
           />
         </label>
-        <p className="auth-guidance">Use at least 12 characters with a letter and a number.</p>
+        <p className="auth-guidance">{t('Use at least 12 characters with a letter and a number.')}</p>
         <Button
           type="submit"
           disabled={!token}
           isLoading={submitting}
-          loadingLabel="Updating password…"
+          loadingLabel={t('Updating password…')}
         >
-          Update password
+          {t('Update password')}
         </Button>
       </form>
 
       <p className="auth-switch">
-        <Link to="/forgot-password">Request a new reset link</Link>
+        <Link to="/forgot-password">{t('Request a new reset link')}</Link>
       </p>
     </Card>
   )

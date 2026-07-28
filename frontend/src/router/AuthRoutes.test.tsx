@@ -18,6 +18,7 @@ const USER: FacultyUserResponse = {
   institution: null,
   department: null,
   user_type: 'Faculty Member',
+  preferred_language: 'en',
   email_verified: false,
   created_at: '2026-01-01T00:00:00Z',
 }

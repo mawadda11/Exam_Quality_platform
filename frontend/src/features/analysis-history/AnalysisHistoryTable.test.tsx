@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AnalysisResponse } from '../../types/api'
 import { AnalysisHistoryTable } from './AnalysisHistoryTable'
 
@@ -30,6 +30,10 @@ function analysis(overrides: Partial<AnalysisResponse> = {}): AnalysisResponse {
 }
 
 describe('AnalysisHistoryTable', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('renders an accessible native table with source-faithful metadata', () => {
     render(
       <MemoryRouter>
@@ -68,5 +72,23 @@ describe('AnalysisHistoryTable', () => {
       'href',
       '/analyses/analysis-2/progress',
     )
+  })
+
+  it('uses record cards instead of a table at the mobile breakpoint', () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+
+    render(
+      <MemoryRouter>
+        <AnalysisHistoryTable analyses={[analysis()]} caption="All analyses" />
+      </MemoryRouter>,
+    )
+
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'All analyses' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open analysis' })).toBeInTheDocument()
   })
 })

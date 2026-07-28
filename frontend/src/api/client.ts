@@ -94,3 +94,13 @@ export async function apiPostNoContent(path: string, body: unknown = {}): Promis
   })
   if (!response.ok) return parseErrorAndThrow(response)
 }
+
+export async function apiPatchJson<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authorizationHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) return parseErrorAndThrow(response)
+  return (await response.json()) as T
+}

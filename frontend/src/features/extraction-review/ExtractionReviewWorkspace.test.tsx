@@ -199,6 +199,54 @@ describe('ExtractionReviewWorkspace', () => {
     )
   })
 
+  it('keeps a container question selected while allowing child questions to be reviewed independently', async () => {
+    const hierarchySnapshot = structuredClone(ORIGINAL_SNAPSHOT)
+    hierarchySnapshot.questions = [
+      {
+        source_record_id: '10000000-0000-0000-0000-000000000010',
+        included: true,
+        parent_source_record_id: null,
+        number_label: 'Q2',
+        question_text: 'Answer the following.',
+        page_number: 1,
+        marks: null,
+        sequence: 1,
+        extraction_confidence: 0.9,
+        geometry: null,
+      },
+      {
+        source_record_id: '10000000-0000-0000-0000-000000000011',
+        included: true,
+        parent_source_record_id: '10000000-0000-0000-0000-000000000010',
+        number_label: 'Q2(a)',
+        question_text: 'Explain normalization.',
+        page_number: 1,
+        marks: 4,
+        sequence: 2,
+        extraction_confidence: 0.9,
+        geometry: null,
+      },
+    ]
+    vi.mocked(analysesApi.getExtractionReview).mockResolvedValue(
+      reviewResponse({
+        snapshot: hierarchySnapshot,
+        original_snapshot: structuredClone(hierarchySnapshot),
+        warnings: [],
+      }),
+    )
+
+    render(<ExtractionReviewWorkspace analysisId="analysis-1" onConfirmed={vi.fn()} />)
+
+    expect(
+  (await screen.findAllByText('Parent / Container Question')).length,
+).toBeGreaterThan(0)
+    expect(screen.getByText(/not scored as an independent semantic item/i)).toBeInTheDocument()
+    expect(screen.getByText(/sub-question marks total/i)).toHaveTextContent('4')
+    const includeControls = screen.getAllByRole('checkbox', { name: 'Include in analysis' })
+    expect(includeControls[0]).toBeDisabled()
+    expect(includeControls[1]).toBeEnabled()
+  })
+
   it('shows a safe API conflict and keeps the draft available for review', async () => {
     vi.mocked(analysesApi.saveExtractionReview).mockRejectedValue(
       new ApiError(409, 'The extraction review changed. Reload the latest revision.'),

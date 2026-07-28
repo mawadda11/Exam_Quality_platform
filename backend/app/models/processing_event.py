@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Uuid
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.domain import ProcessingStage, enum_values
@@ -29,6 +29,17 @@ class ProcessingEvent(Base):
         Enum(ProcessingStage, native_enum=False, validate_strings=True, values_callable=enum_values)
     )
     message: Mapped[str | None] = mapped_column(String(500), default=None)
+    failed_stage: Mapped[ProcessingStage | None] = mapped_column(
+        Enum(
+            ProcessingStage,
+            native_enum=False,
+            validate_strings=True,
+            values_callable=enum_values,
+        ),
+        default=None,
+    )
+    error_code: Mapped[str | None] = mapped_column(String(100), default=None)
+    retryable: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     analysis: Mapped[Analysis] = relationship(back_populates="events")

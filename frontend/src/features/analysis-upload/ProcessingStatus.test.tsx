@@ -43,6 +43,9 @@ function progressResponse(
     analysis_id: 'analysis-1',
     state,
     message,
+    failed_stage: state === 'failed' ? 'extracting_exam' : null,
+    error_code: state === 'failed' ? 'EXAM_EXTRACTION_FAILED' : null,
+    can_retry: state === 'failed',
     updated_at: '2026-01-01T00:00:00Z',
   }
 }
@@ -166,7 +169,7 @@ describe('ProcessingStatus', () => {
       />,
     )
 
-    expect(await screen.findByText(/processing failed due to an internal error/i))
+    expect(await screen.findByText(/examination could not be extracted/i))
       .toBeInTheDocument()
     expect(screen.getByText('failed', { selector: 'strong' })).toBeInTheDocument()
     expect(screen.queryByRole('list', { name: /analysis processing progress/i }))
@@ -186,10 +189,31 @@ describe('ProcessingStatus', () => {
       />,
     )
 
-    expect(await screen.findByText(/analysis could not be completed/i)).toBeInTheDocument()
+    expect(await screen.findByText(/examination could not be extracted/i)).toBeInTheDocument()
     expect(analysesApi.getAnalysisProgress).toHaveBeenCalledTimes(1)
     await new Promise((resolve) => setTimeout(resolve, 30))
     expect(analysesApi.getAnalysisProgress).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries a failed analysis without re-uploading files and resumes polling', async () => {
+    vi.mocked(analysesApi.getAnalysisProgress)
+      .mockResolvedValueOnce(progressResponse('failed', 'The examination could not be extracted.'))
+      .mockResolvedValueOnce(progressResponse('completed'))
+    vi.mocked(analysesApi.retryAnalysis).mockResolvedValue(analysisResponse('extracting_exam'))
+
+    render(
+      <ProcessingStatus
+        analysisId="analysis-1"
+        initialState="failed"
+        pollIntervalMs={10}
+      />,
+    )
+
+    const retryButton = await screen.findByRole('button', { name: /retry analysis/i })
+    fireEvent.click(retryButton)
+
+    expect(analysesApi.retryAnalysis).toHaveBeenCalledWith('analysis-1')
+    expect(await screen.findByText('completed', { selector: 'strong' })).toBeInTheDocument()
   })
 
   it('keeps the explicit start action available after a start error', async () => {

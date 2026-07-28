@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.core.domain import UserType
+from app.core.domain import LanguageCode, UserType
 
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
@@ -40,6 +40,7 @@ class FacultyUserResponse(BaseModel):
     department: str | None
     user_type: UserType
     email_verified: bool
+    preferred_language: LanguageCode
     created_at: datetime
 
 
@@ -49,6 +50,7 @@ class RegisterRequest(BaseModel):
     display_name: str = Field(min_length=2, max_length=200)
     institution: str | None = Field(default=None, max_length=200)
     department: str | None = Field(default=None, max_length=200)
+    preferred_language: LanguageCode = LanguageCode.ARABIC
 
     @field_validator("email")
     @classmethod
@@ -116,6 +118,10 @@ class PasswordResetConfirmRequest(BaseModel):
     @classmethod
     def validate_password(cls, value: str) -> str:
         return _validate_password(value)
+
+
+class UserPreferencesRequest(BaseModel):
+    preferred_language: LanguageCode
 
 
 class MessageResponse(BaseModel):

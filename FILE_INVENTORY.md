@@ -14,6 +14,8 @@
 - `docs/V2_BATCH2_HANDOFF.md`
 - `docs/V2_BATCH2_IMPLEMENTATION_REPORT.md`
 - `docs/V2_BATCH2_TEST_RESULTS.md`
+- `docs/V2_BATCH3_IMPLEMENTATION_REPORT.md`
+- `docs/V2_BATCH3_TEST_RESULTS.md`
 - `VERSION`
 - Earlier milestone reports under `docs/` remain part of the audit trail.
 

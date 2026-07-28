@@ -1,4 +1,4 @@
-import { apiGet, apiPostJson, apiPostNoContent } from './client'
+import { apiGet, apiPatchJson, apiPostJson, apiPostNoContent } from './client'
 import type {
   AuthSessionResponse,
   FacultyUserResponse,
@@ -7,6 +7,7 @@ import type {
   PasswordResetConfirmRequest,
   PasswordResetRequestResponse,
   RegisterRequest,
+  Locale,
 } from '../types/api'
 
 export function registerFaculty(payload: RegisterRequest): Promise<AuthSessionResponse> {
@@ -33,4 +34,13 @@ export function confirmPasswordReset(
   payload: PasswordResetConfirmRequest,
 ): Promise<MessageResponse> {
   return apiPostJson<MessageResponse>('/auth/password-reset/confirm', payload)
+}
+
+
+export function updateFacultyPreferences(
+  preferredLanguage: Locale,
+): Promise<FacultyUserResponse> {
+  return apiPatchJson<FacultyUserResponse>('/auth/preferences', {
+    preferred_language: preferredLanguage,
+  })
 }
