@@ -61,6 +61,18 @@ export const SUPPORTED_EVALUATION_SCOPE: EvaluationScopeItem[] = [
     description: 'Checks whether the question contains the information needed to respond.',
   },
   {
+    ruleId: 'RULE014',
+    title: 'Referenced material availability',
+    description:
+      'Checks whether explicitly referenced figures, tables, and code blocks resolve to a present, uniquely labelled item.',
+  },
+  {
+    ruleId: 'RULE016',
+    title: 'Supporting material association',
+    description:
+      'Uses exact labels and explicit references to associate supporting material with its intended question; proximity alone never verifies an association.',
+  },
+  {
     ruleId: 'RULE018',
     title: 'Correct total marks',
     description: 'Checks deterministic marks arithmetic when reliable marks evidence is available.',
@@ -75,6 +87,12 @@ export const SUPPORTED_EVALUATION_SCOPE: EvaluationScopeItem[] = [
     title: 'Complete instructions',
     description: 'Reviews whether required exam or question instructions are complete.',
   },
+  {
+    ruleId: 'RULE022',
+    title: 'Resolvable cross-references',
+    description:
+      'Checks whether explicit references resolve to one exact, identifiable item and retains ambiguous candidates for review.',
+  },
 ]
 
 export const LIMITED_EVALUATION_SCOPE: EvaluationScopeItem[] = [
@@ -88,19 +106,9 @@ export const LIMITED_EVALUATION_SCOPE: EvaluationScopeItem[] = [
 
 export const PLANNED_EVALUATION_SCOPE: EvaluationScopeItem[] = [
   {
-    ruleId: 'RULE014',
-    title: 'Referenced material availability',
-    description: 'Planned structured extraction of referenced figures, tables, code, and attachments.',
-  },
-  {
     ruleId: 'RULE015',
     title: 'Supporting material legibility',
     description: 'Requires an approved visual-quality method and governed legibility thresholds.',
-  },
-  {
-    ruleId: 'RULE016',
-    title: 'Supporting material association',
-    description: 'Planned layout-aware linking between questions and the correct supporting material.',
   },
   {
     ruleId: 'RULE017',
@@ -111,10 +119,5 @@ export const PLANNED_EVALUATION_SCOPE: EvaluationScopeItem[] = [
     ruleId: 'RULE020',
     title: 'Exam identification',
     description: 'Requires a configurable institutional list of mandatory exam-identification fields.',
-  },
-  {
-    ruleId: 'RULE022',
-    title: 'Resolvable cross-references',
-    description: 'Planned layout-aware checking of references such as figures, tables, and other questions.',
   },
 ]

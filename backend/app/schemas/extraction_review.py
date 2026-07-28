@@ -7,7 +7,15 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.core.domain import ProcessingStage, UploadedFileType
+from app.core.domain import (
+    AssociationBasis,
+    ProcessingStage,
+    ReferenceResolutionStatus,
+    ReferenceTargetType,
+    SupportingAnnotationType,
+    SupportingMaterialType,
+    UploadedFileType,
+)
 
 
 class _StrictReviewModel(BaseModel):
@@ -85,6 +93,62 @@ class ExtractionReviewAssessmentRecord(_StrictReviewModel):
     geometry: ExtractionReviewGeometry | None
 
 
+class ExtractionReviewSupportingMaterial(_StrictReviewModel):
+    source_record_id: UUID
+    included: bool
+    question_source_record_id: UUID | None
+    source_document: UploadedFileType
+    material_type: SupportingMaterialType
+    source_text: str
+    page_number: int = Field(ge=1)
+    extraction_confidence: float = Field(ge=0, le=1)
+    extraction_method: str = Field(min_length=1, max_length=20)
+    geometry: ExtractionReviewGeometry | None
+
+
+class ExtractionReviewSupportingAnnotation(_StrictReviewModel):
+    source_record_id: UUID
+    included: bool
+    material_source_record_id: UUID | None
+    source_document: UploadedFileType
+    annotation_type: SupportingAnnotationType
+    original_text: str = Field(min_length=1)
+    normalized_label: str | None = Field(default=None, min_length=1, max_length=100)
+    page_number: int = Field(ge=1)
+    extraction_confidence: float = Field(ge=0, le=1)
+    extraction_method: str = Field(min_length=1, max_length=20)
+    geometry: ExtractionReviewGeometry | None
+
+
+class ExtractionReviewDocumentReference(_StrictReviewModel):
+    source_record_id: UUID
+    included: bool
+    question_source_record_id: UUID | None
+    source_document: UploadedFileType
+    target_type: ReferenceTargetType
+    original_text: str = Field(min_length=1)
+    target_label: str = Field(min_length=1, max_length=100)
+    normalized_target_label: str = Field(min_length=1, max_length=100)
+    resolution_status: ReferenceResolutionStatus
+    page_number: int = Field(ge=1)
+    extraction_confidence: float = Field(ge=0, le=1)
+    extraction_method: str = Field(min_length=1, max_length=20)
+    geometry: ExtractionReviewGeometry | None
+
+
+class ExtractionReviewReferenceAssociation(_StrictReviewModel):
+    source_record_id: UUID
+    reference_source_record_id: UUID
+    target_material_source_record_id: UUID | None
+    target_question_source_record_id: UUID | None
+    basis: AssociationBasis
+    extraction_confidence: float = Field(ge=0, le=1)
+    proximity_distance: float | None = Field(default=None, ge=0)
+    exact_label_match: bool
+    selected: bool
+    ambiguity_reason: str | None = Field(default=None, max_length=500)
+
+
 class ExtractionReviewSnapshot(_StrictReviewModel):
     """A complete, versioned snapshot of source-faithful extraction rows.
 
@@ -99,6 +163,10 @@ class ExtractionReviewSnapshot(_StrictReviewModel):
     clos: list[ExtractionReviewClo]
     topics: list[ExtractionReviewTopic]
     assessment_records: list[ExtractionReviewAssessmentRecord]
+    supporting_materials: list[ExtractionReviewSupportingMaterial] = Field(default_factory=list)
+    supporting_annotations: list[ExtractionReviewSupportingAnnotation] = Field(default_factory=list)
+    document_references: list[ExtractionReviewDocumentReference] = Field(default_factory=list)
+    reference_associations: list[ExtractionReviewReferenceAssociation] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_source_references(self) -> Self:
@@ -108,6 +176,14 @@ class ExtractionReviewSnapshot(_StrictReviewModel):
             "CLO": [item.source_record_id for item in self.clos],
             "topic": [item.source_record_id for item in self.topics],
             "assessment record": [item.source_record_id for item in self.assessment_records],
+            "supporting material": [item.source_record_id for item in self.supporting_materials],
+            "supporting annotation": [
+                item.source_record_id for item in self.supporting_annotations
+            ],
+            "document reference": [item.source_record_id for item in self.document_references],
+            "reference association": [
+                item.source_record_id for item in self.reference_associations
+            ],
         }
         for label, record_ids in collections.items():
             if len(record_ids) != len(set(record_ids)):
@@ -134,6 +210,38 @@ class ExtractionReviewSnapshot(_StrictReviewModel):
             if evidence.included and not referenced_question.included:
                 raise ValueError("Included evidence cannot reference an excluded question.")
 
+        materials_by_id = {item.source_record_id: item for item in self.supporting_materials}
+        references_by_id = {item.source_record_id: item for item in self.document_references}
+        for material in self.supporting_materials:
+            question_id = material.question_source_record_id
+            if question_id is not None and question_id not in questions_by_id:
+                raise ValueError("Supporting-material question references must resolve.")
+        for annotation in self.supporting_annotations:
+            material_id = annotation.material_source_record_id
+            if material_id is not None and material_id not in materials_by_id:
+                raise ValueError("Annotation material references must resolve.")
+            if (
+                annotation.included
+                and material_id is not None
+                and not materials_by_id[material_id].included
+            ):
+                raise ValueError("An included annotation cannot reference an excluded material.")
+        for reference in self.document_references:
+            question_id = reference.question_source_record_id
+            if question_id is not None and question_id not in questions_by_id:
+                raise ValueError("Document-reference question links must resolve.")
+        for association in self.reference_associations:
+            if association.reference_source_record_id not in references_by_id:
+                raise ValueError("Association reference links must resolve.")
+            material_id = association.target_material_source_record_id
+            question_id = association.target_question_source_record_id
+            if (material_id is None) == (question_id is None):
+                raise ValueError("An association must reference exactly one target.")
+            if material_id is not None and material_id not in materials_by_id:
+                raise ValueError("Association material targets must resolve.")
+            if question_id is not None and question_id not in questions_by_id:
+                raise ValueError("Association question targets must resolve.")
+
         return self
 
 
@@ -146,6 +254,10 @@ class ExtractionReviewWarning(_StrictReviewModel):
         "clos",
         "topics",
         "assessment_records",
+        "supporting_materials",
+        "supporting_annotations",
+        "document_references",
+        "reference_associations",
         "review",
     ]
     source_record_id: UUID | None

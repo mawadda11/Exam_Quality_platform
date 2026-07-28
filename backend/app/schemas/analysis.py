@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from app.core.domain import ExamType, ProcessingStage
 from app.schemas.course import CourseInput, CourseResponse
 from app.schemas.uploaded_file import UploadedFileResponse
+from app.services.rules.versioning import effective_capability_version
 
 if TYPE_CHECKING:
     from app.models.analysis import Analysis
@@ -46,6 +47,7 @@ class AnalysisResponse(BaseModel):
     exam_uploaded: bool
     tp153_uploaded: bool
     ready_for_analysis: bool
+    capability_version: str
     created_at: datetime
     updated_at: datetime
 
@@ -63,6 +65,7 @@ class AnalysisResponse(BaseModel):
             exam_uploaded=analysis.exam_uploaded,
             tp153_uploaded=analysis.tp153_uploaded,
             ready_for_analysis=analysis.ready_for_analysis,
+            capability_version=effective_capability_version(analysis),
             created_at=analysis.created_at,
             updated_at=analysis.updated_at,
         )

@@ -46,6 +46,7 @@ _ARABIC_MARKS_BRACKET = re.compile(
 _ARABIC_MARKS_PLAIN = re.compile(
     r"(?P<matched>(?P<value>\d+(?:\.\d+)?)\s*(?:درجة|درجات|علامة|علامات))\s*$"
 )
+_BARE_BRACKETED_MARKS = re.compile(r"(?P<matched>[\[\(]\s*(?P<value>\d+(?:\.\d+)?)\s*[\]\)])")
 
 _ARABIC_ORDINALS: dict[str, int] = {
     "الاول": 1,
@@ -147,6 +148,14 @@ def parse_marks(line: str) -> Marks | None:
         matched_text = line[start:end] if end <= len(line) else arabic_match.group("matched")
         return Marks(
             value=parse_localized_number(arabic_match.group("value")),
+            matched_text=matched_text,
+        )
+    bare_match = _BARE_BRACKETED_MARKS.search(normalized)
+    if bare_match is not None:
+        start, end = bare_match.span("matched")
+        matched_text = line[start:end] if end <= len(line) else bare_match.group("matched")
+        return Marks(
+            value=parse_localized_number(bare_match.group("value")),
             matched_text=matched_text,
         )
     return None

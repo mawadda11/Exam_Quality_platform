@@ -8,6 +8,7 @@ import type {
   ExtractionReviewConfirmResponse,
   ExtractionReviewResponse,
   ExtractionReviewSnapshot,
+  DocumentReferenceResponse,
   FindingResponse,
   ProgressResponse,
   QuestionResponse,
@@ -15,6 +16,8 @@ import type {
   RecommendationResponse,
   ReportResponse,
   ReportLanguage,
+  SupportingMaterialAnnotationResponse,
+  SupportingMaterialResponse,
   RuleCoverageAuditResponse,
   TopicResponse,
   UploadedFileResponse,
@@ -96,6 +99,30 @@ export function listTopics(analysisId: string): Promise<TopicResponse[]> {
 
 export function listAssessmentRecords(analysisId: string): Promise<AssessmentRecordResponse[]> {
   return apiGet<AssessmentRecordResponse[]>(`/analyses/${analysisId}/assessment-records`)
+}
+
+export function listSupportingMaterials(
+  analysisId: string,
+): Promise<SupportingMaterialResponse[]> {
+  return apiGet<SupportingMaterialResponse[]>(
+    `/analyses/${analysisId}/supporting-materials`,
+  )
+}
+
+export function listSupportingMaterialAnnotations(
+  analysisId: string,
+): Promise<SupportingMaterialAnnotationResponse[]> {
+  return apiGet<SupportingMaterialAnnotationResponse[]>(
+    `/analyses/${analysisId}/supporting-material-annotations`,
+  )
+}
+
+export function listDocumentReferences(
+  analysisId: string,
+): Promise<DocumentReferenceResponse[]> {
+  return apiGet<DocumentReferenceResponse[]>(
+    `/analyses/${analysisId}/document-references`,
+  )
 }
 
 function isNullableString(value: unknown): value is string | null {

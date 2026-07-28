@@ -495,4 +495,63 @@ export const ADDITIONAL_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
   'Invalid email or password.': 'البريد الإلكتروني أو كلمة المرور غير صحيحين.',
   'This password reset link is invalid or has expired.':
     'رابط إعادة تعيين كلمة المرور غير صالح أو منتهي الصلاحية.',
+  'Materials & References': 'المواد والإحالات',
+  'Supporting Materials & References': 'المواد المساندة والإحالات المرجعية',
+  'Supporting materials': 'المواد المساندة',
+  'Labels and captions': 'التسميات والعناوين التوضيحية',
+  'Explicit references': 'الإحالات الصريحة',
+  'Association candidates': 'مرشحو الارتباط',
+  'Loading supporting-material evidence': 'جارٍ تحميل أدلة المواد المساندة',
+  'Could not load supporting-material evidence': 'تعذر تحميل أدلة المواد المساندة',
+  'Could not load supporting-material evidence.': 'تعذر تحميل أدلة المواد المساندة.',
+  'Retrieving figures, tables, code blocks, and explicit references…':
+    'جارٍ استرجاع الأشكال والجداول ومقاطع الشفرة والإحالات الصريحة…',
+  'No structured supporting material': 'لا توجد مواد مساندة منظمة',
+  'No figures, tables, code blocks, or explicit references were extracted.':
+    'لم تُستخرج أشكال أو جداول أو مقاطع شفرة أو إحالات صريحة.',
+  'Exact labels and explicit references determine verified associations. Proximity is shown only as supporting audit evidence.':
+    'تحدد التسميات المطابقة والإحالات الصريحة الارتباطات المتحقق منها، ويُعرض القرب بوصفه دليل تدقيق مساندًا فقط.',
+  'Proximity candidates are retained for review and never verify an association by themselves.':
+    'يُحتفظ بمرشحي القرب للمراجعة، ولا يثبتون الارتباط بمفردهم.',
+  'Extraction method': 'طريقة الاستخراج',
+  'Confidence': 'الثقة',
+  'Target type': 'نوع الهدف',
+  'Target label': 'تسمية الهدف',
+  'Resolution': 'حالة التحديد',
+  'Candidates': 'المرشحون',
+  'Include reference': 'تضمين الإحالة',
+  'Selected exact target': 'هدف مطابق محدد',
+  'Review candidate': 'مرشح للمراجعة',
+  Distance: 'المسافة',
+  'Review revision': 'مراجعة بشرية',
+  'Machine extraction': 'الاستخراج الآلي',
+  'Target identifier': 'معرّف الهدف',
+  'Checks whether explicitly referenced figures, tables, and code blocks resolve to a present, uniquely labelled item.':
+    'يتحقق مما إذا كانت الأشكال والجداول ومقاطع الشفرة المشار إليها صراحةً تُحال إلى عنصر موجود ذي تسمية فريدة.',
+  'Uses exact labels and explicit references to associate supporting material with its intended question; proximity alone never verifies an association.':
+    'يستخدم التسميات المطابقة والإحالات الصريحة لربط المادة المساندة بالسؤال المقصود، ولا يكفي القرب وحده للتحقق من الارتباط.',
+  'Checks whether explicit references resolve to one exact, identifiable item and retains ambiguous candidates for review.':
+    'يتحقق من أن الإحالات الصريحة تُحال إلى عنصر واحد مطابق وقابل للتحديد، مع الاحتفاظ بالمرشحين الملتبسين للمراجعة.',
+  'Original source content is preserved for audit.':
+    'يُحفظ محتوى المصدر الأصلي لأغراض التدقيق.',
+  'Original label or caption is preserved for audit.':
+    'تُحفظ التسمية أو العبارة التوضيحية الأصلية لأغراض التدقيق.',
+  'Original reference wording is preserved for audit.':
+    'تُحفظ صياغة الإحالة الأصلية لأغراض التدقيق.',
+  'Proximity is supporting evidence only.':
+    'القرب دليل مساند فقط ولا يثبت الارتباط بمفرده.',
+  'Multiple exact targets share this label.':
+    'تشترك عدة أهداف مطابقة في هذه التسمية.',
+  figure: 'شكل',
+  table: 'جدول',
+  'code block': 'مقطع شفرة',
+  caption: 'عنوان توضيحي',
+  label: 'تسمية',
+  resolved: 'محدد بصورة فريدة',
+  ambiguous: 'ملتبس',
+  unresolved: 'غير محدد',
+  exact_label: 'تسمية مطابقة',
+  proximity_support: 'دليل قرب مساند',
+  direct_text: 'نص مباشر',
+  ocr: 'تعرّف ضوئي',
 }

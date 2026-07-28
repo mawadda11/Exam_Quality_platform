@@ -14,12 +14,15 @@ if TYPE_CHECKING:
     from app.models.assessment_record import AssessmentRecord
     from app.models.clo import Clo
     from app.models.course import Course
+    from app.models.document_reference import DocumentReference
     from app.models.evidence import Evidence
     from app.models.extraction_review_revision import ExtractionReviewRevision
     from app.models.finding import Finding
     from app.models.processing_event import ProcessingEvent
     from app.models.question import Question
     from app.models.report import Report
+    from app.models.supporting_material import SupportingMaterial
+    from app.models.supporting_material_annotation import SupportingMaterialAnnotation
     from app.models.topic import Topic
     from app.models.uploaded_file import UploadedFile
     from app.models.user import User
@@ -70,6 +73,7 @@ class Analysis(TimestampMixin, Base):
         ),
         default=None,
     )
+    capability_version: Mapped[str | None] = mapped_column(String(100), default=None, index=True)
 
     owner: Mapped[User] = relationship(back_populates="analyses")
     course: Mapped[Course] = relationship(back_populates="analyses")
@@ -96,6 +100,15 @@ class Analysis(TimestampMixin, Base):
         back_populates="analysis", cascade="all, delete-orphan"
     )
     reports: Mapped[list[Report]] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan"
+    )
+    supporting_materials: Mapped[list[SupportingMaterial]] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan"
+    )
+    supporting_material_annotations: Mapped[list[SupportingMaterialAnnotation]] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan"
+    )
+    document_references: Mapped[list[DocumentReference]] = relationship(
         back_populates="analysis", cascade="all, delete-orphan"
     )
     review_revisions: Mapped[list[ExtractionReviewRevision]] = relationship(

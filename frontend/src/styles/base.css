@@ -64,6 +64,11 @@ svg {
   unicode-bidi: plaintext;
 }
 
+.bidi-plaintext {
+  unicode-bidi: plaintext;
+  text-align: start;
+}
+
 bdi {
   unicode-bidi: isolate;
 }

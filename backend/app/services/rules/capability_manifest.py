@@ -229,13 +229,9 @@ CAPABILITY_MANIFEST: tuple[CapabilityEntry, ...] = (
         requirement_id="REQ014",
         rule_id="RULE014",
         requirement_name="Referenced Material Availability",
-        support_status=SupportStatus.UNSUPPORTED,
+        support_status=SupportStatus.SUPPORTED,
         target_evaluation_mode=EvaluationMode.DETERMINISTIC,
-        reason=(
-            "Retained for deterministic structural implementation in Version 1. The runtime does "
-            "not yet extract and associate referenced figures, tables, code, or attachments."
-        ),
-        planned_milestone_or_dependency="V1 structured extraction and retained-rule implementation",
+        implemented_milestone="V2 Batch 4",
     ),
     CapabilityEntry(
         requirement_id="REQ015",
@@ -255,14 +251,9 @@ CAPABILITY_MANIFEST: tuple[CapabilityEntry, ...] = (
         requirement_id="REQ016",
         rule_id="RULE016",
         requirement_name="Supporting Material Association",
-        support_status=SupportStatus.UNSUPPORTED,
+        support_status=SupportStatus.SUPPORTED,
         target_evaluation_mode=EvaluationMode.DETERMINISTIC,
-        reason=(
-            "Retained for conservative Version 1 implementation using exact labels, explicit "
-            "references, page geometry, and unique associations. The runtime does not yet persist "
-            "that structured layout evidence; ambiguous proximity must remain Not Verified."
-        ),
-        planned_milestone_or_dependency="V1 structured extraction and retained-rule implementation",
+        implemented_milestone="V2 Batch 4",
     ),
     CapabilityEntry(
         requirement_id="REQ017",
@@ -303,12 +294,8 @@ CAPABILITY_MANIFEST: tuple[CapabilityEntry, ...] = (
         rule_id="RULE022",
         requirement_name="Resolvable References",
         rule_name="Resolvable Cross-References",
-        support_status=SupportStatus.UNSUPPORTED,
+        support_status=SupportStatus.SUPPORTED,
         target_evaluation_mode=EvaluationMode.DETERMINISTIC,
-        reason=(
-            "Retained for deterministic layout implementation in Version 1. The runtime does not "
-            "yet extract explicit relative references and uniquely identifiable layout targets."
-        ),
-        planned_milestone_or_dependency="V1 structured extraction and retained-rule implementation",
+        implemented_milestone="V2 Batch 4",
     ),
 )

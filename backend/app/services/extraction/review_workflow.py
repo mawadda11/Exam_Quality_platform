@@ -11,14 +11,18 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.domain import ProcessingStage
+from app.core.domain import ProcessingStage, ReferenceResolutionStatus
 from app.models.analysis import Analysis
 from app.models.assessment_record import AssessmentRecord
 from app.models.clo import Clo
+from app.models.document_reference import DocumentReference
 from app.models.evidence import Evidence
 from app.models.extraction_review_revision import ExtractionReviewRevision
 from app.models.processing_event import ProcessingEvent
 from app.models.question import Question
+from app.models.reference_association import ReferenceAssociation
+from app.models.supporting_material import SupportingMaterial
+from app.models.supporting_material_annotation import SupportingMaterialAnnotation
 from app.models.topic import Topic
 from app.schemas.extraction_review import (
     ExtractionReviewAssessmentRecord,
@@ -27,7 +31,15 @@ from app.schemas.extraction_review import (
     ExtractionReviewSnapshot,
     ExtractionReviewWarning,
 )
+from app.services.extraction.associations import (
+    materialize_confirmed_reference_associations,
+)
 from app.services.extraction.review_snapshot import INITIAL_REVIEW_REVISION
+from app.services.extraction.structured_evidence import (
+    logical_annotation_text,
+    normalize_annotation_label,
+    normalize_target_label,
+)
 
 LOW_EXTRACTION_CONFIDENCE = 0.75
 
@@ -68,6 +80,16 @@ def _validate_stored_snapshot(value: dict[str, Any]) -> ExtractionReviewSnapshot
 
 def _snapshot(revision: ExtractionReviewRevision) -> ExtractionReviewSnapshot:
     return _validate_stored_snapshot(revision.snapshot)
+
+
+def _presentation_snapshot(snapshot: ExtractionReviewSnapshot) -> ExtractionReviewSnapshot:
+    presented = snapshot.model_copy(deep=True)
+    for annotation in presented.supporting_annotations:
+        annotation.original_text = logical_annotation_text(
+            annotation.original_text,
+            annotation.normalized_label,
+        )
+    return presented
 
 
 def _revision_by_number(
@@ -203,6 +225,9 @@ def _normalize_related_evidence(
     candidate_topics = _record_map(normalized.topics)
     original_records = _record_map(original.assessment_records)
     candidate_records = _record_map(normalized.assessment_records)
+    candidate_materials = _record_map(normalized.supporting_materials)
+    candidate_annotations = _record_map(normalized.supporting_annotations)
+    candidate_references = _record_map(normalized.document_references)
 
     for original_evidence in original.evidence:
         candidate_evidence = normalized_evidence[original_evidence.source_record_id]
@@ -249,6 +274,64 @@ def _normalize_related_evidence(
                 candidate_evidence.item_reference = record.method[:100]
                 candidate_evidence.extracted_text = _assessment_summary(record)
 
+    for material in normalized.supporting_materials:
+        if (
+            material.question_source_record_id is not None
+            and not candidate_questions[material.question_source_record_id].included
+        ):
+            material.included = False
+    for annotation in normalized.supporting_annotations:
+        material_id = annotation.material_source_record_id
+        if material_id is not None and not candidate_materials[material_id].included:
+            annotation.included = False
+        if annotation.annotation_type.value == "label":
+            annotation.normalized_label = normalize_annotation_label(annotation.original_text)
+    for reference in normalized.document_references:
+        question_id = reference.question_source_record_id
+        if question_id is not None and not candidate_questions[question_id].included:
+            reference.included = False
+        reference.normalized_target_label = normalize_target_label(
+            reference.target_type,
+            reference.target_label,
+        )
+
+    included_annotations = [
+        item
+        for item in candidate_annotations.values()
+        if item.included and item.material_source_record_id is not None
+    ]
+    included_questions = [item for item in candidate_questions.values() if item.included]
+    for reference in candidate_references.values():
+        if not reference.included:
+            continue
+        if reference.target_type.value == "question":
+            matches = [
+                question
+                for question in included_questions
+                if normalize_target_label(reference.target_type, question.number_label)
+                == reference.normalized_target_label
+            ]
+        else:
+            matches = [
+                item
+                for item in included_annotations
+                if item.normalized_label == reference.normalized_target_label
+            ]
+        unique_targets = {
+            (
+                item.source_record_id
+                if reference.target_type.value == "question"
+                else item.material_source_record_id
+            )
+            for item in matches
+        }
+        if len(unique_targets) == 1:
+            reference.resolution_status = ReferenceResolutionStatus.RESOLVED
+        elif len(unique_targets) > 1:
+            reference.resolution_status = ReferenceResolutionStatus.AMBIGUOUS
+        else:
+            reference.resolution_status = ReferenceResolutionStatus.UNRESOLVED
+
     # Re-run cross-reference validation after normalization changed inclusion states.
     return ExtractionReviewSnapshot.model_validate(normalized.model_dump())
 
@@ -268,6 +351,26 @@ def validate_source_faithful_snapshot(
         ("CLOs", original.clos, candidate.clos),
         ("topics", original.topics, candidate.topics),
         ("assessment records", original.assessment_records, candidate.assessment_records),
+        (
+            "supporting materials",
+            original.supporting_materials,
+            candidate.supporting_materials,
+        ),
+        (
+            "supporting annotations",
+            original.supporting_annotations,
+            candidate.supporting_annotations,
+        ),
+        (
+            "document references",
+            original.document_references,
+            candidate.document_references,
+        ),
+        (
+            "reference associations",
+            original.reference_associations,
+            candidate.reference_associations,
+        ),
     )
     for label, original_items, candidate_items in collections:
         _assert_same_record_ids(
@@ -310,6 +413,68 @@ def validate_source_faithful_snapshot(
         fields=("source_record_id", "page_number", "extraction_confidence", "geometry"),
     )
     _assert_immutable_fields(
+        collection="Supporting material",
+        original_items=original.supporting_materials,
+        candidate_items=candidate.supporting_materials,
+        fields=(
+            "source_record_id",
+            "question_source_record_id",
+            "source_document",
+            "material_type",
+            "page_number",
+            "extraction_confidence",
+            "extraction_method",
+            "geometry",
+        ),
+    )
+    _assert_immutable_fields(
+        collection="Supporting annotation",
+        original_items=original.supporting_annotations,
+        candidate_items=candidate.supporting_annotations,
+        fields=(
+            "source_record_id",
+            "material_source_record_id",
+            "source_document",
+            "annotation_type",
+            "page_number",
+            "extraction_confidence",
+            "extraction_method",
+            "geometry",
+        ),
+    )
+    _assert_immutable_fields(
+        collection="Document reference",
+        original_items=original.document_references,
+        candidate_items=candidate.document_references,
+        fields=(
+            "source_record_id",
+            "question_source_record_id",
+            "source_document",
+            "target_type",
+            "page_number",
+            "extraction_confidence",
+            "extraction_method",
+            "geometry",
+        ),
+    )
+    _assert_immutable_fields(
+        collection="Reference association",
+        original_items=original.reference_associations,
+        candidate_items=candidate.reference_associations,
+        fields=(
+            "source_record_id",
+            "reference_source_record_id",
+            "target_material_source_record_id",
+            "target_question_source_record_id",
+            "basis",
+            "extraction_confidence",
+            "proximity_distance",
+            "exact_label_match",
+            "selected",
+            "ambiguity_reason",
+        ),
+    )
+    _assert_immutable_fields(
         collection="Topic",
         original_items=original.topics,
         candidate_items=candidate.topics,
@@ -341,6 +506,13 @@ def _warnings(snapshot: ExtractionReviewSnapshot) -> list[ExtractionReviewWarnin
         ("topics", "topics", snapshot.topics),
         ("assessment_records", "assessment records", snapshot.assessment_records),
         ("evidence", "evidence records", snapshot.evidence),
+        ("supporting_materials", "supporting materials", snapshot.supporting_materials),
+        (
+            "supporting_annotations",
+            "supporting annotations",
+            snapshot.supporting_annotations,
+        ),
+        ("document_references", "document references", snapshot.document_references),
     )
     for collection, label, items in collection_specs:
         included = [item for item in items if item.included]
@@ -379,6 +551,20 @@ def _warnings(snapshot: ExtractionReviewSnapshot) -> list[ExtractionReviewWarnin
                         ),
                     )
                 )
+    for reference in snapshot.document_references:
+        if reference.included and reference.resolution_status.value == "ambiguous":
+            warnings.append(
+                ExtractionReviewWarning(
+                    code="ambiguous_reference",
+                    severity="warning",
+                    collection="document_references",
+                    source_record_id=reference.source_record_id,
+                    message=(
+                        "This explicit reference has duplicate or non-unique targets and "
+                        "will remain Not Verified."
+                    ),
+                )
+            )
     return warnings
 
 
@@ -386,18 +572,19 @@ def get_extraction_review(session: Session, analysis: Analysis) -> ExtractionRev
     latest = latest_review_revision(session, analysis.id)
     original = _original_review_revision(session, analysis.id)
     blockers = _review_blockers(analysis)
+    presented = _presentation_snapshot(_snapshot(latest))
     return ExtractionReviewResponse(
         analysis_id=analysis.id,
         revision_id=latest.id,
         revision_number=latest.revision_number,
         created_at=latest.created_at,
-        snapshot=_snapshot(latest),
+        snapshot=presented,
         original_snapshot=_snapshot(original),
         confirmed_revision_id=analysis.confirmed_review_id,
         is_confirmed=analysis.confirmed_review_id is not None,
         can_edit=not blockers,
         can_confirm=not blockers,
-        warnings=_warnings(_snapshot(latest)),
+        warnings=_warnings(presented),
         confirmation_blockers=blockers,
     )
 
@@ -419,7 +606,9 @@ def append_extraction_review_revision(
             "The extraction review changed after this page was loaded. Reload the latest revision."
         )
     original = _original_review_revision(session, analysis.id)
-    normalized = validate_source_faithful_snapshot(candidate_snapshot, _snapshot(original))
+    normalized = _presentation_snapshot(
+        validate_source_faithful_snapshot(candidate_snapshot, _snapshot(original))
+    )
 
     next_revision_number = latest.revision_number + 1
     revision = ExtractionReviewRevision(
@@ -452,6 +641,27 @@ def append_extraction_review_revision(
     )
 
 
+def confirmed_supporting_annotation_texts(
+    session: Session,
+    analysis: Analysis,
+) -> dict[UUID, str] | None:
+    """Return included, reviewed presentation text; None means no review was confirmed."""
+
+    if analysis.confirmed_review_id is None:
+        return None
+    revision = _revision_by_id(session, analysis.id, analysis.confirmed_review_id)
+    if revision is None:
+        raise ExtractionReviewRevisionNotFoundError(
+            "The confirmed extraction-review revision is unavailable."
+        )
+    snapshot = _presentation_snapshot(_snapshot(revision))
+    return {
+        item.source_record_id: item.original_text
+        for item in snapshot.supporting_annotations
+        if item.included
+    }
+
+
 def _rows_by_id(session: Session, model: type[Any], analysis_id: UUID) -> dict[UUID, Any]:
     rows = session.execute(select(model).where(model.analysis_id == analysis_id)).scalars().all()
     return {row.id: row for row in rows}
@@ -481,6 +691,20 @@ def _apply_confirmed_snapshot(
     clo_rows = _rows_by_id(session, Clo, analysis_id)
     topic_rows = _rows_by_id(session, Topic, analysis_id)
     record_rows = _rows_by_id(session, AssessmentRecord, analysis_id)
+    material_rows = _rows_by_id(session, SupportingMaterial, analysis_id)
+    annotation_rows = _rows_by_id(session, SupportingMaterialAnnotation, analysis_id)
+    reference_rows = _rows_by_id(session, DocumentReference, analysis_id)
+    association_rows = {
+        row.id: row
+        for row in session.execute(
+            select(ReferenceAssociation)
+            .join(DocumentReference)
+            .where(
+                DocumentReference.analysis_id == analysis_id,
+                ReferenceAssociation.review_revision_id.is_(None),
+            )
+        ).scalars()
+    }
 
     _require_exact_persisted_ids(
         collection="evidence",
@@ -506,6 +730,26 @@ def _apply_confirmed_snapshot(
         collection="assessment records",
         rows=record_rows,
         expected_ids={item.source_record_id for item in snapshot.assessment_records},
+    )
+    _require_exact_persisted_ids(
+        collection="supporting materials",
+        rows=material_rows,
+        expected_ids={item.source_record_id for item in snapshot.supporting_materials},
+    )
+    _require_exact_persisted_ids(
+        collection="supporting annotations",
+        rows=annotation_rows,
+        expected_ids={item.source_record_id for item in snapshot.supporting_annotations},
+    )
+    _require_exact_persisted_ids(
+        collection="document references",
+        rows=reference_rows,
+        expected_ids={item.source_record_id for item in snapshot.document_references},
+    )
+    _require_exact_persisted_ids(
+        collection="machine reference associations",
+        rows=association_rows,
+        expected_ids={item.source_record_id for item in snapshot.reference_associations},
     )
 
     for evidence_item in snapshot.evidence:
@@ -605,6 +849,12 @@ def confirm_extraction_review(
         _snapshot(original),
     )
     _apply_confirmed_snapshot(session, analysis.id, confirmed_snapshot)
+    materialize_confirmed_reference_associations(
+        session,
+        analysis_id=analysis.id,
+        snapshot=confirmed_snapshot,
+        review_revision_id=revision.id,
+    )
 
     claim = session.execute(
         update(Analysis)

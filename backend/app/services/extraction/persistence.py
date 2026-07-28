@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.domain import UploadedFileType
 from app.models.evidence import Evidence
 from app.models.question import Question
+from app.services.extraction.structured_persistence import persist_structured_evidence
 from app.services.extraction.types import ExtractionResult
 
 
@@ -60,3 +61,4 @@ def persist_extraction_result(
         )
 
     session.flush()
+    persist_structured_evidence(session, analysis_id, result, rows_by_label)

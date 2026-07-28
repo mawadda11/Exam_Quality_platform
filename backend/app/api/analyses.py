@@ -19,10 +19,13 @@ from app.models.analysis import Analysis
 from app.models.assessment_record import AssessmentRecord
 from app.models.clo import Clo
 from app.models.course import Course
+from app.models.document_reference import DocumentReference
 from app.models.finding import Finding, FindingEvidence
 from app.models.processing_event import ProcessingEvent
 from app.models.question import Question
 from app.models.report import Report
+from app.models.supporting_material import SupportingMaterial
+from app.models.supporting_material_annotation import SupportingMaterialAnnotation
 from app.models.topic import Topic
 from app.models.uploaded_file import UploadedFile
 from app.models.user import User
@@ -43,6 +46,12 @@ from app.schemas.recommendation import RecommendationResponse
 from app.schemas.report import ReportCreateRequest, ReportResponse
 from app.schemas.rule_coverage import RuleCoverageAuditResponse
 from app.schemas.score import AnalysisScoreResponse
+from app.schemas.structured_evidence import (
+    DocumentReferenceResponse,
+    ReferenceAssociationResponse,
+    SupportingMaterialAnnotationResponse,
+    SupportingMaterialResponse,
+)
 from app.schemas.topic import TopicResponse
 from app.schemas.uploaded_file import UploadedFileResponse
 from app.services.extraction.review_workflow import (
@@ -53,8 +62,10 @@ from app.services.extraction.review_workflow import (
     ExtractionReviewStaleRevisionError,
     append_extraction_review_revision,
     confirm_extraction_review,
+    confirmed_supporting_annotation_texts,
     get_extraction_review,
 )
+from app.services.extraction.structured_evidence import logical_annotation_text
 from app.services.knowledge_base.reference_data import (
     get_controlled_recommendations,
     get_requirement_display,
@@ -69,6 +80,7 @@ from app.services.reporting.content import assemble_report_content
 from app.services.reporting.pdf import render_report_pdf
 from app.services.reporting.storage import store_report_pdf
 from app.services.rules.coverage_audit import build_rule_coverage_audit
+from app.services.rules.versioning import CURRENT_CAPABILITY_VERSION, effective_capability_version
 from app.services.storage.files import UploadTooLargeError, stream_validate_and_store
 from app.services.storage.keys import generate_storage_key, resolve_storage_path
 from app.services.storage.validation import UploadValidationError
@@ -119,6 +131,7 @@ def create_analysis(
         course_id=course.id,
         exam_type=payload.exam_type,
         term=payload.term,
+        capability_version=CURRENT_CAPABILITY_VERSION,
     )
     db.add(analysis)
     db.flush()
@@ -463,6 +476,7 @@ def create_reanalysis(
         exam_type=predecessor.exam_type,
         term=predecessor.term,
         predecessor_analysis_id=predecessor.id,
+        capability_version=CURRENT_CAPABILITY_VERSION,
     )
     db.add(reanalysis)
     db.flush()
@@ -578,6 +592,119 @@ def list_analysis_assessment_records(
     return [AssessmentRecordResponse.model_validate(record) for record in records]
 
 
+@router.get(
+    "/{analysis_id}/supporting-materials",
+    response_model=list[SupportingMaterialResponse],
+)
+def list_analysis_supporting_materials(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[SupportingMaterialResponse]:
+    rows = db.execute(
+        select(SupportingMaterial)
+        .where(SupportingMaterial.analysis_id == analysis.id)
+        .order_by(SupportingMaterial.page_number, SupportingMaterial.created_at)
+    ).scalars()
+    return [SupportingMaterialResponse.model_validate(row) for row in rows]
+
+
+@router.get(
+    "/{analysis_id}/supporting-material-annotations",
+    response_model=list[SupportingMaterialAnnotationResponse],
+)
+def list_analysis_supporting_material_annotations(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[SupportingMaterialAnnotationResponse]:
+    rows = list(db.execute(
+        select(SupportingMaterialAnnotation)
+        .where(SupportingMaterialAnnotation.analysis_id == analysis.id)
+        .order_by(
+            SupportingMaterialAnnotation.page_number,
+            SupportingMaterialAnnotation.created_at,
+        )
+    ).scalars())
+    reviewed_texts = confirmed_supporting_annotation_texts(db, analysis)
+    if reviewed_texts is not None:
+        rows = [row for row in rows if row.id in reviewed_texts]
+    return [
+        SupportingMaterialAnnotationResponse.model_validate(row).model_copy(
+            update={
+                "original_text": (
+                    reviewed_texts[row.id]
+                    if reviewed_texts is not None
+                    else logical_annotation_text(row.original_text, row.normalized_label)
+                )
+            }
+        )
+        for row in rows
+    ]
+
+
+@router.get(
+    "/{analysis_id}/document-references",
+    response_model=list[DocumentReferenceResponse],
+)
+def list_analysis_document_references(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[DocumentReferenceResponse]:
+    rows = (
+        db.execute(
+            select(DocumentReference)
+            .where(DocumentReference.analysis_id == analysis.id)
+            .options(selectinload(DocumentReference.association_candidates))
+            .order_by(DocumentReference.page_number, DocumentReference.created_at)
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        DocumentReferenceResponse(
+            id=row.id,
+            analysis_id=row.analysis_id,
+            question_id=row.question_id,
+            source_document=row.source_document,
+            target_type=row.target_type,
+            original_text=row.original_text,
+            target_label=row.target_label,
+            normalized_target_label=row.normalized_target_label,
+            page_number=row.page_number,
+            geometry=row.geometry,
+            confidence=row.confidence,
+            extraction_method=row.extraction_method,
+            resolution_status=(
+                row.machine_resolution_status
+                if analysis.confirmed_review_id is None
+                else (
+                    "resolved"
+                    if sum(
+                        item.selected and item.review_revision_id == analysis.confirmed_review_id
+                        for item in row.association_candidates
+                    )
+                    == 1
+                    else (
+                        "ambiguous"
+                        if sum(
+                            item.exact_label_match
+                            and item.review_revision_id == analysis.confirmed_review_id
+                            for item in row.association_candidates
+                        )
+                        > 1
+                        else "unresolved"
+                    )
+                )
+            ),
+            association_candidates=[
+                ReferenceAssociationResponse.model_validate(item)
+                for item in row.association_candidates
+            ],
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
+
+
 def _load_findings(db: Session, analysis_id: uuid.UUID) -> list[Finding]:
     return list(
         db.execute(
@@ -623,7 +750,11 @@ def get_analysis_rule_coverage(
     five academic statuses used by Findings.
     """
 
-    return build_rule_coverage_audit(analysis.id, _load_findings(db, analysis.id))
+    return build_rule_coverage_audit(
+        analysis.id,
+        _load_findings(db, analysis.id),
+        capability_version=effective_capability_version(analysis),
+    )
 
 
 @router.get("/{analysis_id}/score", response_model=AnalysisScoreResponse)
@@ -690,7 +821,46 @@ def create_report(
             .order_by(AssessmentRecord.page_number, AssessmentRecord.created_at)
         ).scalars()
     )
-    coverage = build_rule_coverage_audit(analysis.id, findings)
+    supporting_materials = list(
+        db.execute(
+            select(SupportingMaterial)
+            .where(SupportingMaterial.analysis_id == analysis.id)
+            .order_by(SupportingMaterial.page_number, SupportingMaterial.created_at)
+        ).scalars()
+    )
+    supporting_annotations = list(
+        db.execute(
+            select(SupportingMaterialAnnotation)
+            .where(SupportingMaterialAnnotation.analysis_id == analysis.id)
+            .order_by(
+                SupportingMaterialAnnotation.page_number,
+                SupportingMaterialAnnotation.created_at,
+            )
+        ).scalars()
+    )
+    reviewed_annotation_texts = confirmed_supporting_annotation_texts(db, analysis)
+    if reviewed_annotation_texts is not None:
+        supporting_annotations = [
+            item for item in supporting_annotations if item.id in reviewed_annotation_texts
+        ]
+    else:
+        reviewed_annotation_texts = {
+            item.id: logical_annotation_text(item.original_text, item.normalized_label)
+            for item in supporting_annotations
+        }
+    document_references = list(
+        db.execute(
+            select(DocumentReference)
+            .where(DocumentReference.analysis_id == analysis.id)
+            .options(selectinload(DocumentReference.association_candidates))
+            .order_by(DocumentReference.page_number, DocumentReference.created_at)
+        ).scalars()
+    )
+    coverage = build_rule_coverage_audit(
+        analysis.id,
+        findings,
+        capability_version=effective_capability_version(analysis),
+    )
     content = assemble_report_content(
         analysis,
         findings,
@@ -698,6 +868,10 @@ def create_report(
         datetime.now(UTC),
         assessment_records=assessment_records,
         rule_coverage=coverage,
+        supporting_materials=supporting_materials,
+        supporting_annotations=supporting_annotations,
+        supporting_annotation_texts=reviewed_annotation_texts,
+        document_references=document_references,
     )
     pdf_bytes = render_report_pdf(content, language=payload.language)
 
@@ -718,6 +892,7 @@ def create_report(
         size_bytes=stored.size_bytes,
         sha256_hash=stored.sha256_hash,
         kb_version=content.kb_version,
+        capability_version=effective_capability_version(analysis),
         score=content.score,
         score_label=content.score_label,
         denominator=content.denominator,

@@ -24,6 +24,13 @@ APPLICABLE_TOPIC_COVERAGE = RuleIdentifier("REQ009", "RULE009", "Applicable Topi
 CLEAR_TASK_STATEMENT = RuleIdentifier("REQ011", "RULE011", "Clear Task Statement")
 UNAMBIGUOUS_WORDING = RuleIdentifier("REQ012", "RULE012", "Unambiguous Wording")
 COMPLETE_QUESTION_INFORMATION = RuleIdentifier("REQ013", "RULE013", "Complete Question Information")
+REFERENCED_MATERIAL_AVAILABILITY = RuleIdentifier(
+    "REQ014", "RULE014", "Referenced Material Availability"
+)
+SUPPORTING_MATERIAL_ASSOCIATION = RuleIdentifier(
+    "REQ016", "RULE016", "Supporting Material Association"
+)
 MARKS_AND_TOTAL = RuleIdentifier("REQ018", "RULE018", "Correct Total Marks")
 NUMBERING = RuleIdentifier("REQ019", "RULE019", "Consistent Numbering")
 COMPLETE_INSTRUCTIONS = RuleIdentifier("REQ021", "RULE021", "Complete Instructions")
+RESOLVABLE_CROSS_REFERENCES = RuleIdentifier("REQ022", "RULE022", "Resolvable Cross-References")

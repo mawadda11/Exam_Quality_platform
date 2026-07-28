@@ -28,6 +28,10 @@ EXPECTED_TABLES = {
     "extraction_review_revisions",
     "findings",
     "reports",
+    "supporting_materials",
+    "supporting_material_annotations",
+    "document_references",
+    "reference_associations",
 }
 
 
@@ -193,6 +197,137 @@ def test_batch3_language_and_retry_metadata_are_migrated(tmp_path: Path) -> None
     assert "preferred_language" in user_columns
     assert {"failed_stage", "error_code", "retryable"} <= event_columns
     assert "language" in report_columns
+
+
+def test_batch4_structured_evidence_and_version_columns_are_migrated(
+    tmp_path: Path,
+) -> None:
+    sqlite_url = f"sqlite:///{tmp_path / 'batch4_structured.db'}"
+    command.upgrade(_alembic_config(sqlite_url), "head")
+
+    engine = create_engine(sqlite_url)
+    inspector = inspect(engine)
+    analysis_columns = {column["name"] for column in inspector.get_columns("analyses")}
+    report_columns = {column["name"] for column in inspector.get_columns("reports")}
+    association_checks = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("reference_associations")
+    }
+    engine.dispose()
+
+    assert "capability_version" in analysis_columns
+    assert "capability_version" in report_columns
+    assert "ck_reference_associations_one_target" in association_checks
+
+
+def test_batch4_upgrade_preserves_historical_analysis_without_backfill(
+    tmp_path: Path,
+) -> None:
+    sqlite_url = f"sqlite:///{tmp_path / 'batch4_historical.db'}"
+    cfg = _alembic_config(sqlite_url)
+    command.upgrade(cfg, "0011")
+
+    engine = create_engine(sqlite_url)
+    user_id = uuid.uuid4()
+    course_id = uuid.uuid4()
+    analysis_id = uuid.uuid4()
+    now = datetime.now(UTC)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO users "
+                "(id, email, display_name, institution, department, user_type, password_hash, "
+                "is_active, email_verified, token_version, last_login_at, preferred_language, "
+                "created_at, updated_at) VALUES "
+                "(:id, :email, :name, NULL, NULL, :user_type, NULL, 1, 0, 0, NULL, 'en', "
+                ":created_at, :updated_at)"
+            ),
+            {
+                "id": user_id.hex,
+                "email": "batch4-legacy@example.test",
+                "name": "Batch 4 Legacy",
+                "user_type": "Faculty Member",
+                "created_at": now,
+                "updated_at": now,
+            },
+        )
+        connection.execute(
+            text(
+                "INSERT INTO courses "
+                "(id, code, name, department, program, created_at, updated_at) "
+                "VALUES (:id, :code, :name, NULL, NULL, :created_at, :updated_at)"
+            ),
+            {
+                "id": course_id.hex,
+                "code": "B4-LEGACY",
+                "name": "Historical Course",
+                "created_at": now,
+                "updated_at": now,
+            },
+        )
+        connection.execute(
+            text(
+                "INSERT INTO analyses "
+                "(id, user_id, course_id, exam_type, term, state, "
+                "confirmed_review_id, predecessor_analysis_id, created_at, updated_at) "
+                "VALUES (:id, :user_id, :course_id, :exam_type, :term, :state, "
+                "NULL, NULL, :created_at, :updated_at)"
+            ),
+            {
+                "id": analysis_id.hex,
+                "user_id": user_id.hex,
+                "course_id": course_id.hex,
+                "exam_type": ExamType.MIDTERM.value,
+                "term": "Historical",
+                "state": "queued",
+                "created_at": now,
+                "updated_at": now,
+            },
+        )
+    engine.dispose()
+
+    command.upgrade(cfg, "head")
+    engine = create_engine(sqlite_url)
+    with engine.connect() as connection:
+        capability_version = connection.execute(
+            text("SELECT capability_version FROM analyses WHERE id = :id"),
+            {"id": analysis_id.hex},
+        ).scalar_one()
+        structured_counts = [
+            connection.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar_one()
+            for table in (
+                "supporting_materials",
+                "supporting_material_annotations",
+                "document_references",
+                "reference_associations",
+            )
+        ]
+    engine.dispose()
+
+    assert capability_version is None
+    assert structured_counts == [0, 0, 0, 0]
+
+
+def test_batch4_revision_downgrade_returns_to_current_predecessor(
+    tmp_path: Path,
+) -> None:
+    sqlite_url = f"sqlite:///{tmp_path / 'batch4_downgrade.db'}"
+    cfg = _alembic_config(sqlite_url)
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, "0011")
+
+    engine = create_engine(sqlite_url)
+    inspector = inspect(engine)
+    assert "capability_version" not in {
+        column["name"] for column in inspector.get_columns("analyses")
+    }
+    assert not {
+        "supporting_materials",
+        "supporting_material_annotations",
+        "document_references",
+        "reference_associations",
+    } & set(inspector.get_table_names())
+    engine.dispose()
 
 
 def test_migration_enforces_dual_file_unique_constraint(tmp_path: Path) -> None:
