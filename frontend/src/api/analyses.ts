@@ -14,6 +14,7 @@ import type {
   ReanalysisCreateRequest,
   RecommendationResponse,
   ReportResponse,
+  ReportLanguage,
   RuleCoverageAuditResponse,
   TopicResponse,
   UploadedFileResponse,
@@ -49,6 +50,10 @@ export function runAnalysis(analysisId: string): Promise<AnalysisResponse> {
 
 export function getAnalysisProgress(analysisId: string): Promise<ProgressResponse> {
   return apiGet<ProgressResponse>(`/analyses/${analysisId}/progress`)
+}
+
+export function retryAnalysis(analysisId: string): Promise<AnalysisResponse> {
+  return apiPostJson<AnalysisResponse>(`/analyses/${analysisId}/retry`, {})
 }
 
 
@@ -149,8 +154,11 @@ export function listRecommendations(analysisId: string): Promise<RecommendationR
   return apiGet<RecommendationResponse[]>(`/analyses/${analysisId}/recommendations`)
 }
 
-export function generateReport(analysisId: string): Promise<ReportResponse> {
-  return apiPostJson<ReportResponse>(`/analyses/${analysisId}/reports`, {})
+export function generateReport(
+  analysisId: string,
+  language: ReportLanguage = 'en',
+): Promise<ReportResponse> {
+  return apiPostJson<ReportResponse>(`/analyses/${analysisId}/reports`, { language })
 }
 
 export function listReports(analysisId: string): Promise<ReportResponse[]> {

@@ -1,4 +1,5 @@
 import { ProgressStepper, type ProgressStep } from '../../components/ui/ProgressStepper'
+import { useI18n } from '../../i18n/I18nProvider'
 
 export type AnalysisWorkflowStep =
   | 'information'
@@ -19,6 +20,7 @@ interface AnalysisWorkflowStepperProps {
 }
 
 export function AnalysisWorkflowStepper({ currentStep }: AnalysisWorkflowStepperProps) {
+  const { t } = useI18n()
   const currentIndex =
     currentStep === 'complete'
       ? WORKFLOW_STEPS.length
@@ -26,8 +28,9 @@ export function AnalysisWorkflowStepper({ currentStep }: AnalysisWorkflowStepper
 
   const steps: ProgressStep[] = WORKFLOW_STEPS.map((step, index) => ({
     ...step,
+    label: t(step.label),
     status: index < currentIndex ? 'complete' : index === currentIndex ? 'current' : 'upcoming',
   }))
 
-  return <ProgressStepper steps={steps} ariaLabel="New analysis progress" />
+  return <ProgressStepper steps={steps} ariaLabel={t('New analysis progress')} />
 }

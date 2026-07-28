@@ -162,7 +162,7 @@ def test_pipeline_transitions_to_failed_with_safe_message_on_exception(
     # Only VALIDATING succeeded before EXTRACTING_EXAM raised; the pipeline
     # stops immediately rather than continuing through the remaining stages.
     assert [e.stage for e in events] == [ProcessingStage.VALIDATING, ProcessingStage.FAILED]
-    assert events[-1].message == runner.SAFE_FAILURE_MESSAGE
+    assert events[-1].message == runner.SAFE_FAILURE_MESSAGES[ProcessingStage.EXTRACTING_EXAM]
     assert "sensitive internal detail" not in (events[-1].message or "")
     assert "/etc/secret-config" not in (events[-1].message or "")
 
@@ -272,4 +272,4 @@ def test_post_confirmation_pipeline_fails_safely_and_stops(
         ProcessingStage.BUILDING_EVIDENCE,
         ProcessingStage.FAILED,
     ]
-    assert events[-1].message == runner.SAFE_FAILURE_MESSAGE
+    assert events[-1].message == runner.SAFE_FAILURE_MESSAGES[ProcessingStage.RETRIEVING_KNOWLEDGE]

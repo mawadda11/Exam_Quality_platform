@@ -179,6 +179,22 @@ def test_faculty_authentication_foundation_is_migrated(tmp_path: Path) -> None:
     assert ("token_hash",) in reset_constraints
 
 
+def test_batch3_language_and_retry_metadata_are_migrated(tmp_path: Path) -> None:
+    sqlite_url = f"sqlite:///{tmp_path / 'batch3_metadata.db'}"
+    command.upgrade(_alembic_config(sqlite_url), "head")
+
+    engine = create_engine(sqlite_url)
+    inspector = inspect(engine)
+    user_columns = {column["name"] for column in inspector.get_columns("users")}
+    event_columns = {column["name"] for column in inspector.get_columns("processing_events")}
+    report_columns = {column["name"] for column in inspector.get_columns("reports")}
+    engine.dispose()
+
+    assert "preferred_language" in user_columns
+    assert {"failed_stage", "error_code", "retryable"} <= event_columns
+    assert "language" in report_columns
+
+
 def test_migration_enforces_dual_file_unique_constraint(tmp_path: Path) -> None:
     sqlite_url = f"sqlite:///{tmp_path / 'migration_constraint.db'}"
     command.upgrade(_alembic_config(sqlite_url), "head")

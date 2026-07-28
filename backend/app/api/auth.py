@@ -26,6 +26,7 @@ from app.schemas.auth import (
     PasswordResetRequest,
     PasswordResetRequestResponse,
     RegisterRequest,
+    UserPreferencesRequest,
 )
 from app.services.auth.email import send_password_reset_email
 from app.services.auth.passwords import (
@@ -79,6 +80,7 @@ def register(
         email_verified=False,
         token_version=0,
         user_type=UserType.FACULTY_MEMBER,
+        preferred_language=payload.preferred_language,
         last_login_at=utcnow(),
     )
     try:
@@ -121,6 +123,17 @@ def read_current_user(
     return FacultyUserResponse.model_validate(current_user)
 
 
+@router.patch("/preferences", response_model=FacultyUserResponse)
+def update_preferences(
+    payload: UserPreferencesRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> FacultyUserResponse:
+    current_user.preferred_language = payload.preferred_language
+    db.flush()
+    return FacultyUserResponse.model_validate(current_user)
+
+
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -160,7 +173,12 @@ def request_password_reset(
         )
         db.add(reset_token)
         db.flush()
-        send_password_reset_email(settings=settings, recipient=user.email, token=raw_token)
+        send_password_reset_email(
+            settings=settings,
+            recipient=user.email,
+            token=raw_token,
+            language=user.preferred_language,
+        )
         if settings.app_env.lower() in {"development", "test"}:
             debug_reset_token = raw_token
 

@@ -1,4 +1,5 @@
 import type { HTMLAttributes } from 'react'
+import { useI18n } from '../../i18n/I18nProvider'
 
 type BrandMarkSize = 'small' | 'medium' | 'large'
 
@@ -13,6 +14,7 @@ export function BrandMark({
   className = '',
   ...props
 }: BrandMarkProps) {
+  const { t } = useI18n()
   const classes = ['ui-brand-mark', `ui-brand-mark--${size}`, className]
     .filter(Boolean)
     .join(' ')
@@ -20,7 +22,7 @@ export function BrandMark({
   return (
     <div
       className={classes}
-      aria-label={showName ? undefined : 'AI Exam Quality Platform'}
+      aria-label={showName ? undefined : t('Exam Quality Analyzer')}
       {...props}
     >
       <span className="ui-brand-mark-icon" aria-hidden="true">
@@ -42,8 +44,7 @@ export function BrandMark({
       </span>
       {showName && (
         <span className="ui-brand-mark-copy">
-          <span className="ui-brand-mark-name">AI Exam Quality</span>
-          <span className="ui-brand-mark-subtitle">Platform</span>
+          <span className="ui-brand-mark-name">{t('Exam Quality Analyzer')}</span>
         </span>
       )}
     </div>

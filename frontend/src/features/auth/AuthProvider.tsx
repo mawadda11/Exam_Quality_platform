@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- provider and companion hooks share this module. */
 import {
   createContext,
   useCallback,
@@ -18,6 +19,7 @@ import {
   getStoredAccessToken,
   setStoredAccessToken,
 } from '../../api/authToken'
+import { useI18n } from '../../i18n/I18nProvider'
 import type {
   FacultyUserResponse,
   LoginRequest,
@@ -37,6 +39,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { locale, setLocale } = useI18n()
   const [initialAccessToken] = useState(() => getStoredAccessToken())
   const [status, setStatus] = useState<AuthStatus>(() =>
     initialAccessToken ? 'loading' : 'anonymous',
@@ -51,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((currentUser) => {
         if (cancelled) return
         setUser(currentUser)
+        setLocale(currentUser.preferred_language)
         setStatus('authenticated')
       })
       .catch(() => {
@@ -62,21 +66,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [initialAccessToken])
+  }, [initialAccessToken, setLocale])
 
   const login = useCallback(async (payload: LoginRequest): Promise<void> => {
     const session = await loginFaculty(payload)
     setStoredAccessToken(session.access_token)
     setUser(session.user)
+    setLocale(session.user.preferred_language)
     setStatus('authenticated')
-  }, [])
+  }, [setLocale])
 
   const register = useCallback(async (payload: RegisterRequest): Promise<void> => {
-    const session = await registerFaculty(payload)
+    const session = await registerFaculty({ ...payload, preferred_language: locale })
     setStoredAccessToken(session.access_token)
     setUser(session.user)
+    setLocale(session.user.preferred_language)
     setStatus('authenticated')
-  }, [])
+  }, [locale, setLocale])
 
   const logout = useCallback(async (): Promise<void> => {
     try {

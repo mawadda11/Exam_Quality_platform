@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react'
+import { useI18n } from '../../i18n/I18nProvider'
 
 interface ScoreRingProps {
   score: number | string | null
@@ -13,20 +14,18 @@ function numericScore(score: number | string): number {
   return Math.min(100, Math.max(0, parsed))
 }
 
-export function ScoreRing({
-  score,
-  denominator,
-  label = 'Overall Exam Quality Score',
-  emptyLabel = 'Insufficient Evidence',
-}: ScoreRingProps) {
+export function ScoreRing({ score, denominator, label, emptyLabel }: ScoreRingProps) {
+  const { t } = useI18n()
+  const translatedLabel = label ?? t('Overall Exam Quality Score')
+  const translatedEmptyLabel = emptyLabel ?? t('Insufficient Evidence')
   const empty = score === null
-  const scoreText = empty ? emptyLabel : `${score}%`
+  const scoreText = empty ? translatedEmptyLabel : `${score}%`
   const denominatorText =
     denominator === 0
-      ? 'No verified checks were available'
+      ? t('No verified checks were available')
       : denominator === 1
-        ? 'Based on 1 verified check'
-        : `Based on ${denominator} verified checks`
+        ? t('Based on 1 verified check')
+        : t('Based on {count} verified checks', { count: denominator })
   const angle = empty ? 0 : numericScore(score) * 3.6
   const style = { '--score-angle': `${angle}deg` } as CSSProperties
 
@@ -34,12 +33,12 @@ export function ScoreRing({
     <div
       className={`ui-score-ring${empty ? ' ui-score-ring--empty' : ''}`}
       role="img"
-      aria-label={`${label}: ${scoreText}. ${denominatorText}.`}
+      aria-label={`${translatedLabel}: ${scoreText}. ${denominatorText}.`}
     >
       <div className="ui-score-ring-graphic" style={style} aria-hidden="true">
         <span className="ui-score-ring-value">{scoreText}</span>
       </div>
-      <p className="ui-score-ring-label">{label}</p>
+      <p className="ui-score-ring-label">{translatedLabel}</p>
       <p className="ui-score-ring-denominator">{denominatorText}</p>
     </div>
   )

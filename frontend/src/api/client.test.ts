@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, apiGet, apiPostJson, apiPutJson, getApiBaseUrl } from './client'
+import { ApiError, apiGet, apiPatchJson, apiPostJson, apiPutJson, getApiBaseUrl } from './client'
 import { setStoredAccessToken } from './authToken'
 
 function mockResponse(body: unknown, ok: boolean, status: number, statusText = ''): Response {
@@ -115,5 +115,24 @@ describe('apiPutJson', () => {
     expect(init.method).toBe('PUT')
     expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
     expect(JSON.parse(init.body as string)).toEqual({ base_revision_id: 'revision-1' })
+  })
+})
+
+
+describe('apiPatchJson', () => {
+  it('sends a JSON PATCH request with authorization support', async () => {
+    setStoredAccessToken('signed-access-token')
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse({ preferred_language: 'ar' }, true, 200),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await apiPatchJson('/auth/preferences', { preferred_language: 'ar' })
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('http://localhost:8000/api/v1/auth/preferences')
+    expect(init.method).toBe('PATCH')
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer signed-access-token')
+    expect(JSON.parse(init.body as string)).toEqual({ preferred_language: 'ar' })
   })
 })

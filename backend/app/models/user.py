@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Boolean, DateTime, Enum, Integer, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.domain import UserType, enum_values
+from app.core.domain import LanguageCode, UserType, enum_values
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
 
@@ -29,6 +29,10 @@ class User(TimestampMixin, Base):
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     token_version: Mapped[int] = mapped_column(Integer, default=0)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    preferred_language: Mapped[LanguageCode] = mapped_column(
+        Enum(LanguageCode, native_enum=False, validate_strings=True, values_callable=enum_values),
+        default=LanguageCode.ARABIC,
+    )
     user_type: Mapped[UserType] = mapped_column(
         Enum(UserType, native_enum=False, validate_strings=True, values_callable=enum_values),
         default=UserType.FACULTY_MEMBER,

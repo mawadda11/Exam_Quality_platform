@@ -6,7 +6,11 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.core.domain import ReportFormat
+from app.core.domain import ReportFormat, ReportLanguage
+
+
+class ReportCreateRequest(BaseModel):
+    language: ReportLanguage = ReportLanguage.ENGLISH
 
 
 class ReportResponse(BaseModel):
@@ -19,6 +23,7 @@ class ReportResponse(BaseModel):
     id: UUID
     analysis_id: UUID
     format: ReportFormat
+    language: ReportLanguage
     kb_version: str
     score: Decimal | None
     score_label: str | None

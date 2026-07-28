@@ -326,8 +326,11 @@ def test_invalid_semantic_output_fails_pipeline_and_rolls_back_all_findings(
 
     assert progress["state"] == "failed"
     assert progress["message"] == (
-        "Processing failed due to an internal error. Please try again later."
+        "The TP-153 Course Specification could not be extracted. Review the PDF and retry."
     )
+    assert progress["failed_stage"] == "extracting_tp153"
+    assert progress["error_code"] == "TP153_EXTRACTION_FAILED"
+    assert progress["can_retry"] is True
     findings = client.get(
         f"/api/v1/analyses/{analysis_id}/findings",
         headers=headers,

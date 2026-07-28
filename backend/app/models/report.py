@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, Numeric, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.domain import ReportFormat, enum_values
+from app.core.domain import ReportFormat, ReportLanguage, enum_values
 from app.db.base import Base
 from app.db.mixins import utcnow
 
@@ -38,6 +38,10 @@ class Report(Base):
     format: Mapped[ReportFormat] = mapped_column(
         Enum(ReportFormat, native_enum=False, validate_strings=True, values_callable=enum_values),
         default=ReportFormat.PDF,
+    )
+    language: Mapped[ReportLanguage] = mapped_column(
+        Enum(ReportLanguage, native_enum=False, validate_strings=True, values_callable=enum_values),
+        default=ReportLanguage.ENGLISH,
     )
     storage_key: Mapped[str] = mapped_column(String(512), unique=True)
     size_bytes: Mapped[int] = mapped_column(BigInteger)

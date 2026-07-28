@@ -59,10 +59,10 @@ const FINDING: FindingResponse = {
 }
 
 describe('SemanticEvaluationDetails', () => {
-  it('labels retained relationship judgments as AI-derived advisory output', () => {
+  it('labels retained relationship judgments as derived advisory output', () => {
     render(<SemanticEvaluationDetails finding={FINDING} />)
 
-    expect(screen.getByText('AI-derived advisory relationship')).toBeInTheDocument()
+    expect(screen.getByText('Derived advisory relationship')).toBeInTheDocument()
     expect(screen.getByText(/not an official TP-153 mapping/i)).toBeInTheDocument()
     expect(screen.getByText(/Q1 · Exam page 1 · question_text/i)).toBeInTheDocument()
     expect(screen.getByText(/CLO1 · TP-153 page 3 · clo/i)).toBeInTheDocument()
@@ -93,7 +93,7 @@ describe('SemanticEvaluationDetails', () => {
     render(<SemanticEvaluationDetails finding={finding} />)
 
     expect(screen.getByText('Governed semantic item judgment')).toBeInTheDocument()
-    expect(screen.queryByText('AI-derived advisory relationship')).not.toBeInTheDocument()
+    expect(screen.queryByText('Derived advisory relationship')).not.toBeInTheDocument()
     expect(screen.getByText(/No target relationship was asserted/i)).toBeInTheDocument()
   })
 })

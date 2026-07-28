@@ -4,14 +4,14 @@
   --color-brand-navy: #102a43;
   --color-brand-navy-active: #1f3a57;
   --color-brand-teal: #14b8a6;
-  --color-brand-teal-strong: #0f8f83;
+  --color-brand-teal-strong: #0f766e;
   --color-brand-teal-subtle: #ecfdfb;
 
   --color-canvas: #f8fafc;
   --color-surface: #ffffff;
   --color-surface-muted: #f1f5f9;
   --color-border: #dbe4ee;
-  --color-border-strong: #cbd5e1;
+  --color-border-strong: #7c8da3;
 
   --color-text: #102a43;
   --color-text-secondary: #475569;
@@ -59,7 +59,7 @@
   --border-width: 1px;
   --shadow-card: 0 1px 2px rgb(16 42 67 / 5%);
   --shadow-raised: 0 12px 32px rgb(16 42 67 / 14%);
-  --focus-ring: 0 0 0 3px rgb(20 184 166 / 28%);
+  --focus-ring: 0 0 0 3px #0f766e;
 
   --content-width-compact: 48rem;
   --content-width-form: 72rem;

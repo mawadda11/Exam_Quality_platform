@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file="../.env", extra="ignore")
 
-    app_name: str = "AI Exam Quality Platform"
+    app_name: str = "Exam Quality Analyzer"
     app_env: str = "development"
     api_prefix: str = "/api/v1"
     secret_key: str = Field(default="development-only-change-me", min_length=16)

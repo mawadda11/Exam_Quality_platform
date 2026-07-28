@@ -1,21 +1,29 @@
-import { Outlet, useLocation } from 'react-router-dom'
+import { Link, Outlet, useLocation } from 'react-router-dom'
 import { BrandMark } from '../ui/BrandMark'
 import { MobileNavigation } from './MobileNavigation'
 import { PrimaryNavigation } from './PrimaryNavigation'
 import { RouteFocusManager } from './RouteFocusManager'
 import { UserAccountPanel } from './UserAccountPanel'
+import { LanguageSwitcher } from '../../i18n/LanguageSwitcher'
+import { useI18n } from '../../i18n/I18nProvider'
 
 export function AppShell() {
+  const { t } = useI18n()
   const location = useLocation()
 
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">
-        Skip to main content
+        {t('Skip to main content')}
       </a>
       <aside className="app-sidebar">
         <BrandMark />
+        <Link className="ui-button app-new-analysis-action" to="/analyses/new">
+          <span aria-hidden="true">+</span>
+          {t('New Analysis')}
+        </Link>
         <PrimaryNavigation />
+        <LanguageSwitcher />
         <UserAccountPanel />
       </aside>
 

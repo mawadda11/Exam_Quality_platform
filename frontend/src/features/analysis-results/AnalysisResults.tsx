@@ -15,6 +15,7 @@ import { ResultResourceState } from './ResultResourceState'
 import { ResultsHeader } from './ResultsHeader'
 import { RESULTS_SECTIONS, type ResultsSectionId } from './resultSections'
 import { useAnalysisResultsData } from './useAnalysisResultsData'
+import { useI18n } from '../../i18n/I18nProvider'
 
 interface AnalysisResultsProps {
   analysis: AnalysisResponse
@@ -29,6 +30,7 @@ export function AnalysisResults({
   section: controlledSection,
   onSectionChange,
 }: AnalysisResultsProps) {
+  const { t } = useI18n()
   const [localSection, setLocalSection] = useState<ResultsSectionId>('overview')
   const section = controlledSection ?? localSection
   const { resources, retryResource, refreshResource } = useAnalysisResultsData(
@@ -86,16 +88,15 @@ export function AnalysisResults({
 
       {hasAiAssistedFindings && (
         <div className="notice ai-advisory-notice">
-          This AI evaluation is advisory and intended to support faculty review. Final academic
-          responsibility remains with the instructor.
+          {t('This evaluation is advisory and intended to support faculty review. Final academic responsibility remains with the instructor.')}
         </div>
       )}
 
       <Tabs
-        items={RESULTS_SECTIONS}
+        items={RESULTS_SECTIONS.map((item) => ({ ...item, label: t(item.label) }))}
         value={section}
         onValueChange={handleSectionChange}
-        ariaLabel="Results sections"
+        ariaLabel={t('Results sections')}
       />
 
       <div
@@ -107,8 +108,8 @@ export function AnalysisResults({
         {section === 'overview' && (
           <ResultResourceState
             resource={resources.score}
-            loadingMessage="Loading score summary…"
-            errorTitle="Could not load score summary"
+            loadingMessage={t('Loading score summary…')}
+            errorTitle={t('Could not load score summary')}
             onRetry={() => retryResource('score')}
           >
             {(score) => (
@@ -126,8 +127,8 @@ export function AnalysisResults({
         {section === 'questions' && (
           <ResultResourceState
             resource={resources.questions}
-            loadingMessage="Loading extracted questions…"
-            errorTitle="Could not load questions"
+            loadingMessage={t('Loading extracted questions…')}
+            errorTitle={t('Could not load questions')}
             onRetry={() => retryResource('questions')}
           >
             {(questions) => <QuestionsSection questions={questions} />}
@@ -149,8 +150,8 @@ export function AnalysisResults({
         {section === 'marks-structure' && (
           <ResultResourceState
             resource={resources.findings}
-            loadingMessage="Loading marks and structure findings…"
-            errorTitle="Could not load marks and structure findings"
+            loadingMessage={t('Loading marks and structure findings…')}
+            errorTitle={t('Could not load marks and structure findings')}
             onRetry={() => retryResource('findings')}
           >
             {(findings) => (
@@ -166,8 +167,8 @@ export function AnalysisResults({
         {section === 'findings-recommendations' && (
           <ResultResourceState
             resource={resources.findings}
-            loadingMessage="Loading findings…"
-            errorTitle="Could not load findings"
+            loadingMessage={t('Loading findings…')}
+            errorTitle={t('Could not load findings')}
             onRetry={() => retryResource('findings')}
           >
             {(findings) => (

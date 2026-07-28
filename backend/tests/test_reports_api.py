@@ -87,6 +87,7 @@ def test_create_report_succeeds_for_a_completed_analysis(
 
     assert body["analysis_id"] == analysis_id
     assert body["format"] == "pdf"
+    assert body["language"] == "en"
     assert body["kb_version"] == "1.0"
     assert body["denominator"] == 2
     assert body["score"] == "75.00"
@@ -216,3 +217,44 @@ def test_reports_endpoints_require_auth_header(client: TestClient, db_engine: En
     assert client.get(f"/api/v1/analyses/{analysis_id}/reports").status_code == 401
     assert client.get(f"/api/v1/reports/{uuid.uuid4()}").status_code == 401
     assert client.get(f"/api/v1/reports/{uuid.uuid4()}/download").status_code == 401
+
+
+def test_create_report_accepts_arabic_presentation_language(
+    client: TestClient, db_engine: Engine
+) -> None:
+    email = "report-arabic@kau.edu.sa"
+    analysis_id = _create_analysis(client, email)
+    _insert_finding(db_engine, analysis_id, "REQ018", "RULE018", AcademicStatus.SATISFIED)
+    _mark_completed(db_engine, analysis_id)
+
+    created = client.post(
+        f"/api/v1/analyses/{analysis_id}/reports",
+        headers=auth_header(email),
+        json={"language": "ar"},
+    )
+    assert created.status_code == 201
+    assert created.json()["language"] == "ar"
+
+    listing = client.get(f"/api/v1/analyses/{analysis_id}/reports", headers=auth_header(email))
+    assert listing.status_code == 200
+    assert listing.json()[0]["language"] == "ar"
+
+    downloaded = client.get(
+        f"/api/v1/reports/{created.json()['id']}/download",
+        headers=auth_header(email),
+    )
+    assert downloaded.status_code == 200
+    assert downloaded.content.startswith(b"%PDF")
+
+
+def test_create_report_rejects_unsupported_language(client: TestClient, db_engine: Engine) -> None:
+    email = "report-language-invalid@kau.edu.sa"
+    analysis_id = _create_analysis(client, email)
+    _mark_completed(db_engine, analysis_id)
+
+    response = client.post(
+        f"/api/v1/analyses/{analysis_id}/reports",
+        headers=auth_header(email),
+        json={"language": "fr"},
+    )
+    assert response.status_code == 422

@@ -19,6 +19,17 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+html[lang="ar"] body {
+  font-family: "Noto Sans Arabic", Tahoma, "Segoe UI", Arial, sans-serif;
+}
+
+html[dir="rtl"] .ui-page-header-eyebrow,
+html[dir="rtl"] .auth-eyebrow,
+html[dir="rtl"] .ui-responsive-table th {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 button,
 input,
 select,

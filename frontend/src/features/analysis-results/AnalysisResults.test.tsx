@@ -253,7 +253,7 @@ describe('AnalysisResults', () => {
     )
   })
 
-  it('shows existing AI provenance without presenting numeric confidence', async () => {
+  it('shows existing audit provenance without presenting numeric confidence', async () => {
     vi.mocked(analysesApi.listFindings).mockResolvedValue([
       {
         ...FINDING,
@@ -285,7 +285,7 @@ describe('AnalysisResults', () => {
       ),
     )
 
-    expect(await screen.findByText('AI-Assisted')).toBeInTheDocument()
+    expect(await screen.findByText('Analysis-assisted')).toBeInTheDocument()
     expect(screen.getByText('Semantic confidence: High')).toBeInTheDocument()
     expect(screen.getByText(/provider:/i)).toHaveTextContent('fake')
     expect(screen.getByText(/model:/i)).toHaveTextContent('fake-semantic-v1')

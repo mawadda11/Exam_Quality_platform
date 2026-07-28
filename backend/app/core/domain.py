@@ -19,6 +19,16 @@ class ReportFormat(StrEnum):
     PDF = "pdf"
 
 
+class LanguageCode(StrEnum):
+    ARABIC = "ar"
+    ENGLISH = "en"
+
+
+class ReportLanguage(StrEnum):
+    ARABIC = "ar"
+    ENGLISH = "en"
+
+
 class AcademicStatus(StrEnum):
     SATISFIED = "Satisfied"
     PARTIALLY_SATISFIED = "Partially Satisfied"

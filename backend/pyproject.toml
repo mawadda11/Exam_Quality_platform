@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ai-exam-quality-backend"
 version = "1.0.0"
-description = "FastAPI backend for the AI Exam Quality Platform"
+description = "FastAPI backend for Exam Quality Analyzer"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115,<1",

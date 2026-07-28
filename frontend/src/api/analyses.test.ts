@@ -5,8 +5,10 @@ import {
   getAnalysis,
   getExtractionReview,
   getRuleCoverage,
+  generateReport,
   listFindings,
   parseFindingResponses,
+  retryAnalysis,
   saveExtractionReview,
   uploadAnalysisFile,
 } from './analyses'
@@ -16,6 +18,7 @@ import type {
   ExtractionReviewResponse,
   ExtractionReviewSnapshot,
   FindingResponse,
+  ReportResponse,
   RuleCoverageAuditResponse,
   UploadedFileResponse,
 } from '../types/api'
@@ -262,5 +265,50 @@ describe('extraction review API', () => {
     )
     expect(init.method).toBe('POST')
     expect(JSON.parse(init.body as string)).toEqual({ revision_id: 'revision-2' })
+  })
+})
+
+
+describe('retryAnalysis', () => {
+  it('POSTs to the owner-scoped retry endpoint without uploading files', async () => {
+    const retrying = { ...SAMPLE_ANALYSIS, state: 'extracting_exam' as const }
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(retrying, 202))
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await retryAnalysis('analysis-1')).toEqual(retrying)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('http://localhost:8000/api/v1/analyses/analysis-1/retry')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual({})
+  })
+})
+
+describe('generateReport', () => {
+  it('POSTs the requested report language', async () => {
+    const report: ReportResponse = {
+      id: 'report-1',
+      analysis_id: 'analysis-1',
+      format: 'pdf',
+      language: 'ar',
+      kb_version: '1.0',
+      score: '82.14',
+      score_label: null,
+      denominator: 14,
+      satisfied_count: 9,
+      partially_satisfied_count: 5,
+      not_satisfied_count: 0,
+      not_verified_count: 0,
+      not_applicable_count: 0,
+      size_bytes: 1024,
+      created_at: '2026-07-28T00:00:00Z',
+    }
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(report, 201))
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await generateReport('analysis-1', 'ar')).toEqual(report)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('http://localhost:8000/api/v1/analyses/analysis-1/reports')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual({ language: 'ar' })
   })
 })
