@@ -53,12 +53,8 @@ def test_password_reset_email_uses_account_language_and_approved_brand(
         language=LanguageCode.ENGLISH,
     )
 
-    assert _SmtpCapture.messages[0]["Subject"] == (
-        "إعادة تعيين كلمة مرور محلل جودة الاختبارات"
-    )
-    assert _SmtpCapture.messages[1]["Subject"] == (
-        "Reset your Exam Quality Analyzer password"
-    )
+    assert _SmtpCapture.messages[0]["Subject"] == ("إعادة تعيين كلمة مرور محلل جودة الاختبارات")
+    assert _SmtpCapture.messages[1]["Subject"] == ("Reset your Exam Quality Analyzer password")
     payload = "\n".join(message.get_content() for message in _SmtpCapture.messages)
     assert "AI Exam Quality Platform" not in payload
     assert "Artificial Intelligence" not in payload

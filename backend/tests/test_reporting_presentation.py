@@ -20,14 +20,20 @@ def test_arabic_report_presentation_uses_stable_ids_and_preserves_english_path()
         "Original governed explanation.",
         ReportLanguage.ARABIC,
     )
-    assert finding_explanation(
-        AcademicStatus.NOT_VERIFIED,
-        "Original governed explanation.",
-        ReportLanguage.ENGLISH,
-    ) == "Original governed explanation."
-    assert recommendation_text(
-        "REC001",
-        "Map the Question to a CLO",
-        "Original recommendation.",
-        ReportLanguage.ARABIC,
-    )[0] == "اربط السؤال بناتج تعلم"
+    assert (
+        finding_explanation(
+            AcademicStatus.NOT_VERIFIED,
+            "Original governed explanation.",
+            ReportLanguage.ENGLISH,
+        )
+        == "Original governed explanation."
+    )
+    assert (
+        recommendation_text(
+            "REC001",
+            "Map the Question to a CLO",
+            "Original recommendation.",
+            ReportLanguage.ARABIC,
+        )[0]
+        == "اربط السؤال بناتج تعلم"
+    )

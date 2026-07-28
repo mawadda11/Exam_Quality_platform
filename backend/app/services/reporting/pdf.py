@@ -258,8 +258,10 @@ def _subheading(pdf: FPDF, text: str) -> None:
 def _score_line(content: ReportContent, language: ReportLanguage) -> str:
     strings = _strings(language)
     if content.score is None:
-        return strings["insufficient"] if language is ReportLanguage.ARABIC else (
-            content.score_label or strings["insufficient"]
+        return (
+            strings["insufficient"]
+            if language is ReportLanguage.ARABIC
+            else (content.score_label or strings["insufficient"])
         )
     if language is ReportLanguage.ARABIC:
         basis = strings["based_on"].format(count=content.denominator, rules=strings["rules"])
@@ -286,8 +288,7 @@ def _citation_line(item: EvidenceCitation, language: ReportLanguage) -> str:
             "exam_metadata": "بيانات الاختبار",
         }.get(item.evidence_type, "دليل مرتبط")
     return (
-        f"{item.item_reference} | {document} {strings['page']} {item.page_number} | "
-        f"{evidence_type}"
+        f"{item.item_reference} | {document} {strings['page']} {item.page_number} | {evidence_type}"
     )
 
 
