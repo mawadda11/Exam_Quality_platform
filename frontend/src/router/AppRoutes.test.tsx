@@ -342,6 +342,26 @@ describe('AppRoutes', () => {
     )
   })
 
+  it('has no Question Types tab or route', async () => {
+    vi.mocked(analysesApi.getAnalysis).mockResolvedValue(COMPLETED_ANALYSIS)
+    renderAt('/analyses/analysis-1/results/question-types')
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Current route')).toHaveTextContent(
+        '/analyses/analysis-1/results/overview',
+      ),
+    )
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    expect(
+      screen.queryByRole('tab', { name: /Question Types/i }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/Question Type Distribution/i))
+      .not.toBeInTheDocument()
+  })
+
   it('preserves result-tab focus while the tab URL changes', async () => {
     vi.mocked(analysesApi.getAnalysis).mockResolvedValue(COMPLETED_ANALYSIS)
     renderAt('/analyses/analysis-1/results/questions')

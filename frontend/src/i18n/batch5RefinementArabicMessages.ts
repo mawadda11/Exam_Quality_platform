@@ -153,6 +153,10 @@ export const BATCH5_REFINEMENT_ARABIC_MESSAGES: Readonly<Record<string, string>>
   'Reanalysis creates a linked analysis record. It does not overwrite the historical result or its review history.':
     'تنشئ إعادة التحليل سجلًا مرتبطًا، ولا تستبدل النتيجة التاريخية أو سجل مراجعتها.',
   'Question relationships': 'ارتباطات الأسئلة',
+  'Question Relationships': 'ربط الأسئلة',
+  'Questions linked to a CLO': 'أسئلة مرتبطة بمخرج تعلم',
+  'Questions linked to a course topic': 'أسئلة مرتبطة بموضوع مقرر',
+  Coverage: 'التغطية',
   'CLO Alignment': 'مواءمة نواتج التعلم',
   'Topic Alignment': 'مواءمة موضوعات المقرر',
   '{count} confirmed questions': '{count} من الأسئلة المؤكدة',
@@ -162,10 +166,11 @@ export const BATCH5_REFINEMENT_ARABIC_MESSAGES: Readonly<Record<string, string>>
   'Suggested Course Topic': 'موضوع المقرر المقترح',
   'Alignment status': 'حالة المواءمة',
   'Short reason': 'سبب مختصر',
-  'View comparison': 'عرض المقارنة',
+  'View mapping details': 'عرض تفاصيل الربط',
   CLO: 'ناتج التعلم',
   'Course Topic': 'موضوع المقرر',
   Supported: 'مدعوم',
+  'Not supported': 'غير مدعوم',
   'The question shares a relevant concept with the suggested item, but the relationship is limited.':
     'يوجد مفهوم مشترك بين السؤال والعنصر المقترح، لكن الارتباط محدود.',
   'Question text': 'نص السؤال',

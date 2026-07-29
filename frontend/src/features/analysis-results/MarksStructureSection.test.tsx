@@ -22,7 +22,15 @@ function finding(dimension: string, name: string): FindingResponse {
     prompt_template_version: null,
     kb_version: null,
     created_at: '2026-01-01T00:00:00Z',
-    evidence: [],
+    evidence: [
+      {
+        id: 'marks-evidence',
+        source_document: 'exam',
+        evidence_type: 'declared_total',
+        page_number: 1,
+        item_reference: '40',
+      },
+    ],
     requirement_name: name,
     dimension,
     source_type: 'Derived Exam Requirement',
@@ -46,5 +54,10 @@ describe('MarksStructureSection', () => {
     expect(screen.getByText('Satisfied')).toBeInTheDocument()
     expect(screen.queryByText('CLO Mapping')).not.toBeInTheDocument()
     expect(screen.queryByText(/calculated total/i)).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: 'View details in Marks & Structure' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText('View direct evidence')).not.toBeInTheDocument()
+    expect(screen.queryByText('Declared total marks')).not.toBeInTheDocument()
   })
 })

@@ -1,4 +1,4 @@
-# AI Exam Quality Platform
+# Exam Quality Analyzer
 
 **Current stable release: v1.0.0** — Version 2 is under development on `develop/v2.0.0-arabic-pilot`.
 

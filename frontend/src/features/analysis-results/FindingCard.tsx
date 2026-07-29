@@ -21,6 +21,8 @@ interface FindingCardProps {
   finding: FindingResponse
   lookups: EvidenceLookups
   recommendations?: RecommendationResponse[]
+  showSpecializedLink?: boolean
+  showDirectEvidence?: boolean
 }
 
 const MARKS_EVIDENCE_TYPES = new Set([
@@ -116,10 +118,14 @@ export function FindingCard({
   finding,
   lookups,
   recommendations = [],
+  showSpecializedLink = true,
+  showDirectEvidence = true,
 }: FindingCardProps) {
   const { locale, t } = useI18n()
   const destination = sectionDestinationForFinding(finding)
-  const evidence = directEvidence(finding, destination, lookups)
+  const evidence = showDirectEvidence
+    ? directEvidence(finding, destination, lookups)
+    : []
 
   return (
     <li className="finding-card">
@@ -162,7 +168,7 @@ export function FindingCard({
         </div>
       )}
 
-      {destination && (
+      {destination && showSpecializedLink && (
         <a
           className="finding-specialized-link"
           href={`/analyses/${finding.analysis_id}/results/${destination.section}`}
@@ -171,7 +177,9 @@ export function FindingCard({
         </a>
       )}
 
-      {evidence.length > 0 && <CompactDirectEvidence evidence={evidence} />}
+      {showDirectEvidence && evidence.length > 0 && (
+        <CompactDirectEvidence evidence={evidence} />
+      )}
     </li>
   )
 }

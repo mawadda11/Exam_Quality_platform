@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import Table, UniqueConstraint, create_engine, event, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -71,6 +72,15 @@ def test_migration_upgrade_creates_expected_tables(tmp_path: Path) -> None:
     engine.dispose()
 
     assert EXPECTED_TABLES <= tables
+    assert "question_type_classifications" not in tables
+    assert "question_type_review_revisions" not in tables
+
+
+def test_final_migration_head_is_0012_and_no_0013_file_exists(tmp_path: Path) -> None:
+    cfg = _alembic_config(f"sqlite:///{tmp_path / 'migration_head.db'}")
+
+    assert ScriptDirectory.from_config(cfg).get_current_head() == "0012"
+    assert list((BACKEND_ROOT / "alembic" / "versions").glob("0013*")) == []
 
 
 def test_semantic_provenance_columns_and_duplicate_guard_are_migrated(

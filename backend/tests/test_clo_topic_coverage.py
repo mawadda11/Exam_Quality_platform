@@ -20,11 +20,15 @@ from app.services.rules.clo_topic_coverage import (
 ANALYSIS_ID = uuid.uuid4()
 
 
-def _question(number_label: str, text: str) -> Question:
+def _question(
+    number_label: str,
+    text: str,
+    parent_question_id: uuid.UUID | None = None,
+) -> Question:
     return Question(
         id=uuid.uuid4(),
         analysis_id=ANALYSIS_ID,
-        parent_question_id=None,
+        parent_question_id=parent_question_id,
         number_label=number_label,
         question_text=text,
         page_number=1,
@@ -122,6 +126,25 @@ def test_clo_coverage_all_covered_is_satisfied() -> None:
 
     assert result.status == AcademicStatus.SATISFIED
     assert set(result.evidence_ids) == {e.id for e in evidence}
+
+
+def test_structural_parent_is_excluded_while_child_coverage_is_evaluated() -> None:
+    parent = _question("Q1", "Answer both parts.")
+    child = _question("Q1(a)", "About X. [CLO1]", parent_question_id=parent.id)
+    clo = _clo("CLO1")
+    parent_evidence = _text_evidence(parent)
+    child_evidence = _text_evidence(child)
+    clo_evidence = _clo_evidence(clo)
+
+    result = evaluate_applicable_clo_coverage(
+        [parent, child],
+        [parent_evidence, child_evidence, clo_evidence],
+        [clo],
+    )
+
+    assert result.status == AcademicStatus.SATISFIED
+    assert child_evidence.id in result.evidence_ids
+    assert parent_evidence.id not in result.evidence_ids
 
 
 def test_clo_coverage_some_covered_is_partially_satisfied() -> None:
