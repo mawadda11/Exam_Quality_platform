@@ -1,5 +1,7 @@
-import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { I18nProvider } from '../../i18n/I18nProvider'
 import type { FindingResponse, RecommendationResponse } from '../../types/api'
 import { FindingsRecommendationsSection } from './FindingsRecommendationsSection'
 import { buildLookups } from './lookups'
@@ -36,74 +38,292 @@ const LOOKUPS = buildLookups([], [], [])
 function renderSection(
   findings: FindingResponse[],
   recommendations: RecommendationResponse[] = [],
+  translated = false,
 ) {
   const byFinding = new Map<string, RecommendationResponse[]>()
   for (const recommendation of recommendations) {
     byFinding.set(recommendation.finding_id, [recommendation])
   }
-  render(
-    <FindingsRecommendationsSection
-      findings={findings}
-      recommendations={{ status: 'ready', data: recommendations }}
-      recommendationsByFinding={byFinding}
-      lookups={LOOKUPS}
-      onRetryRecommendations={vi.fn()}
-    />,
+  const tree = (
+    <MemoryRouter>
+      <FindingsRecommendationsSection
+        findings={findings}
+        recommendations={{ status: 'ready', data: recommendations }}
+        recommendationsByFinding={byFinding}
+        lookups={LOOKUPS}
+        onRetryRecommendations={vi.fn()}
+      />
+    </MemoryRouter>
   )
+  return render(translated ? <I18nProvider>{tree}</I18nProvider> : tree)
 }
 
+beforeEach(() => {
+  window.localStorage.clear()
+})
+
 describe('FindingsRecommendationsSection', () => {
-  it('calls out filtered Not Verified findings as Missing Evidence', () => {
+  it('shows one exact insufficient-evidence explanation without a duplicate result list', () => {
     renderSection([
       finding({ id: 'f-ok', status: 'Satisfied' }),
       finding({
         id: 'f-missing',
         status: 'Not Verified',
         requirement_name: 'Applicable CLO Coverage',
-        explanation: 'No CLOs were extracted from the TP-153.',
+        explanation: 'No usable CLO evidence was available.',
       }),
     ])
 
-    const panel = screen.getByText(/missing evidence \(1\)/i).closest('div') as HTMLElement
-    expect(within(panel).getByText(/no clos were extracted/i)).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', {
+        name: 'Insufficient Evidence — Excluded from the Score (1)',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getAllByText(
+        'The available evidence was insufficient for a reliable judgment, so these results were excluded from the score and were not treated as unmet requirements.',
+      ),
+    ).toHaveLength(1)
+    expect(screen.getAllByText('Applicable CLO Coverage')).toHaveLength(1)
   })
 
-  it('renders a recommendation attached to its finding', () => {
-    const target = finding({ id: 'f-partial', status: 'Partially Satisfied' })
+  it('prioritizes attention strictly and collapses Satisfied and Not Applicable', () => {
+    renderSection([
+      finding({
+        id: 'satisfied',
+        status: 'Satisfied',
+        requirement_name: 'Satisfied result',
+      }),
+      finding({
+        id: 'partial',
+        status: 'Partially Satisfied',
+        requirement_name: 'Partial result',
+      }),
+      finding({
+        id: 'failed',
+        status: 'Not Satisfied',
+        requirement_name: 'Unmet result',
+      }),
+      finding({
+        id: 'unverified',
+        status: 'Not Verified',
+        requirement_name: 'Unverified result',
+      }),
+      finding({
+        id: 'na',
+        status: 'Not Applicable',
+        requirement_name: 'Not applicable result',
+      }),
+    ])
+
+    const attention = screen.getByRole('heading', { name: 'Requires attention' })
+      .closest('section')!
+    const cards = [...attention.querySelectorAll('.finding-card')]
+    expect(cards.map((card) => card.textContent)).toEqual([
+      expect.stringContaining('Unmet result'),
+      expect.stringContaining('Partial result'),
+      expect.stringContaining('Unverified result'),
+    ])
+    expect(screen.getByText('Satisfied findings (1)').closest('details'))
+      .not.toHaveAttribute('open')
+    expect(screen.getByText('Not Applicable findings (1)').closest('details'))
+      .not.toHaveAttribute('open')
+  })
+
+  it('shows recommendations and specialized links without duplicating alignment content', () => {
+    const alignment = finding({
+      id: 'alignment',
+      status: 'Partially Satisfied',
+      requirement_name: 'Alignment action',
+      evidence: [
+        {
+          id: 'question-source',
+          source_document: 'exam',
+          evidence_type: 'question_text',
+          page_number: 2,
+          item_reference: 'Q2',
+        },
+      ],
+    })
     const recommendation: RecommendationResponse = {
-      finding_id: 'f-partial',
+      finding_id: 'alignment',
       requirement_id: 'REQ001',
       rule_id: 'RULE001',
       status: 'Partially Satisfied',
       recommendation_id: 'REC001',
-      title: 'Map the Question to a CLO',
-      text: 'Review the existing evidence.',
+      title: 'Review the suggested relationship',
+      text: 'Confirm the relationship against the Course Specification.',
       target_user: 'Faculty',
       recommendation_type: 'Corrective',
     }
-    renderSection([target], [recommendation])
+    const { container } = renderSection([alignment], [recommendation])
 
-    expect(screen.getByText('Map the Question to a CLO')).toBeInTheDocument()
-    expect(screen.getByText(/for: faculty/i)).toBeInTheDocument()
+    expect(screen.getByText('Included with partial credit.')).toBeInTheDocument()
+    expect(screen.getByText('Review the suggested relationship')).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'View details in Alignment & Coverage' }),
+    ).toHaveAttribute(
+      'href',
+      '/analyses/analysis-1/results/alignment-coverage',
+    )
+    expect(screen.queryByText('Evidence and original excerpts'))
+      .not.toBeInTheDocument()
+    expect(screen.queryByText('View direct evidence')).not.toBeInTheDocument()
+    expect(container.querySelector('table')).not.toBeInTheDocument()
   })
 
-  it('keeps findings visible while a recommendation request is unavailable', () => {
+  it('removes repeated determination panels and adds one page-level methodology note and link', () => {
+    const { container } = renderSection([
+      finding({
+        id: 'semantic-1',
+        status: 'Partially Satisfied',
+        evaluator_type: 'semantic_ai',
+        confidence_level: 'High',
+      }),
+      finding({
+        id: 'semantic-2',
+        status: 'Not Satisfied',
+        evaluator_type: 'semantic_ai',
+        confidence_level: 'Medium',
+      }),
+    ])
+
+    expect(
+      screen.getAllByText(
+        'Results use confirmed evidence, rule-based checks, and semantic analysis when needed. The complete methodology is available in Methodology & Help.',
+      ),
+    ).toHaveLength(1)
+    expect(
+      screen.getByRole('link', {
+        name: 'How does the platform determine results?',
+      }),
+    ).toHaveAttribute('href', '/evaluation-scope#evaluation-methods')
+    expect(screen.queryByText('How was this result determined?'))
+      .not.toBeInTheDocument()
+    expect(screen.queryByText('Evidence reliability')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Evidence count/)).not.toBeInTheDocument()
+    expect(container).not.toHaveTextContent('semantic_ai')
+  })
+
+  it('retains only directly explanatory marks and materials evidence', () => {
+    renderSection([
+      finding({
+        id: 'marks',
+        rule_id: 'RULE018',
+        dimension: 'Marks and Totals',
+        status: 'Not Satisfied',
+        requirement_name: 'Marks action',
+        evidence: [
+          {
+            id: 'declared',
+            source_document: 'exam',
+            evidence_type: 'declared_total',
+            page_number: 1,
+            item_reference: '40',
+          },
+          {
+            id: 'marks-question',
+            source_document: 'exam',
+            evidence_type: 'question_text',
+            page_number: 2,
+            item_reference: 'Q2',
+          },
+        ],
+      }),
+      finding({
+        id: 'materials',
+        rule_id: 'RULE014',
+        dimension: 'Supporting Materials',
+        status: 'Not Verified',
+        requirement_name: 'Materials action',
+        evidence: [
+          {
+            id: 'figure-reference',
+            source_document: 'exam',
+            evidence_type: 'explicit_reference',
+            page_number: 4,
+            item_reference: 'Figure 5',
+          },
+          {
+            id: 'unrelated-question',
+            source_document: 'exam',
+            evidence_type: 'question_text',
+            page_number: 4,
+            item_reference: 'Q4',
+          },
+        ],
+      }),
+    ])
+
+    const disclosures = screen.getAllByText('View direct evidence')
+    expect(disclosures).toHaveLength(2)
+    fireEvent.click(disclosures[0])
+    expect(screen.getByText('Declared total marks:', { exact: false }))
+      .toBeInTheDocument()
+    expect(
+      within(disclosures[0].closest('details')!).queryByText('Q2'),
+    ).not.toBeInTheDocument()
+    fireEvent.click(disclosures[1])
+    expect(screen.getByText('Figure 5')).toBeInTheDocument()
+    expect(
+      within(disclosures[1].closest('details')!).queryByText('Q4'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('uses approved Arabic wording and RTL without raw evidence or determination labels', () => {
+    window.localStorage.setItem('exam-quality-analyzer-locale', 'ar')
+    renderSection(
+      [
+        finding({
+          status: 'Not Satisfied',
+          evidence: [
+            {
+              id: 'raw-question',
+              source_document: 'exam',
+              evidence_type: 'question_text',
+              page_number: 1,
+              item_reference: 'Q1',
+            },
+          ],
+        }),
+      ],
+      [],
+      true,
+    )
+
+    expect(document.documentElement).toHaveAttribute('dir', 'rtl')
+    expect(screen.getByText('أثرها على النتيجة', { exact: false }))
+      .toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'تعتمد النتائج على الأدلة المؤكدة والفحوصات القائمة على القواعد والتحليل الدلالي عند الحاجة. يمكن الاطلاع على المنهجية الكاملة من صفحة المنهجية والمساعدة.',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'كيف تحسب المنصة النتائج؟' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('عدد الأدلة')).not.toBeInTheDocument()
+    expect(screen.queryByText('كيف حُدّدت النتيجة؟')).not.toBeInTheDocument()
+    expect(screen.queryByText('Evidence count')).not.toBeInTheDocument()
+  })
+
+  it('keeps findings visible while recommendation records are unavailable', () => {
     render(
-      <FindingsRecommendationsSection
-        findings={[finding({})]}
-        recommendations={{ status: 'error', message: 'Recommendations unavailable.' }}
-        recommendationsByFinding={new Map()}
-        lookups={LOOKUPS}
-        onRetryRecommendations={vi.fn()}
-      />,
+      <MemoryRouter>
+        <FindingsRecommendationsSection
+          findings={[finding({})]}
+          recommendations={{
+            status: 'error',
+            message: 'Recommendations unavailable.',
+          }}
+          recommendationsByFinding={new Map()}
+          lookups={LOOKUPS}
+          onRetryRecommendations={vi.fn()}
+        />
+      </MemoryRouter>,
     )
 
     expect(screen.getByText('Question-to-CLO Mapping')).toBeInTheDocument()
     expect(screen.getByText(/recommendations unavailable/i)).toBeInTheDocument()
-  })
-
-  it('shows an honest empty state when there are no findings', () => {
-    renderSection([])
-    expect(screen.getByText(/no findings are available/i)).toBeInTheDocument()
   })
 })

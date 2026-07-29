@@ -63,7 +63,8 @@ describe('EvidenceDrillDown', () => {
       'dir',
       'auto',
     )
-    expect(screen.getByText('TP-153')).toBeInTheDocument()
+    expect(screen.getByText('Course Specification')).toBeInTheDocument()
+    expect(screen.getByText('Original document excerpt')).toBeInTheDocument()
     expect(screen.getByText('3')).toBeInTheDocument()
   })
 
@@ -81,7 +82,7 @@ describe('EvidenceDrillDown', () => {
     expect(screen.queryByText(/matching extracted clo/i)).not.toBeInTheDocument()
   })
 
-  it('labels an unrecognized evidence_type with the raw value rather than failing', () => {
+  it('labels an unrecognized evidence type generically without exposing its raw field name', () => {
     render(
       <EvidenceDrillDown
         evidence={[evidence({ evidence_type: 'future_evidence_type', item_reference: 'X' })]}
@@ -89,7 +90,8 @@ describe('EvidenceDrillDown', () => {
         lookups={buildLookups([], [], [])}
       />,
     )
-    expect(screen.getByText('future_evidence_type')).toBeInTheDocument()
+    expect(screen.getByText('Evidence item')).toBeInTheDocument()
+    expect(screen.queryByText('future_evidence_type')).not.toBeInTheDocument()
     expect(screen.getByText('X')).toBeInTheDocument()
   })
 

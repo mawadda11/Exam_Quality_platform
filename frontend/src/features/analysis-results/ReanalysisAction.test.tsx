@@ -28,9 +28,13 @@ beforeEach(() => {
 })
 
 describe('ReanalysisAction', () => {
-  it('defaults to reusing the previous TP-153', () => {
+  it('defaults to reusing the previous Course Specification', () => {
     render(<ReanalysisAction analysisId="analysis-1" onCreated={vi.fn()} />)
-    expect(screen.getByRole('checkbox', { name: /reuse the previous tp-153/i })).toBeChecked()
+    expect(
+      screen.getByRole('checkbox', {
+        name: /reuse the previous course specification/i,
+      }),
+    ).toBeChecked()
   })
 
   it('creates a reanalysis with reuse_tp153 true by default and reports it back', async () => {
@@ -52,7 +56,11 @@ describe('ReanalysisAction', () => {
     vi.mocked(analysesApi.createReanalysis).mockResolvedValue(REANALYSIS)
 
     render(<ReanalysisAction analysisId="analysis-1" onCreated={vi.fn()} />)
-    fireEvent.click(screen.getByRole('checkbox', { name: /reuse the previous tp-153/i }))
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: /reuse the previous course specification/i,
+      }),
+    )
     fireEvent.click(screen.getByRole('button', { name: /create reanalysis/i }))
 
     await vi.waitFor(() => {

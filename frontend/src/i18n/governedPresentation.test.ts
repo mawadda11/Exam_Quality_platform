@@ -34,4 +34,22 @@ describe('governed presentation localization', () => {
     expect(presentRecommendation(RECOMMENDATION, 'en').text)
       .toBe(RECOMMENDATION.text)
   })
+
+  it('uses Course Specification terminology in presentation without mutating source records', () => {
+    const source = {
+      ...FINDING,
+      explanation: 'No CLOs were extracted from the TP-153.',
+    } as FindingResponse
+    const recommendation = {
+      ...RECOMMENDATION,
+      text: 'Complete the populated TP-153 before continuing.',
+    } as RecommendationResponse
+
+    expect(presentFindingExplanation(source, 'en'))
+      .toBe('No CLOs were extracted from the Course Specification.')
+    expect(presentRecommendation(recommendation, 'en').text)
+      .toBe('Complete the populated Course Specification before continuing.')
+    expect(source.explanation).toContain('TP-153')
+    expect(recommendation.text).toContain('TP-153')
+  })
 })

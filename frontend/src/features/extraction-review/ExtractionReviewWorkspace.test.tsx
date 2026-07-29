@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 import * as analysesApi from '../../api/analyses'
 import { ApiError } from '../../api/client'
 import type {
@@ -93,13 +94,19 @@ beforeEach(() => {
 describe('ExtractionReviewWorkspace', () => {
   it('loads the latest immutable revision and exposes source anchors and warnings', async () => {
     render(
-      <ExtractionReviewWorkspace analysisId="analysis-1" onConfirmed={vi.fn()} />,
+      <MemoryRouter>
+        <ExtractionReviewWorkspace analysisId="analysis-1" onConfirmed={vi.fn()} />
+      </MemoryRouter>,
     )
 
     expect(await screen.findByText('Revision 1')).toBeInTheDocument()
     expect(screen.getByText('Page 1 · 66% extraction confidence')).toBeInTheDocument()
     expect(screen.getByText(/low machine-extraction confidence/i)).toBeInTheDocument()
     expect(analysesApi.getExtractionReview).toHaveBeenCalledWith('analysis-1')
+    expect(screen.getByRole('link', { name: /learn how this works/i })).toHaveAttribute(
+      'href',
+      '/evaluation-scope#extraction-review',
+    )
   })
 
   it('shows structured source records and all association candidates for review', async () => {

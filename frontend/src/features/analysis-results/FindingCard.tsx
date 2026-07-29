@@ -1,96 +1,177 @@
-import { useI18n } from '../../i18n/I18nProvider'
-import { OriginalTextDisclosure } from '../../components/ui/OriginalTextDisclosure'
 import {
   presentFindingExplanation,
-  presentGovernedLabel,
   presentRecommendation,
   presentRequirementName,
 } from '../../i18n/governedPresentation'
-import type { FindingResponse, RecommendationResponse } from '../../types/api'
-import { EvidenceDrillDown, type EvidenceLookupKind } from './EvidenceDrillDown'
+import { useI18n } from '../../i18n/I18nProvider'
+import type {
+  FindingEvidenceRef,
+  FindingResponse,
+  RecommendationResponse,
+} from '../../types/api'
+import { sortEvidenceReferences } from './facultyOrdering'
+import {
+  scoreImpactMessage,
+  sectionDestinationForFinding,
+} from './findingPresentation'
 import type { EvidenceLookups } from './lookups'
-import { SemanticConfidenceBadge } from './SemanticConfidenceBadge'
-import { SemanticEvaluationDetails } from './SemanticEvaluationDetails'
-import { GovernanceTag, StatusBadge } from './StatusBadge'
+import { StatusBadge } from './StatusBadge'
 
 interface FindingCardProps {
   finding: FindingResponse
   lookups: EvidenceLookups
   recommendations?: RecommendationResponse[]
-  unavailableLookups?: ReadonlySet<EvidenceLookupKind>
 }
 
-export function FindingCard({ finding, lookups, recommendations = [], unavailableLookups }: FindingCardProps) {
-  const { locale, t } = useI18n()
-  const isAiAssisted = finding.evaluator_type === 'semantic_ai'
-  const hasAiProvenance = isAiAssisted && Boolean(
-    finding.ai_provider || finding.ai_model || finding.prompt_template_version || finding.kb_version,
+const MARKS_EVIDENCE_TYPES = new Set([
+  'marks',
+  'declared_total',
+  'calculated_total',
+  'marks_difference',
+])
+
+const MATERIAL_EVIDENCE_TYPES = new Set([
+  'explicit_reference',
+  'document_reference',
+  'figure',
+  'table',
+  'code_block',
+  'caption',
+  'label',
+  'supporting_material',
+])
+
+function directEvidence(
+  finding: FindingResponse,
+  destination: ReturnType<typeof sectionDestinationForFinding>,
+  lookups: EvidenceLookups,
+): FindingEvidenceRef[] {
+  const types =
+    destination?.section === 'marks-structure'
+      ? MARKS_EVIDENCE_TYPES
+      : destination?.section === 'supporting-evidence'
+        ? MATERIAL_EVIDENCE_TYPES
+        : null
+  if (!types) return []
+  return sortEvidenceReferences(
+    finding.evidence.filter((evidence) => types.has(evidence.evidence_type)),
+    [...lookups.questionByLabel.values()],
   )
+}
+
+function evidenceLabel(evidenceType: string): string {
+  switch (evidenceType) {
+    case 'declared_total':
+      return 'Declared total marks'
+    case 'calculated_total':
+      return 'Calculated total marks'
+    case 'marks_difference':
+      return 'Difference between totals'
+    case 'marks':
+      return 'Question marks'
+    case 'explicit_reference':
+    case 'document_reference':
+      return 'Referenced item'
+    case 'figure':
+      return 'Figure'
+    case 'table':
+      return 'Table'
+    case 'code_block':
+      return 'Code block'
+    case 'caption':
+      return 'Caption'
+    case 'label':
+      return 'Label'
+    default:
+      return 'Supporting material'
+  }
+}
+
+function CompactDirectEvidence({
+  evidence,
+}: {
+  evidence: FindingEvidenceRef[]
+}) {
+  const { t } = useI18n()
+  return (
+    <details className="finding-direct-evidence">
+      <summary>{t('View direct evidence')}</summary>
+      <ul>
+        {evidence.map((item) => (
+          <li key={item.id}>
+            <strong>{t(evidenceLabel(item.evidence_type))}:</strong>{' '}
+            <bdi>{item.item_reference}</bdi>
+            <small>
+              {t(item.source_document === 'exam' ? 'Exam' : 'Course Specification')}
+              {`, ${t('page')} ${item.page_number}`}
+            </small>
+          </li>
+        ))}
+      </ul>
+    </details>
+  )
+}
+
+export function FindingCard({
+  finding,
+  lookups,
+  recommendations = [],
+}: FindingCardProps) {
+  const { locale, t } = useI18n()
+  const destination = sectionDestinationForFinding(finding)
+  const evidence = directEvidence(finding, destination, lookups)
 
   return (
     <li className="finding-card">
       <div className="finding-card-header">
-        <strong>{presentRequirementName(finding.requirement_id, finding.requirement_name, locale)}</strong>
-        <div className="finding-card-badges">
-          {isAiAssisted && <span className="analysis-assisted-tag">{t('Analysis-assisted')}</span>}
-          {finding.confidence_level && <SemanticConfidenceBadge level={finding.confidence_level} />}
-          <StatusBadge status={finding.status} />
-        </div>
+        <strong>
+          {presentRequirementName(
+            finding.requirement_id,
+            finding.requirement_name,
+            locale,
+          )}
+        </strong>
+        <StatusBadge status={finding.status} />
       </div>
-      <p className="finding-card-meta" dir="auto">
-        {presentGovernedLabel(finding.dimension, locale)} · {t('Requirement')} <bdi>{finding.requirement_id}</bdi> · {t('Rule')}{' '}
-        <bdi>{finding.rule_id}</bdi> · <GovernanceTag sourceType={finding.source_type} />
-      </p>
-      {hasAiProvenance && (
-        <details className="finding-audit-details">
-          <summary>{t('Audit details')}</summary>
-          <p className="finding-ai-meta">
-            {finding.ai_provider && <>{t('Provider')}: <bdi>{finding.ai_provider}</bdi></>}
-            {finding.ai_model && <> · {t('Model')}: <bdi>{finding.ai_model}</bdi></>}
-            {finding.prompt_template_version && <> · {t('Prompt')}: <bdi>{finding.prompt_template_version}</bdi></>}
-            {finding.kb_version && <> · {t('KB')}: <bdi>{finding.kb_version}</bdi></>}
-          </p>
-        </details>
-      )}
-      <p>{presentFindingExplanation(finding, locale)}</p>
-      <OriginalTextDisclosure>
-        <p>{finding.explanation}</p>
-      </OriginalTextDisclosure>
-      {finding.evaluation_details && (
-        <details className="semantic-evaluation-disclosure">
-          <summary>{t('Semantic evaluation details')}</summary>
-          <SemanticEvaluationDetails finding={finding} />
-        </details>
-      )}
-      <details>
-        <summary>{t('Evidence')} ({finding.evidence.length})</summary>
-        <EvidenceDrillDown
-          evidence={finding.evidence}
-          status={finding.status}
-          lookups={lookups}
-          unavailableLookups={unavailableLookups}
-        />
-      </details>
+
+      <div className="finding-primary-summary">
+        <p dir="auto">
+          <strong>{t('Reason for the result')}:</strong>{' '}
+          {presentFindingExplanation(finding, locale)}
+        </p>
+        <p className="finding-score-impact">
+          <strong>{t('Score impact')}:</strong>{' '}
+          {t(scoreImpactMessage(finding.status))}
+        </p>
+      </div>
+
       {recommendations.length > 0 && (
-        <ul className="recommendation-list">
-          {recommendations.map((rec) => {
-            const presented = presentRecommendation(rec, locale)
-            return (
-              <li key={rec.recommendation_id}>
-                <strong>{presented.title}</strong>
-                <p>{presented.text}</p>
-                <span className="recommendation-meta">
-                  {presented.type} · {t('For')}: {presented.targetUser}
-                </span>
-                <OriginalTextDisclosure>
-                  <strong>{rec.title}</strong>
-                  <p>{rec.text}</p>
-                </OriginalTextDisclosure>
-              </li>
-            )
-          })}
-        </ul>
+        <div className="finding-recommendations">
+          <strong>{t('Recommendation')}</strong>
+          <ul className="recommendation-list">
+            {recommendations.map((recommendation) => {
+              const presented = presentRecommendation(recommendation, locale)
+              return (
+                <li key={recommendation.recommendation_id}>
+                  <strong>{presented.title}</strong>
+                  <p>{presented.text}</p>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
       )}
+
+      {destination && (
+        <a
+          className="finding-specialized-link"
+          href={`/analyses/${finding.analysis_id}/results/${destination.section}`}
+        >
+          {t(destination.label)}
+        </a>
+      )}
+
+      {evidence.length > 0 && <CompactDirectEvidence evidence={evidence} />}
     </li>
   )
 }

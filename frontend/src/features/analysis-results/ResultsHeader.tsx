@@ -63,7 +63,7 @@ export function ResultsHeader({ analysis, score, onRetryScore }: ResultsHeaderPr
               </dd>
             </div>
             <div>
-              <dt>{t('TP-153 file')}</dt>
+              <dt>{t('Course Specification file')}</dt>
               <dd>
                 {tp153Filename ? <bdi dir="auto">{tp153Filename}</bdi> : t('Not available')}
               </dd>

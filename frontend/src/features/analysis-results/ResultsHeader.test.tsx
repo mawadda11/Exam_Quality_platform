@@ -66,6 +66,8 @@ describe('ResultsHeader', () => {
     expect(screen.getByText('اختبار.pdf').closest('bdi')).toHaveAttribute('dir', 'auto')
     expect(screen.getByText('الفصل الثاني').closest('bdi')).toHaveAttribute('dir', 'auto')
     expect(screen.getByText('Last updated')).toBeInTheDocument()
+    expect(screen.getByText('Course Specification file')).toBeInTheDocument()
+    expect(screen.queryByText('TP-153 file')).not.toBeInTheDocument()
     expect(screen.queryByText(/analysis date/i)).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: /analysis analysis-1/i }))
       .toHaveAttribute('href', '/analyses/analysis-1/results/overview')

@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import {
   listDocumentReferences,
   listSupportingMaterialAnnotations,
   listSupportingMaterials,
 } from '../../api/analyses'
 import { Card } from '../../components/ui/Card'
-import { OriginalTextDisclosure } from '../../components/ui/OriginalTextDisclosure'
 import { PageState } from '../../components/ui/PageState'
 import { useI18n } from '../../i18n/I18nProvider'
 import { localizeInterfaceError } from '../../i18n/localizeError'
@@ -14,11 +13,28 @@ import type {
   SupportingMaterialAnnotationResponse,
   SupportingMaterialResponse,
 } from '../../types/api'
+import { MethodologyLink } from './MethodologyLink'
 
 interface StructuredData {
   materials: SupportingMaterialResponse[]
   annotations: SupportingMaterialAnnotationResponse[]
   references: DocumentReferenceResponse[]
+}
+
+function OriginalDocumentDisclosure({
+  children,
+}: {
+  children: ReactNode
+}) {
+  const { t } = useI18n()
+  return (
+    <details className="original-document-disclosure">
+      <summary>{t('Original document excerpt')}</summary>
+      <div className="original-document-content" dir="auto">
+        {children}
+      </div>
+    </details>
+  )
 }
 
 export function StructuredEvidenceSection({ analysisId }: { analysisId: string }) {
@@ -89,12 +105,13 @@ export function StructuredEvidenceSection({ analysisId }: { analysisId: string }
     <div className="results-section-stack structured-evidence-section">
       <div className="results-section-heading">
         <div>
-          <h2>{t('Supporting Materials & References')}</h2>
+          <h2>{t('Materials & References')}</h2>
           <p>
             {t(
-              'Exact labels and explicit references determine verified associations. Proximity is shown only as supporting audit evidence.',
+              'Review figures, tables, code blocks, labels, and references identified in the exam.',
             )}
           </p>
+          <MethodologyLink anchor="evidence-traceability" />
         </div>
       </div>
 
@@ -104,22 +121,11 @@ export function StructuredEvidenceSection({ analysisId }: { analysisId: string }
           {data.materials.map((item) => (
             <Card as="article" key={item.id}>
               <h4>{t(item.material_type.replace('_', ' '))}</h4>
-              <dl>
-                <div><dt>{t('Page')}</dt><dd>{item.page_number}</dd></div>
-                <div><dt>{t('Extraction method')}</dt><dd>{t(item.extraction_method)}</dd></div>
-                <div><dt>{t('Confidence')}</dt><dd>{Math.round(item.confidence * 100)}%</dd></div>
-              </dl>
+              <p>{t('Page')} {item.page_number}</p>
               {item.source_text && (
-                locale === 'ar' ? (
-                  <>
-                    <p>{t('Original source content is preserved for audit.')}</p>
-                    <OriginalTextDisclosure>
-                      <pre>{item.source_text}</pre>
-                    </OriginalTextDisclosure>
-                  </>
-                ) : (
+                <OriginalDocumentDisclosure>
                   <pre dir="auto">{item.source_text}</pre>
-                )
+                </OriginalDocumentDisclosure>
               )}
             </Card>
           ))}
@@ -131,8 +137,13 @@ export function StructuredEvidenceSection({ analysisId }: { analysisId: string }
         <ul className="evidence-list">
           {data.annotations.map((item) => (
             <li className="evidence-item" key={item.id}>
-              <strong>{t(item.annotation_type)}</strong>
-              <span> · {t('Page')} {item.page_number}</span>
+              <div className="structured-evidence-heading">
+                <strong>{t(item.annotation_type)}</strong>
+                <span>{t('Page')} {item.page_number}</span>
+              </div>
+              <strong className="source-content-label">
+                {t('Original document excerpt')}
+              </strong>
               <p dir="auto" className="bidi-plaintext">
                 <bdi dir="auto">{item.original_text}</bdi>
               </p>
@@ -144,79 +155,53 @@ export function StructuredEvidenceSection({ analysisId }: { analysisId: string }
       <section>
         <h3>{t('Explicit references')} ({data.references.length})</h3>
         <ul className="evidence-list">
-          {data.references.map((item) => (
-            <li className="evidence-item" key={item.id}>
-              <dl>
-                <div><dt>{t('Target type')}</dt><dd>{t(item.target_type.replace('_', ' '))}</dd></div>
-                <div><dt>{t('Page')}</dt><dd>{item.page_number}</dd></div>
-                <div><dt>{t('Resolution')}</dt><dd>{t(item.resolution_status)}</dd></div>
-                {locale !== 'ar' && (
-                  <div><dt>{t('Target label')}</dt><dd dir="auto">{item.target_label}</dd></div>
-                )}
-                <div>
-                  <dt>{t('Candidates')}</dt>
-                  <dd>{item.association_candidates.length}</dd>
-                </div>
-              </dl>
-              {locale === 'ar' ? (
-                <>
-                  <p>{t('Original reference wording is preserved for audit.')}</p>
-                  <OriginalTextDisclosure>
-                    <p dir="auto">{item.original_text}</p>
-                    <p dir="auto">{item.target_label}</p>
-                  </OriginalTextDisclosure>
-                </>
-              ) : (
+          {data.references.map((item) => {
+            const hasProximityOnly = item.association_candidates.some(
+              (candidate) => candidate.basis === 'proximity_support',
+            )
+            const hasMultipleCandidates = item.association_candidates.length > 1
+            return (
+              <li className="evidence-item" key={item.id}>
+                <dl>
+                  <div>
+                    <dt>{t('Referenced material')}</dt>
+                    <dd>{t(item.target_type.replace('_', ' '))}</dd>
+                  </div>
+                  <div><dt>{t('Page')}</dt><dd>{item.page_number}</dd></div>
+                  <div>
+                    <dt>{t('Relationship status')}</dt>
+                    <dd>{t(item.resolution_status)}</dd>
+                  </div>
+                  <div>
+                    <dt>{t('Referenced label')}</dt>
+                    <dd dir="auto">{item.target_label}</dd>
+                  </div>
+                  <div>
+                    <dt>{t('Possible matches')}</dt>
+                    <dd>{item.association_candidates.length}</dd>
+                  </div>
+                </dl>
+                <strong className="source-content-label">
+                  {t('Original document excerpt')}
+                </strong>
                 <p dir="auto">{item.original_text}</p>
-              )}
-              {item.association_candidates.length > 0 && (
-                <details className="finding-audit-details">
-                  <summary>{t('Audit details')}</summary>
-                  <ul className="review-warning-list">
-                    {item.association_candidates.map((candidate) => (
-                      <li key={candidate.id}>
-                        <strong>{t(candidate.basis)}</strong>
-                        {' · '}
-                        {candidate.selected ? t('Selected exact target') : t('Review candidate')}
-                        {' · '}
-                        {t('Confidence')} {Math.round(candidate.confidence * 100)}%
-                        {candidate.proximity_distance !== null
-                          ? ` · ${t('Distance')}: ${candidate.proximity_distance}`
-                          : ''}
-                        {candidate.review_revision_id
-                          ? ` · ${t('Review revision')}`
-                          : ` · ${t('Machine extraction')}`}
-                        {' · '}
-                        {t('Target identifier')}{': '}
-                        <code>
-                          {candidate.target_material_id ?? candidate.target_question_id}
-                        </code>
-                        {candidate.ambiguity_reason ? (
-                          <span dir="auto">
-                            {' · '}
-                            {locale === 'ar'
-                              ? t(
-                                  candidate.basis === 'proximity_support'
-                                    ? 'Proximity is supporting evidence only.'
-                                    : 'Multiple exact targets share this label.',
-                                )
-                              : candidate.ambiguity_reason}
-                          </span>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              )}
-              {item.association_candidates.some(
-                (candidate) => candidate.basis === 'proximity_support',
-              ) && (
-                <p className="results-supporting-text">
-                  {t('Proximity candidates are retained for review and never verify an association by themselves.')}
-                </p>
-              )}
-            </li>
-          ))}
+                {hasMultipleCandidates && (
+                  <p className="results-supporting-text">
+                    {t(
+                      'Multiple possible matches were found, so this reference remains unresolved.',
+                    )}
+                  </p>
+                )}
+                {hasProximityOnly && (
+                  <p className="results-supporting-text">
+                    {t(
+                      'Nearby placement is supporting evidence only and does not verify a relationship by itself.',
+                    )}
+                  </p>
+                )}
+              </li>
+            )
+          })}
         </ul>
       </section>
     </div>

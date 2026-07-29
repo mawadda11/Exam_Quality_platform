@@ -496,3 +496,12 @@
     display: none;
   }
 }
+
+.methodology-link {
+  display: inline-flex;
+  min-height: var(--control-min-height);
+  align-items: center;
+  color: var(--color-brand-navy);
+  font-weight: 700;
+  text-underline-offset: 0.2em;
+}

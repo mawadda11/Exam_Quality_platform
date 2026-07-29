@@ -87,6 +87,8 @@ describe('OverviewSection', () => {
     expect(screen.getByText(/analysis completed with a limited check/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /see what the platform evaluates/i }))
       .toHaveAttribute('href', '/evaluation-scope')
+    expect(screen.getByRole('link', { name: /learn how this works/i }))
+      .toHaveAttribute('href', '/evaluation-scope#overall-score')
     expect(screen.getByText('Satisfied').closest('li')).toHaveTextContent('2')
     expect(screen.getByText('Partially Satisfied').closest('li')).toHaveTextContent('1')
     expect(screen.getByText('Not Satisfied').closest('li')).toHaveTextContent('1')

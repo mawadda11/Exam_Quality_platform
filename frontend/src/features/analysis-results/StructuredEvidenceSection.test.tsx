@@ -74,7 +74,7 @@ beforeEach(() => {
 })
 
 describe('StructuredEvidenceSection', () => {
-  it('shows original excerpts, provenance, and conservative resolution status', async () => {
+  it('shows faculty-facing records and conservative resolution without technical metadata', async () => {
     render(<StructuredEvidenceSection analysisId="analysis-1" />)
 
     expect(await screen.findByText('SELECT student_id FROM results')).toBeInTheDocument()
@@ -82,10 +82,12 @@ describe('StructuredEvidenceSection', () => {
     expect(screen.getByText('Refer to Code 1')).toBeInTheDocument()
     expect(screen.getByText('Code 1')).toBeInTheDocument()
     expect(screen.getByText('unresolved')).toBeInTheDocument()
-    expect(screen.getByText(/proximity candidates are retained/i)).toBeInTheDocument()
-    expect(screen.getByText(/proximity_support/i)).toBeInTheDocument()
-    expect(screen.getByText(/distance: 42/i)).toBeInTheDocument()
-    expect(screen.getByText('94%')).toBeInTheDocument()
+    expect(screen.getByText(/nearby placement is supporting evidence only/i))
+      .toBeInTheDocument()
+    expect(screen.queryByText(/proximity_support/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/distance: 42/i)).not.toBeInTheDocument()
+    expect(screen.queryByText('94%')).not.toBeInTheDocument()
+    expect(screen.queryByText(/direct_text/i)).not.toBeInTheDocument()
   })
 
   it('keeps historical analyses compatible with empty collections', async () => {
@@ -131,11 +133,10 @@ describe('StructuredEvidenceSection', () => {
       </I18nProvider>,
     )
 
-    const disclosures = await screen.findAllByText('عرض النص الأصلي')
+    const disclosures = await screen.findAllByText('النص الأصلي من المستند')
     fireEvent.click(disclosures[0])
     expect(screen.getByText('SELECT student_id FROM results')).toBeInTheDocument()
-    expect(screen.getByText('يُحفظ محتوى المصدر الأصلي لأغراض التدقيق.'))
-      .toBeInTheDocument()
+    expect(screen.getByText('SELECT student_id FROM results')).toHaveAttribute('dir', 'auto')
     expect(document.documentElement).toHaveAttribute('dir', 'rtl')
   })
 })

@@ -11,7 +11,7 @@ interface MarksStructureSectionProps {
   unavailableLookups?: ReadonlySet<EvidenceLookupKind>
 }
 
-export function MarksStructureSection({ findings, lookups, unavailableLookups }: MarksStructureSectionProps) {
+export function MarksStructureSection({ findings, lookups }: MarksStructureSectionProps) {
   const { t } = useI18n()
   const relevant = findings.filter((finding) => MARKS_STRUCTURE_DIMENSIONS.has(finding.dimension))
 
@@ -20,7 +20,7 @@ export function MarksStructureSection({ findings, lookups, unavailableLookups }:
       <div className="results-section-heading">
         <div>
           <h2>{t('Marks & Structure')}</h2>
-          <p>{t('Governed findings returned by the existing evaluation pipeline.')}</p>
+          <p>{t('Review marks, totals, numbering, and question structure results.')}</p>
         </div>
       </div>
       {relevant.length === 0 ? (
@@ -32,7 +32,6 @@ export function MarksStructureSection({ findings, lookups, unavailableLookups }:
               key={finding.id}
               finding={finding}
               lookups={lookups}
-              unavailableLookups={unavailableLookups}
             />
           ))}
         </ul>

@@ -22,6 +22,7 @@ import type {
   ExtractionReviewSupportingMaterial,
   ExtractionReviewTopic,
 } from '../../types/api'
+import { MethodologyLink } from '../analysis-results/MethodologyLink'
 
 type ReviewTab = 'questions' | 'clos' | 'topics' | 'structured'
 type EditableCollection =
@@ -753,8 +754,9 @@ export function ExtractionReviewWorkspace({
   return (
     <div className="extraction-review-workspace">
       <Alert variant="info" title={t('Transcription review only')}>
-        {t('Correct only what is visibly present in the uploaded Exam and TP-153. Confirmation does not approve academic alignment and does not create missing official course information.')}
+        {t('Correct only what is visibly present in the uploaded Exam and Course Specification. Confirmation does not approve academic alignment and does not create missing official course information.')}
       </Alert>
+      <MethodologyLink anchor="extraction-review" />
 
       <div className="review-summary-bar" aria-label={t('Extraction review revision status')}>
         <span>{t('Revision')} {review.revision_number}</span>
