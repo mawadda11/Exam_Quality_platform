@@ -174,38 +174,18 @@ export function AnalysisDocuments({ analysis, onRefreshed }: AnalysisDocumentsPr
 
   return (
     <div className="analysis-upload">
-      <div>
-        <h2>{t('Upload Documents')}</h2>
-        <p>
-          {t('Both the examination PDF and the Course Specification are required. Each upload can be retried independently.')}
-        </p>
-        <p className="results-supporting-text">
-          {t('Arabic, English, and mixed examination and Course Specification PDF files are supported.')}
-        </p>
-      </div>
-
-      <dl className="analysis-persisted-summary" aria-label={t('Persisted exam information')}>
-        <div>
-          <dt>{t('Course')}</dt>
-          <dd>
-            <bdi>{analysis.course.code}</bdi> —{' '}
-            <bdi dir="auto">{analysis.course.name}</bdi>
-          </dd>
-        </div>
-        <div>
-          <dt>{t('Exam')}</dt>
-          <dd>
-            {t(analysis.exam_type)} — <bdi dir="auto">{analysis.term}</bdi>
-          </dd>
-        </div>
-      </dl>
-
       <div className="upload-cards">
         <FileUploadField
           analysisId={analysis.id}
           fileType="exam"
           label={t('Examination PDF')}
           description={t('Select the Midterm or Final examination PDF.')}
+          contextLabel={t('Exam context')}
+          contextValue={
+            <>
+              {t(analysis.exam_type)} — <bdi dir="auto">{analysis.term}</bdi>
+            </>
+          }
           uploaded={findUploaded('exam')}
           onUploaded={onRefreshed}
         />
@@ -215,6 +195,13 @@ export function AnalysisDocuments({ analysis, onRefreshed }: AnalysisDocumentsPr
           heading={t('Upload Course Specification')}
           label={t('Course Specification file')}
           description={t('Upload the completed official Course Specification PDF, such as a completed TP-153 template.')}
+          contextLabel={t('Course context')}
+          contextValue={
+            <>
+              <bdi>{analysis.course.code}</bdi> —{' '}
+              <bdi dir="auto">{analysis.course.name}</bdi>
+            </>
+          }
           uploaded={findUploaded('tp153')}
           onUploaded={onRefreshed}
         />
@@ -226,7 +213,7 @@ export function AnalysisDocuments({ analysis, onRefreshed }: AnalysisDocumentsPr
         </Alert>
       ) : (
         <Alert variant="info" title={t('Both documents are required')}>
-          {t('Upload both PDFs to continue. If this page is refreshed before a selected file is uploaded, the browser will require you to select that file again.')}
+          {t('Both documents are required to continue. Unsaved file selections must be selected again after refreshing the page.')}
         </Alert>
       )}
     </div>

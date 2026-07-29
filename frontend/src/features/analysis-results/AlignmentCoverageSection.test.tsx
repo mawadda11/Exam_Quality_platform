@@ -3,8 +3,6 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../../i18n/I18nProvider'
 import type {
-  AnalysisResponse,
-  AssessmentRecordResponse,
   CloResponse,
   FindingResponse,
   QuestionResponse,
@@ -15,28 +13,6 @@ import type { ResultResource } from './useAnalysisResultsData'
 
 function ready<T>(data: T): ResultResource<T> {
   return { status: 'ready', data }
-}
-
-const ANALYSIS: AnalysisResponse = {
-  id: 'analysis-1',
-  course: {
-    id: 'course-1',
-    code: 'CPIT-450',
-    name: 'Software Engineering',
-    department: null,
-    program: null,
-  },
-  exam_type: 'Midterm',
-  term: '2026 Spring',
-  state: 'completed',
-  owner_user_id: 'user-1',
-  predecessor_analysis_id: null,
-  uploaded_files: [],
-  exam_uploaded: true,
-  tp153_uploaded: true,
-  ready_for_analysis: true,
-  created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-01T00:00:00Z',
 }
 
 function finding(overrides: Partial<FindingResponse>): FindingResponse {
@@ -158,31 +134,6 @@ const TOPICS: TopicResponse[] = [
   },
 ]
 
-const ASSESSMENTS: AssessmentRecordResponse[] = [
-  {
-    id: 'assessment-final',
-    analysis_id: 'analysis-1',
-    method: 'Written examination',
-    activity: 'Final',
-    percentage: 50,
-    page_number: 4,
-    confidence: 1,
-    geometry: null,
-    created_at: '2026-01-01T00:00:00Z',
-  },
-  {
-    id: 'assessment-midterm',
-    analysis_id: 'analysis-1',
-    method: 'Written examination',
-    activity: 'Midterm',
-    percentage: 30,
-    page_number: 4,
-    confidence: 1,
-    geometry: null,
-    created_at: '2026-01-01T00:00:00Z',
-  },
-]
-
 function relationshipFinding(type: 'clo' | 'topic'): FindingResponse {
   const targetReference = type === 'clo' ? 'CLO2' : 'Database design'
   const targetId = `${type}-target`
@@ -256,7 +207,6 @@ function renderSection(
   const tree = (
     <MemoryRouter>
       <AlignmentCoverageSection
-        analysis={ANALYSIS}
         findings={ready([
           relationshipFinding('clo'),
           relationshipFinding('topic'),
@@ -282,7 +232,6 @@ function renderSection(
         questions={ready(QUESTIONS)}
         clos={ready(CLOS)}
         topics={ready(TOPICS)}
-        assessmentRecords={ready(ASSESSMENTS)}
         onRetry={onRetry}
         {...overrides}
       />
@@ -297,8 +246,8 @@ beforeEach(() => {
 })
 
 describe('AlignmentCoverageSection', () => {
-  it('renders exactly one combined relationship table and two coverage tables', () => {
-    renderSection()
+  it('renders four summary cards, one main table, and collapsed coverage details', () => {
+    const { container } = renderSection()
 
     expect(screen.getAllByRole('table')).toHaveLength(3)
     expect(
@@ -312,14 +261,26 @@ describe('AlignmentCoverageSection', () => {
     expect(
       screen.queryByRole('table', { name: 'Question-to-topic relationships' }),
     ).not.toBeInTheDocument()
-    expect(screen.getByRole('table', { name: 'CLO Coverage' })).toBeInTheDocument()
-    expect(screen.getByRole('table', { name: 'Topic Coverage' })).toBeInTheDocument()
-    expect(screen.getAllByText('Assessment Method Consistency').length)
-      .toBeGreaterThan(0)
+    expect(container.querySelectorAll('.alignment-compact-summary > li'))
+      .toHaveLength(4)
+    expect(container.querySelector('#clo-coverage')).not.toHaveAttribute('open')
+    expect(container.querySelector('#topic-coverage')).not.toHaveAttribute('open')
+    expect(container.querySelector('#clo-coverage summary')).toHaveTextContent(
+      'CLO Coverage (2)Supported: 0 · Partially supported: 1 · Unsupported: 1',
+    )
+    expect(container.querySelector('#topic-coverage summary')).toHaveTextContent(
+      'Topic Coverage (2)Supported: 1 · Partially supported: 0 · Unsupported: 1',
+    )
+    expect(screen.queryByText('Assessment Method Consistency'))
+      .not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Action' }))
+      .not.toBeInTheDocument()
   })
 
   it('uses natural question order, preserves official CLO/topic order, and aligns related lists', () => {
-    renderSection()
+    const { container } = renderSection()
+    fireEvent.click(container.querySelector('#clo-coverage summary')!)
+    fireEvent.click(container.querySelector('#topic-coverage summary')!)
 
     const relationshipTable = screen.getByRole('table', {
       name: 'Question-to-CLO-and-Topic relationships',
@@ -395,20 +356,11 @@ describe('AlignmentCoverageSection', () => {
     expect(comparison).not.toHaveTextContent('EVIDENCE TYPE')
   })
 
-  it('shows one compact assessment result and only its matching method', () => {
-    const { container } = renderSection()
-    const section = container.querySelector<HTMLElement>(
-      '#assessment-method-consistency',
-    )!
-
-    expect(section).toHaveTextContent('Satisfied')
-    expect(section).toHaveTextContent(
-      'The document was identified as a Midterm Examination, and a matching assessment method was found in the Course Specification.',
-    )
-    fireEvent.click(within(section).getByText('View comparison'))
-    expect(section).toHaveTextContent('Written examination — Midterm')
-    expect(section).not.toHaveTextContent('Written examination — Final')
-    expect(screen.queryByText(/Assessment-method evidence/)).not.toBeInTheDocument()
+  it('does not duplicate the assessment-method result in Alignment', () => {
+    renderSection()
+    expect(screen.queryByText('Assessment Method Consistency'))
+      .not.toBeInTheDocument()
+    expect(screen.queryByText(/Written examination/)).not.toBeInTheDocument()
   })
 
   it('does not render raw academic evidence lists or repeated source metadata cards', () => {
@@ -446,15 +398,15 @@ describe('AlignmentCoverageSection', () => {
 
   it('keeps successful sections available and retries a failed source resource', () => {
     const { onRetry } = renderSection({
-      assessmentRecords: {
+      topics: {
         status: 'error',
-        message: 'Assessment records unavailable.',
+        message: 'Topic records unavailable.',
       },
     })
 
     expect(screen.getAllByText('CLO2').length).toBeGreaterThan(0)
-    expect(screen.getByText(/assessment records unavailable/i)).toBeInTheDocument()
+    expect(screen.getByText(/topic records unavailable/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-    expect(onRetry).toHaveBeenCalledWith('assessmentRecords')
+    expect(onRetry).toHaveBeenCalledWith('topics')
   })
 })

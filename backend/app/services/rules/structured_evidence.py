@@ -19,7 +19,10 @@ from app.models.document_reference import DocumentReference
 from app.models.evidence import Evidence
 from app.models.reference_association import ReferenceAssociation
 from app.models.supporting_material import SupportingMaterial
-from app.schemas.extraction_review import ExtractionReviewSnapshot
+from app.schemas.extraction_review import (
+    ExtractionReviewDocumentReference,
+    ExtractionReviewSnapshot,
+)
 from app.services.rules.types import RuleFindingResult
 
 
@@ -107,6 +110,52 @@ def _confidence(
     )
 
 
+def _selected_reference_ids(
+    associations: Sequence[ReferenceAssociation],
+) -> set[uuid.UUID]:
+    return {
+        item.reference_id
+        for item in associations
+        if item.selected
+        and item.exact_label_match
+        and item.basis is AssociationBasis.EXACT_LABEL
+    }
+
+
+def _proximity_only_reference_ids(
+    associations: Sequence[ReferenceAssociation],
+    selected_reference_ids: set[uuid.UUID],
+) -> set[uuid.UUID]:
+    return {
+        item.reference_id
+        for item in associations
+        if item.basis is AssociationBasis.PROXIMITY_SUPPORT
+        and item.reference_id not in selected_reference_ids
+    }
+
+
+def _ambiguous_reference_ids(
+    references: Sequence[DocumentReference],
+    reviewed: dict[uuid.UUID, ExtractionReviewDocumentReference],
+) -> set[uuid.UUID]:
+    return {
+        item.id
+        for item in references
+        if reviewed[item.id].resolution_status is ReferenceResolutionStatus.AMBIGUOUS
+    }
+
+
+def _reference_labels(
+    references: Sequence[DocumentReference],
+    reference_ids: set[uuid.UUID],
+) -> str:
+    return ", ".join(
+        dict.fromkeys(
+            item.target_label for item in references if item.id in reference_ids
+        )
+    )
+
+
 def evaluate_referenced_material_availability(
     session: Session,
     *,
@@ -130,25 +179,38 @@ def evaluate_referenced_material_availability(
     reviewed = {
         item.source_record_id: item for item in snapshot.document_references if item.included
     }
-    if any(
-        reviewed[item.id].resolution_status is ReferenceResolutionStatus.AMBIGUOUS
+    selected_reference_ids = _selected_reference_ids(associations)
+    proximity_only_ids = _proximity_only_reference_ids(
+        associations, selected_reference_ids
+    )
+    ambiguous_ids = _ambiguous_reference_ids(material_references, reviewed)
+    missing_ids = {
+        item.id
         for item in material_references
-    ):
+        if item.id not in selected_reference_ids
+        and item.id not in ambiguous_ids
+        and item.id not in proximity_only_ids
+    }
+    if ambiguous_ids:
+        explanation = (
+            "Availability cannot be verified because these references have duplicate or "
+            f"non-unique physical targets: {_reference_labels(material_references, ambiguous_ids)}."
+        )
+        if missing_ids:
+            explanation += (
+                " These explicitly referenced items are also absent: "
+                + _reference_labels(material_references, missing_ids)
+                + "."
+            )
         return RuleFindingResult(
             status=AcademicStatus.NOT_VERIFIED,
-            explanation=(
-                "One or more supporting-material references have duplicate or non-unique "
-                "targets, so availability cannot be verified."
-            ),
+            explanation=explanation,
             confidence=_confidence(material_references, materials),
             evidence_ids=_evidence_ids(session, analysis_id, material_references, materials),
         )
-    selected_reference_ids = {
-        item.reference_id
-        for item in associations
-        if item.selected and item.exact_label_match and item.basis is AssociationBasis.EXACT_LABEL
-    }
-    unresolved = [item for item in material_references if item.id not in selected_reference_ids]
+    unresolved = [
+        item for item in material_references if item.id not in selected_reference_ids
+    ]
     if unresolved:
         return RuleFindingResult(
             status=AcademicStatus.NOT_SATISFIED,
@@ -215,15 +277,15 @@ def evaluate_supporting_material_association(
     reviewed = {
         item.source_record_id: item for item in snapshot.document_references if item.included
     }
-    if any(
-        reviewed[item.id].resolution_status is ReferenceResolutionStatus.AMBIGUOUS
-        for item in material_references
-    ):
+    ambiguous_ids = _ambiguous_reference_ids(material_references, reviewed)
+    if ambiguous_ids:
         return RuleFindingResult(
             status=AcademicStatus.NOT_VERIFIED,
             explanation=(
-                "Duplicate or conflicting labels prevent a reliable question-to-material "
-                "association."
+                "A reliable question-to-material association cannot be verified because "
+                "distinct physical materials share these reference labels: "
+                + _reference_labels(material_references, ambiguous_ids)
+                + "."
             ),
             confidence=_confidence(material_references, materials),
             evidence_ids=_evidence_ids(session, analysis_id, material_references, materials),
@@ -281,30 +343,40 @@ def evaluate_resolvable_cross_references(
     reviewed = {
         item.source_record_id: item for item in snapshot.document_references if item.included
     }
-    if any(
-        reviewed[item.id].resolution_status is ReferenceResolutionStatus.AMBIGUOUS
+    selected_reference_ids = _selected_reference_ids(associations)
+    proximity_only_ids = _proximity_only_reference_ids(
+        associations, selected_reference_ids
+    )
+    ambiguous_ids = _ambiguous_reference_ids(references, reviewed)
+    missing_ids = {
+        item.id
         for item in references
-    ):
+        if item.id not in selected_reference_ids
+        and item.id not in proximity_only_ids
+        and item.id not in ambiguous_ids
+    }
+    if ambiguous_ids:
+        explanation = (
+            "Cross-references cannot be verified because distinct physical targets share "
+            f"these labels: {_reference_labels(references, ambiguous_ids)}."
+        )
+        if missing_ids:
+            explanation += (
+                " These explicit references are also missing: "
+                + _reference_labels(references, missing_ids)
+                + "."
+            )
+        if proximity_only_ids:
+            explanation += (
+                " A nearby material is only an advisory candidate; proximity alone does "
+                "not resolve its implicit reference."
+            )
         return RuleFindingResult(
             status=AcademicStatus.NOT_VERIFIED,
-            explanation=(
-                "At least one cross-reference has duplicate or non-unique targets and cannot "
-                "be resolved reliably."
-            ),
+            explanation=explanation,
             confidence=_confidence(references, materials),
             evidence_ids=_evidence_ids(session, analysis_id, references, materials),
         )
-    selected_reference_ids = {
-        item.reference_id
-        for item in associations
-        if item.selected and item.exact_label_match and item.basis is AssociationBasis.EXACT_LABEL
-    }
-    proximity_only_ids = {
-        item.reference_id
-        for item in associations
-        if item.basis is AssociationBasis.PROXIMITY_SUPPORT
-        and item.reference_id not in selected_reference_ids
-    }
     if proximity_only_ids:
         return RuleFindingResult(
             status=AcademicStatus.NOT_VERIFIED,
@@ -315,7 +387,7 @@ def evaluate_resolvable_cross_references(
             confidence=_confidence(references, materials),
             evidence_ids=_evidence_ids(session, analysis_id, references, materials),
         )
-    unresolved = [item for item in references if item.id not in selected_reference_ids]
+    unresolved = [item for item in references if item.id in missing_ids]
     if unresolved:
         return RuleFindingResult(
             status=AcademicStatus.NOT_SATISFIED,

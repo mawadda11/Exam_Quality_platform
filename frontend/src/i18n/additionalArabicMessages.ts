@@ -1,5 +1,6 @@
 import { BATCH5_ARABIC_MESSAGES } from './batch5ArabicMessages'
 import { BATCH5_REFINEMENT_ARABIC_MESSAGES } from './batch5RefinementArabicMessages'
+import { PILOT_REFINEMENT_ARABIC_MESSAGES } from './pilotRefinementArabicMessages'
 
 /**
  * Arabic presentation strings added during the Batch 3 bilingual UX completion.
@@ -559,4 +560,5 @@ export const ADDITIONAL_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
   ocr: 'تعرّف ضوئي',
   ...BATCH5_ARABIC_MESSAGES,
   ...BATCH5_REFINEMENT_ARABIC_MESSAGES,
+  ...PILOT_REFINEMENT_ARABIC_MESSAGES,
 }

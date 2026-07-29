@@ -17,6 +17,7 @@ from typing import Any
 import pdfplumber
 from pdfplumber.page import Page
 
+from app.services.extraction.declared_total import extract_layout_declared_total
 from app.services.extraction.language_detection import (
     LanguageDetection,
     combine_page_languages,
@@ -147,6 +148,7 @@ class PdfPlumberExamExtractor:
         supporting_annotations: list[ExtractedSupportingAnnotation] = []
         sequence = 0
         current_parent_label: str | None = None
+        declared_total_found = False
 
         with pdfplumber.open(pdf_path) as document:
             for page_index, page in enumerate(document.pages):
@@ -157,6 +159,33 @@ class PdfPlumberExamExtractor:
                 if quality.usable:
                     lines = [line.strip() for line in text.splitlines() if line.strip()]
                     layout_lines = extract_layout_lines(page, page_number=page_number)
+                    if not declared_total_found:
+                        declared_total = extract_layout_declared_total(layout_lines)
+                        if declared_total is not None:
+                            evidence.append(
+                                ExtractedEvidence(
+                                    evidence_type="declared_total",
+                                    page_number=page_number,
+                                    item_reference="total",
+                                    extracted_text=declared_total.reading_text,
+                                    confidence=declared_total.confidence,
+                                    geometry=declared_total.geometry,
+                                    question_number_label=None,
+                                )
+                            )
+                            if declared_total.source_text != declared_total.reading_text:
+                                evidence.append(
+                                    ExtractedEvidence(
+                                        evidence_type="declared_total_source_span",
+                                        page_number=page_number,
+                                        item_reference="total",
+                                        extracted_text=declared_total.source_text,
+                                        confidence=declared_total.confidence,
+                                        geometry=declared_total.geometry,
+                                        question_number_label=None,
+                                    )
+                                )
+                            declared_total_found = True
                     detection = detect_text_language(text)
                     detections.append(detection)
                     diagnostics.append(
@@ -191,6 +220,7 @@ class PdfPlumberExamExtractor:
                             current_parent_label,
                             questions,
                             evidence,
+                            declared_total_found,
                         )
                     else:
                         sequence, current_parent_label = self._process_layout_page(
@@ -202,7 +232,11 @@ class PdfPlumberExamExtractor:
                             questions,
                             evidence,
                             structured.materials,
+                            declared_total_found,
                         )
+                    declared_total_found = declared_total_found or any(
+                        item.evidence_type == "declared_total" for item in evidence
+                    )
                 else:
                     (
                         sequence,
@@ -273,10 +307,13 @@ class PdfPlumberExamExtractor:
         current_parent_label: str | None,
         questions: list[ExtractedQuestion],
         evidence: list[ExtractedEvidence],
+        suppress_declared_total: bool,
     ) -> tuple[int, str | None]:
         for line in lines:
             classified = classify_line(line, current_parent_label)
             if classified.kind is LineKind.OTHER:
+                continue
+            if classified.kind is LineKind.TOTAL_MARKS and suppress_declared_total:
                 continue
 
             geometry = _geometry_for_text(page, line)
@@ -310,6 +347,7 @@ class PdfPlumberExamExtractor:
         questions: list[ExtractedQuestion],
         evidence: list[ExtractedEvidence],
         materials: list[ExtractedSupportingMaterial],
+        suppress_declared_total: bool,
     ) -> tuple[int, str | None]:
         draft: _QuestionDraft | None = None
         stopped = False
@@ -396,6 +434,8 @@ class PdfPlumberExamExtractor:
                 continue
 
             if classified.kind in {LineKind.INSTRUCTIONS, LineKind.TOTAL_MARKS}:
+                if classified.kind is LineKind.TOTAL_MARKS and suppress_declared_total:
+                    continue
                 geometry = line.geometry
                 evidence_type = (
                     "instructions" if classified.kind is LineKind.INSTRUCTIONS else "declared_total"

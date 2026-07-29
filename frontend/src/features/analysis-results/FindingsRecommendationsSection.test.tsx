@@ -270,6 +270,30 @@ describe('FindingsRecommendationsSection', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('hides a satisfied assessment-method check and keeps a non-satisfied one', () => {
+    renderSection([
+      finding({
+        id: 'assessment-ok',
+        rule_id: 'RULE003',
+        requirement_id: 'REQ003',
+        dimension: 'Assessment Alignment',
+        requirement_name: 'Satisfied assessment check',
+        status: 'Satisfied',
+      }),
+      finding({
+        id: 'assessment-attention',
+        rule_id: 'RULE003',
+        requirement_id: 'REQ003',
+        dimension: 'Assessment Alignment',
+        requirement_name: 'Assessment method requires review',
+        status: 'Not Satisfied',
+      }),
+    ])
+
+    expect(screen.queryByText('Satisfied assessment check')).not.toBeInTheDocument()
+    expect(screen.getByText('Assessment method requires review')).toBeInTheDocument()
+  })
+
   it('uses approved Arabic wording and RTL without raw evidence or determination labels', () => {
     window.localStorage.setItem('exam-quality-analyzer-locale', 'ar')
     renderSection(

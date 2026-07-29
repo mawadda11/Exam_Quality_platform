@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import hashlib
+import io
+import time
 import uuid
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+from helpers import auth_header
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings
 from app.core.domain import (
+    AcademicStatus,
     AssociationBasis,
     ExamType,
     ProcessingStage,
@@ -24,14 +30,23 @@ from app.models.supporting_material_annotation import SupportingMaterialAnnotati
 from app.models.user import User
 from app.services.extraction.digital_pdf_extractor import PdfPlumberExamExtractor
 from app.services.extraction.digital_tp153_extractor import PdfPlumberTp153Extractor
+from app.services.extraction.line_classification import parse_declared_total
 from app.services.extraction.persistence import persist_extraction_result
 from app.services.extraction.review_snapshot import materialize_initial_review_revision
 from app.services.extraction.review_workflow import (
     append_extraction_review_revision,
+    confirm_extraction_review,
     get_extraction_review,
 )
 from app.services.extraction.structured_evidence import logical_annotation_text
 from app.services.extraction.tp153_persistence import persist_tp153_extraction_result
+from app.services.rules.marks_total import evaluate_marks_and_total
+from app.services.rules.structured_evidence import (
+    evaluate_referenced_material_availability,
+    evaluate_resolvable_cross_references,
+    evaluate_supporting_material_association,
+)
+from app.services.rules.versioning import CURRENT_CAPABILITY_VERSION
 
 FIXTURES = Path(__file__).parent / "fixtures" / "batch4"
 EXAM = FIXTURES / "01_Batch4_Test_Exam.pdf"
@@ -64,8 +79,157 @@ def _analysis(session: Session) -> Analysis:
     return analysis
 
 
+def _wait_for_state(
+    client: TestClient,
+    analysis_id: str,
+    email: str,
+    expected: set[str],
+) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for _ in range(100):
+        response = client.get(
+            f"/api/v1/analyses/{analysis_id}/progress",
+            headers=auth_header(email),
+        )
+        assert response.status_code == 200
+        result = response.json()
+        if result["state"] in expected:
+            return result
+        time.sleep(0.025)
+    raise AssertionError(f"Analysis did not reach one of {expected}: {result}")
+
+
 def test_batch4_acceptance_fixture_checksums_are_pinned() -> None:
     assert {_path.name: _sha256(_path) for _path in (EXAM, SPECIFICATION)} == EXPECTED_HASHES
+
+
+def test_exact_fixtures_complete_the_public_api_workflow_and_bilingual_reports(
+    client: TestClient,
+    test_settings: Settings,
+) -> None:
+    test_settings.ai_provider = "local"
+    test_settings.ai_model = "local-governed-baseline-v1"
+    email = "pilot-fixture-owner@example.test"
+    created = client.post(
+        "/api/v1/analyses",
+        headers=auth_header(email),
+        json={
+            "course": {"code": "CS 241", "name": "Database Systems"},
+            "exam_type": "Final",
+            "term": "1448",
+        },
+    )
+    assert created.status_code == 201, created.text
+    analysis_id = created.json()["id"]
+    assert created.json()["capability_version"] == CURRENT_CAPABILITY_VERSION
+
+    for file_type, fixture in (("exam", EXAM), ("tp153", SPECIFICATION)):
+        uploaded = client.post(
+            f"/api/v1/analyses/{analysis_id}/files",
+            headers=auth_header(email),
+            data={"file_type": file_type},
+            files={
+                "file": (
+                    fixture.name,
+                    io.BytesIO(fixture.read_bytes()),
+                    "application/pdf",
+                )
+            },
+        )
+        assert uploaded.status_code == 201, uploaded.text
+
+    started = client.post(
+        f"/api/v1/analyses/{analysis_id}/run",
+        headers=auth_header(email),
+    )
+    assert started.status_code == 202, started.text
+    paused = _wait_for_state(client, analysis_id, email, {"review_ready", "failed"})
+    assert paused["state"] == "review_ready", paused
+
+    review_response = client.get(
+        f"/api/v1/analyses/{analysis_id}/extraction-review",
+        headers=auth_header(email),
+    )
+    assert review_response.status_code == 200
+    review = review_response.json()
+    snapshot = review["snapshot"]
+    main_questions = [
+        item for item in snapshot["questions"] if item["parent_source_record_id"] is None
+    ]
+    assert len(main_questions) == 7
+    assert len(snapshot["supporting_materials"]) == 6
+    assert len(snapshot["supporting_annotations"]) == 10
+    assert len(snapshot["document_references"]) == 6
+    declared = [
+        item for item in snapshot["evidence"] if item["evidence_type"] == "declared_total"
+    ]
+    assert len(declared) == 1
+    assert parse_declared_total(declared[0]["extracted_text"]) == 40
+
+    confirmed = client.post(
+        f"/api/v1/analyses/{analysis_id}/extraction-review/confirm",
+        headers=auth_header(email),
+        json={"revision_id": review["revision_id"]},
+    )
+    assert confirmed.status_code == 202, confirmed.text
+    completed = _wait_for_state(client, analysis_id, email, {"completed", "failed"})
+    assert completed["state"] == "completed", completed
+
+    findings_response = client.get(
+        f"/api/v1/analyses/{analysis_id}/findings",
+        headers=auth_header(email),
+    )
+    assert findings_response.status_code == 200
+    findings = {item["rule_id"]: item for item in findings_response.json()}
+    assert findings["RULE018"]["status"] == "Satisfied"
+    assert findings["RULE014"]["status"] == "Not Verified"
+    assert "Figure 2" in findings["RULE014"]["explanation"]
+    assert "الشكل 5" in findings["RULE014"]["explanation"]
+    assert findings["RULE016"]["status"] == "Not Verified"
+    assert findings["RULE022"]["status"] == "Not Verified"
+
+    materials = client.get(
+        f"/api/v1/analyses/{analysis_id}/supporting-materials",
+        headers=auth_header(email),
+    ).json()
+    assert len(materials) == 6
+    references = client.get(
+        f"/api/v1/analyses/{analysis_id}/document-references",
+        headers=auth_header(email),
+    ).json()
+    by_target = {item["normalized_target_label"]: item for item in references}
+    assert by_target["figure:1"]["resolution_status"] == "resolved"
+    assert len(by_target["figure:1"]["association_candidates"]) == 1
+    assert by_target["table:1"]["resolution_status"] == "resolved"
+    assert by_target["code_block:1"]["resolution_status"] == "resolved"
+    assert by_target["figure:5"]["resolution_status"] == "unresolved"
+    assert by_target["figure:5"]["association_candidates"] == []
+    assert by_target["figure:2"]["resolution_status"] == "ambiguous"
+    assert len(by_target["figure:2"]["association_candidates"]) == 2
+    assert by_target["figure:unlabeled"]["resolution_status"] == "unresolved"
+    assert len(by_target["figure:unlabeled"]["association_candidates"]) == 1
+    assert not by_target["figure:unlabeled"]["association_candidates"][0]["selected"]
+
+    for language in ("en", "ar"):
+        generated = client.post(
+            f"/api/v1/analyses/{analysis_id}/reports",
+            headers=auth_header(email),
+            json={"language": language},
+        )
+        assert generated.status_code == 201, generated.text
+        assert generated.json()["language"] == language
+        downloaded = client.get(
+            f"/api/v1/reports/{generated.json()['id']}/download",
+            headers=auth_header(email),
+        )
+        assert downloaded.status_code == 200
+        assert downloaded.content.startswith(b"%PDF")
+
+    denied = client.get(
+        f"/api/v1/analyses/{analysis_id}/document-references",
+        headers=auth_header("pilot-fixture-intruder@example.test"),
+    )
+    assert denied.status_code == 404
 
 
 def test_exact_exam_fixture_extracts_hierarchy_marks_materials_and_references() -> None:
@@ -145,6 +309,38 @@ def test_exact_exam_fixture_extracts_hierarchy_marks_materials_and_references() 
         reference.page_number == 6 and reference.normalized_target_label == "figure:unlabeled"
         for reference in result.document_references
     )
+
+    declared_totals = [
+        item for item in result.evidence if item.evidence_type == "declared_total"
+    ]
+    assert len(declared_totals) == 1
+    assert declared_totals[0].page_number == 1
+    assert declared_totals[0].geometry is not None
+    assert parse_declared_total(declared_totals[0].extracted_text) == 40
+    assert "1448" not in declared_totals[0].extracted_text
+    assert "241" not in declared_totals[0].extracted_text
+
+
+def test_exact_exam_fixture_calculates_forty_and_satisfies_correct_total_marks(
+    db_engine: Engine,
+) -> None:
+    extracted = PdfPlumberExamExtractor().extract(EXAM)
+    with Session(db_engine) as session:
+        analysis = _analysis(session)
+        persist_extraction_result(session, analysis.id, extracted)
+        questions = list(analysis.questions)
+        evidence = list(analysis.evidence)
+
+        result = evaluate_marks_and_total(questions, evidence)
+
+    assert sum(
+        question.marks or 0
+        for question in questions
+        if question.number_label not in {"Q1"}
+    ) == 40
+    assert result.status.value == "Satisfied"
+    assert "Calculated total marks (40" in result.explanation
+    assert "declared total marks (40" in result.explanation
 
 
 def test_exact_exam_fixture_preserves_raw_annotations_and_presents_logical_bidi_text() -> None:
@@ -264,6 +460,53 @@ def test_exact_exam_fixture_associations_follow_approved_policy(db_engine: Engin
         assert unlabeled
         assert all(item.basis is AssociationBasis.PROXIMITY_SUPPORT for item in unlabeled)
         assert not any(item.selected for item in unlabeled)
+
+
+def test_exact_exam_fixture_findings_name_missing_and_ambiguous_references(
+    db_engine: Engine,
+) -> None:
+    extracted = PdfPlumberExamExtractor().extract(EXAM)
+    with Session(db_engine) as session:
+        analysis = _analysis(session)
+        persist_extraction_result(session, analysis.id, extracted)
+        revision = materialize_initial_review_revision(session, analysis.id)
+        analysis.state = ProcessingStage.REVIEW_READY
+        session.flush()
+        snapshot = get_extraction_review(session, analysis).snapshot
+        confirmed = confirm_extraction_review(
+            session,
+            analysis,
+            revision_id=revision.id,
+        )
+
+        availability = evaluate_referenced_material_availability(
+            session,
+            analysis_id=analysis.id,
+            snapshot=snapshot,
+            confirmed_revision_id=confirmed.revision_id,
+        )
+        association = evaluate_supporting_material_association(
+            session,
+            analysis_id=analysis.id,
+            snapshot=snapshot,
+            confirmed_revision_id=confirmed.revision_id,
+        )
+        cross_references = evaluate_resolvable_cross_references(
+            session,
+            analysis_id=analysis.id,
+            snapshot=snapshot,
+            confirmed_revision_id=confirmed.revision_id,
+        )
+
+    assert availability.status is AcademicStatus.NOT_VERIFIED
+    assert "Figure 2" in availability.explanation
+    assert "الشكل 5" in availability.explanation
+    assert association.status is AcademicStatus.NOT_VERIFIED
+    assert "Figure 2" in association.explanation
+    assert cross_references.status is AcademicStatus.NOT_VERIFIED
+    assert "Figure 2" in cross_references.explanation
+    assert "الشكل 5" in cross_references.explanation
+    assert "proximity alone" in cross_references.explanation
 
 
 def test_exact_course_specification_fixture_extracts_only_genuine_records() -> None:

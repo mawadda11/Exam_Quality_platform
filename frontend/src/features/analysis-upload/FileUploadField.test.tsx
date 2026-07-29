@@ -26,6 +26,8 @@ function renderField(
       fileType="exam"
       label="Examination PDF"
       description="Select the examination PDF."
+      contextLabel="Exam context"
+      contextValue="Midterm — 2026 Spring"
       uploaded={undefined}
       onUploaded={onUploaded}
     />,

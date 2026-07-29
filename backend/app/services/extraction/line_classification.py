@@ -16,9 +16,13 @@ from app.services.extraction.text_normalization import (
     parse_localized_number,
 )
 
-# Public English pattern retained for existing callers/tests. Arabic declared
-# totals are parsed by parse_declared_total(), which normalizes localized digits.
-TOTAL_MARKS_PATTERN = re.compile(r"^Total\s+Marks\s*:\s*(\d+(?:\.\d+)?)\s*$", re.IGNORECASE)
+# Public English pattern retained for existing callers/tests. The dedicated
+# parser below accepts the broader approved bilingual label set while keeping
+# the number semantically anchored to that label.
+TOTAL_MARKS_PATTERN = re.compile(
+    r"^Total\s+Marks\s*:\s*(\d+(?:\.\d+)?)\s*$",
+    re.IGNORECASE,
+)
 
 _ENGLISH_QUESTION = re.compile(
     r"^Q\s*(\d+)(?:\.\s*|\s+\(\d+(?:\.\d+)?\)\s*:\s*|\s*:\s*)(.*)$",
@@ -31,10 +35,23 @@ _ENGLISH_SUBQUESTION = re.compile(r"^\(?([a-z])\)?\s*[\).:\-]\s*(.*)$", re.I)
 _ARABIC_SUBQUESTION = re.compile(r"^\(?([اأإآبجدهـوزحطيكلم نسعفصقرشتثخذضظغ])\)?\s*[\).:\-]\s*(.*)$")
 
 _INSTRUCTIONS = re.compile(r"^(?:Instructions?|تعليمات|التعليمات)\s*:\s*", re.IGNORECASE)
-_ARABIC_TOTAL = re.compile(
-    r"^(?:مجموع|اجمالي|إجمالي|المجموع)\s+(?:الدرجات|العلامات)|^(?:الدرجة|العلامة)\s+الكلية",
+_DECLARED_TOTAL_LABEL = re.compile(
+    r"(?:"
+    r"\b(?:Total\s+Marks?|Total\s+Score|Exam\s+Total|Maximum\s+Marks?)\b"
+    r"|الدرجة\s+الكلية(?:\s+للاختبار)?"
+    r"|إجمالي\s+الدرجات"
+    r"|اجمالي\s+الدرجات"
+    r"|مجموع\s+الدرجات"
+    r"|المجموع\s+الكلي"
+    r"|الدرجة\s+النهائية"
+    r")",
+    re.IGNORECASE,
 )
-_TOTAL_VALUE = re.compile(r"(?:[:=]\s*|\s)(\d+(?:\.\d+)?)\s*(?:درجة|درجات|علامة|علامات)?\s*$")
+_GENERIC_ENGLISH_TOTAL = re.compile(r"\bTotal\b", re.IGNORECASE)
+_TOTAL_VALUE_AFTER_LABEL = re.compile(
+    r"^\s*(?:[:=\-–—]\s*)?(?P<value>\d+(?:\.\d+)?)\b",
+    re.IGNORECASE,
+)
 
 _ENGLISH_MARKS = re.compile(r"[\[\(]\s*(\d+(?:\.\d+)?)\s*marks?\s*[\]\)]", re.IGNORECASE)
 _ENGLISH_PREFIX_MARKS = re.compile(
@@ -167,10 +184,31 @@ def parse_declared_total(line: str) -> float | None:
     if english is not None:
         return parse_localized_number(english.group(1))
 
-    if _ARABIC_TOTAL.search(normalized) is None:
+    label = _DECLARED_TOTAL_LABEL.search(normalized)
+    if label is None:
+        label = _GENERIC_ENGLISH_TOTAL.search(normalized)
+    if label is None:
         return None
-    value = _TOTAL_VALUE.search(normalized)
-    return parse_localized_number(value.group(1)) if value is not None else None
+    value = _TOTAL_VALUE_AFTER_LABEL.match(normalized[label.end() :])
+    return (
+        parse_localized_number(value.group("value"))
+        if value is not None
+        else None
+    )
+
+
+def has_declared_total_label(line: str) -> bool:
+    """Return whether text contains an approved total-marks label.
+
+    This is intentionally separate from numeric parsing so the layout-aware
+    extractor can associate a label and value emitted as adjacent PDF lines.
+    """
+
+    normalized = normalize_arabic_for_matching(line)
+    return (
+        _DECLARED_TOTAL_LABEL.search(normalized) is not None
+        or _GENERIC_ENGLISH_TOTAL.search(normalized) is not None
+    )
 
 
 def classify_line(line: str, current_parent_label: str | None) -> ClassifiedLine:

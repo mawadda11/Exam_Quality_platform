@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.domain import ProcessingStage
 from app.models.analysis import Analysis
+from app.services.rules.versioning import CURRENT_CAPABILITY_VERSION
 
 ANALYSIS_PAYLOAD = {
     "course": {"code": "CPIT-450", "name": "Software Engineering"},
@@ -91,6 +92,7 @@ def test_reanalysis_creates_a_new_linked_analysis_inheriting_course_and_term(
     assert body["exam_type"] == "Midterm"
     assert body["term"] == "2026 Spring"
     assert body["state"] == "queued"
+    assert body["capability_version"] == CURRENT_CAPABILITY_VERSION
 
 
 def test_reanalysis_never_replaces_the_predecessor(client: TestClient, db_engine: Engine) -> None:

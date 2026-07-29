@@ -16,6 +16,7 @@ from app.core.domain import (
     UploadedFileType,
 )
 from app.models.document_reference import DocumentReference
+from app.models.extraction_review_revision import ExtractionReviewRevision
 from app.models.reference_association import ReferenceAssociation
 from app.models.supporting_material import SupportingMaterial
 from app.models.supporting_material_annotation import SupportingMaterialAnnotation
@@ -151,6 +152,67 @@ def test_structured_endpoints_preserve_provenance_and_candidates(
     assert reference["resolution_status"] == "resolved"
     assert reference["association_candidates"][0]["basis"] == "exact_label"
     assert reference["association_candidates"][0]["selected"] is True
+
+
+def test_document_reference_endpoint_exposes_only_active_revision_candidates(
+    client: TestClient,
+    db_engine: Engine,
+) -> None:
+    email = "batch4-active-candidates@example.test"
+    analysis_id = _create_analysis(client, email)
+    _insert_structured_records(db_engine, analysis_id)
+
+    with Session(db_engine) as session:
+        analysis_uuid = uuid.UUID(analysis_id)
+        reference = session.query(DocumentReference).filter_by(
+            analysis_id=analysis_uuid
+        ).one()
+        material = session.query(SupportingMaterial).filter_by(
+            analysis_id=analysis_uuid
+        ).one()
+        revision = ExtractionReviewRevision(
+            analysis_id=analysis_uuid,
+            revision_number=1,
+            snapshot={
+                "schema_version": 1,
+                "questions": [],
+                "evidence": [],
+                "clos": [],
+                "topics": [],
+                "assessment_records": [],
+                "supporting_materials": [],
+                "supporting_annotations": [],
+                "document_references": [],
+                "reference_associations": [],
+            },
+        )
+        session.add(revision)
+        session.flush()
+        session.add(
+            ReferenceAssociation(
+                reference_id=reference.id,
+                target_material_id=material.id,
+                review_revision_id=revision.id,
+                basis=AssociationBasis.EXACT_LABEL,
+                confidence=0.93,
+                exact_label_match=True,
+                selected=True,
+            )
+        )
+        analysis = reference.analysis
+        analysis.confirmed_review_id = revision.id
+        session.commit()
+
+    response = client.get(
+        f"/api/v1/analyses/{analysis_id}/document-references",
+        headers=auth_header(email),
+    )
+
+    assert response.status_code == 200
+    reference = response.json()[0]
+    assert reference["resolution_status"] == "resolved"
+    assert len(reference["association_candidates"]) == 1
+    assert reference["association_candidates"][0]["review_revision_id"] is not None
 
 
 def test_structured_endpoints_are_owner_scoped(

@@ -611,7 +611,7 @@
 
 .alignment-compact-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-3);
   padding: 0;
   margin: 0;
@@ -629,10 +629,150 @@
   border-radius: var(--radius-md);
 }
 
-.alignment-compact-summary li > span,
+.alignment-compact-summary h4 {
+  margin: 0;
+  color: var(--color-brand-navy);
+}
+
+.alignment-compact-summary dl {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.alignment-compact-summary dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.alignment-compact-summary dt,
 .comparison-source-metadata {
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
+}
+
+.alignment-compact-summary dd {
+  margin: 0;
+  color: var(--color-brand-navy);
+  font-weight: 800;
+}
+
+.coverage-table-disclosure {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.coverage-table-disclosure > summary {
+  display: flex;
+  min-height: var(--control-min-height);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--color-brand-navy);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.coverage-table-disclosure > summary small {
+  color: var(--color-text-secondary);
+  font-weight: 400;
+}
+
+.coverage-table-disclosure[open] > summary {
+  margin-block-end: var(--space-4);
+}
+
+.coverage-table-disclosure > summary:focus-visible,
+.material-relationship-details > summary:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.material-relationships-table {
+  min-width: 62rem;
+}
+
+.material-relationship-status {
+  display: inline-flex;
+  padding: 0.2rem 0.6rem;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  border-radius: var(--radius-pill);
+}
+
+.material-relationship-status[data-relationship-result="linked"] {
+  color: var(--color-success);
+  background: var(--color-success-surface);
+}
+
+.material-relationship-status[data-relationship-result="missing"],
+.material-relationship-status[data-relationship-result="ambiguous"] {
+  color: var(--color-warning);
+  background: var(--color-warning-surface);
+}
+
+.material-relationship-status[data-relationship-result="nearby"] {
+  color: var(--color-info);
+  background: var(--color-info-surface);
+}
+
+.material-relationship-details > summary {
+  display: inline-flex;
+  min-height: var(--control-min-height);
+  align-items: center;
+  color: var(--color-brand-navy);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.material-relationship-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  min-width: min(40rem, 75vw);
+  padding-block-start: var(--space-3);
+}
+
+.material-relationship-detail-grid section {
+  min-width: 0;
+  padding: var(--space-3);
+  background: var(--color-canvas);
+  border-radius: var(--radius-md);
+}
+
+.material-relationship-detail-grid h4,
+.material-relationship-detail-grid p {
+  margin-block-start: 0;
+}
+
+.material-reference-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+  margin: var(--space-3) 0 0;
+}
+
+.material-reference-metadata > div {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.material-reference-metadata dt {
+  color: var(--color-text-secondary);
+  font-weight: 700;
+}
+
+.material-reference-metadata dd {
+  margin: 0;
+}
+
+.physical-material-inventory > summary {
+  align-items: flex-start;
+  flex-direction: column;
 }
 
 .academic-table-section {
@@ -1009,6 +1149,10 @@
   .analysis-results > .ui-tabs {
     inset-block-start: 4.5rem;
   }
+
+  .alignment-compact-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 48rem) {
@@ -1358,7 +1502,8 @@
   }
 
   .comparison-grid,
-  .assessment-comparison dl {
+  .assessment-comparison dl,
+  .material-relationship-detail-grid {
     grid-template-columns: 1fr;
   }
 

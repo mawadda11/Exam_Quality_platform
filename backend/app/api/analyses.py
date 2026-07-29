@@ -13,7 +13,12 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_user, get_owned_analysis
 from app.core.config import Settings, get_settings
-from app.core.domain import ProcessingStage, ReportFormat, UploadedFileType
+from app.core.domain import (
+    ProcessingStage,
+    ReferenceResolutionStatus,
+    ReportFormat,
+    UploadedFileType,
+)
 from app.db.session import get_db
 from app.models.analysis import Analysis
 from app.models.assessment_record import AssessmentRecord
@@ -661,50 +666,47 @@ def list_analysis_document_references(
         .scalars()
         .all()
     )
-    return [
-        DocumentReferenceResponse(
-            id=row.id,
-            analysis_id=row.analysis_id,
-            question_id=row.question_id,
-            source_document=row.source_document,
-            target_type=row.target_type,
-            original_text=row.original_text,
-            target_label=row.target_label,
-            normalized_target_label=row.normalized_target_label,
-            page_number=row.page_number,
-            geometry=row.geometry,
-            confidence=row.confidence,
-            extraction_method=row.extraction_method,
-            resolution_status=(
-                row.machine_resolution_status
-                if analysis.confirmed_review_id is None
-                else (
-                    "resolved"
-                    if sum(
-                        item.selected and item.review_revision_id == analysis.confirmed_review_id
-                        for item in row.association_candidates
-                    )
-                    == 1
-                    else (
-                        "ambiguous"
-                        if sum(
-                            item.exact_label_match
-                            and item.review_revision_id == analysis.confirmed_review_id
-                            for item in row.association_candidates
-                        )
-                        > 1
-                        else "unresolved"
-                    )
-                )
-            ),
-            association_candidates=[
-                ReferenceAssociationResponse.model_validate(item)
-                for item in row.association_candidates
-            ],
-            created_at=row.created_at,
+    responses: list[DocumentReferenceResponse] = []
+    for row in rows:
+        active_candidates = [
+            item
+            for item in row.association_candidates
+            if item.review_revision_id == analysis.confirmed_review_id
+        ]
+        exact_candidates = [item for item in active_candidates if item.exact_label_match]
+        selected_candidates = [item for item in exact_candidates if item.selected]
+        resolution_status = (
+            ReferenceResolutionStatus.RESOLVED
+            if len(selected_candidates) == 1
+            else (
+                ReferenceResolutionStatus.AMBIGUOUS
+                if len(exact_candidates) > 1
+                else ReferenceResolutionStatus.UNRESOLVED
+            )
         )
-        for row in rows
-    ]
+        responses.append(
+            DocumentReferenceResponse(
+                id=row.id,
+                analysis_id=row.analysis_id,
+                question_id=row.question_id,
+                source_document=row.source_document,
+                target_type=row.target_type,
+                original_text=row.original_text,
+                target_label=row.target_label,
+                normalized_target_label=row.normalized_target_label,
+                page_number=row.page_number,
+                geometry=row.geometry,
+                confidence=row.confidence,
+                extraction_method=row.extraction_method,
+                resolution_status=resolution_status,
+                association_candidates=[
+                    ReferenceAssociationResponse.model_validate(item)
+                    for item in active_candidates
+                ],
+                created_at=row.created_at,
+            )
+        )
+    return responses
 
 
 def _load_findings(db: Session, analysis_id: uuid.UUID) -> list[Finding]:
