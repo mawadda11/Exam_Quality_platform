@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as analysesApi from '../../api/analyses'
 import { ApiError } from '../../api/client'
+import { I18nProvider } from '../../i18n/I18nProvider'
 import type { AnalysisResponse, UploadedFileResponse } from '../../types/api'
 import { AnalysisDocuments, AnalysisUploadFlow } from './AnalysisUploadFlow'
 
@@ -51,6 +52,7 @@ const UPLOADED_TP153: UploadedFileResponse = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  window.localStorage.clear()
 })
 
 function fillCreateForm(): void {
@@ -106,7 +108,18 @@ describe('AnalysisUploadFlow', () => {
     expect(screen.getByText(/browser will require you to select that file again/i))
       .toBeInTheDocument()
     expect(
-      screen.getByText( /arabic, english, and mixed examination and tp-153 pdf files are supported/i),
+      screen.getByText(
+        /arabic, english, and mixed examination and course specification pdf files are supported/i,
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Upload Course Specification' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Course Specification file')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Upload the completed official Course Specification PDF, such as a completed TP-153 template.',
+      ),
     ).toBeInTheDocument()
     expect(screen.getAllByText('missing')).toHaveLength(2)
   })
@@ -126,6 +139,29 @@ describe('AnalysisUploadFlow', () => {
     expect(screen.getByText(/exam\.pdf/i)).toBeInTheDocument()
     expect(screen.getByText(/tp153\.pdf/i)).toBeInTheDocument()
     expect(analysesApi.uploadAnalysisFile).not.toHaveBeenCalled()
+  })
+
+  it('uses complete Arabic Course Specification upload terminology and controls', () => {
+    window.localStorage.setItem('exam-quality-analyzer-locale', 'ar')
+    render(
+      <I18nProvider>
+        <AnalysisDocuments analysis={BASE_ANALYSIS} onRefreshed={vi.fn()} />
+      </I18nProvider>,
+    )
+
+    expect(
+      screen.getByRole('heading', { name: 'رفع توصيف المقرر' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('ملف توصيف المقرر')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'ارفع ملف توصيف المقرر المعتمد بصيغة PDF، مثل نموذج TP-153 بعد تعبئته.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'اختيار ملف PDF' }))
+      .toHaveLength(2)
+    expect(screen.getAllByText('لم يُرفع')).toHaveLength(2)
+    expect(screen.queryByText('تعذر عرض النص المترجم.')).not.toBeInTheDocument()
   })
 
   it('shows a create-analysis API error and keeps the information form available', async () => {

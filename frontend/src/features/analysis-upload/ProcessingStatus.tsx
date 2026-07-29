@@ -12,10 +12,10 @@ const TERMINAL_STAGES: ProcessingStage[] = ['review_ready', 'completed', 'failed
 const FAILURE_MESSAGE_KEYS: Record<string, string> = {
   FILE_VALIDATION_FAILED: 'The stored files could not be validated. Check that both PDFs are available, then retry.',
   EXAM_EXTRACTION_FAILED: 'The examination could not be extracted. Review the PDF and retry.',
-  TP153_EXTRACTION_FAILED: 'The TP-153 Course Specification could not be extracted. Review the PDF and retry.',
+  TP153_EXTRACTION_FAILED: 'The Course Specification could not be extracted. Review the PDF and retry.',
   EVIDENCE_BUILD_FAILED: 'The confirmed extraction could not be converted into analysis evidence. Retry the analysis.',
   KNOWLEDGE_RETRIEVAL_FAILED: 'The controlled knowledge base could not be prepared. Retry the analysis.',
-  RULE_EVALUATION_FAILED: 'The governed evaluation could not be completed. Retry the analysis.',
+  RULE_EVALUATION_FAILED: 'The academic checks could not be completed. Retry the analysis.',
   FINALIZATION_FAILED: 'The analysis could not be finalized. Retry the analysis.',
 }
 
@@ -224,7 +224,7 @@ export function ProcessingStatus({
       )}
       {state === 'review_ready' && (
         <Alert variant="info" title={t('Extraction ready for review')}>
-          {t('The extracted Exam and TP-153 evidence is ready. Continue to the dedicated review workspace to correct transcription, save a revision, and confirm it.')}
+          {t('The extracted Exam and Course Specification evidence is ready. Continue to the dedicated review workspace to correct transcription, save a revision, and confirm it.')}
         </Alert>
       )}
       {actionError && (

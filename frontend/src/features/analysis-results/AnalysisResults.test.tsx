@@ -43,6 +43,7 @@ const ANALYSIS: AnalysisResponse = {
   exam_uploaded: true,
   tp153_uploaded: true,
   ready_for_analysis: true,
+  capability_version: 'v2-batch4',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-02T00:00:00Z',
 }
@@ -253,7 +254,7 @@ describe('AnalysisResults', () => {
     )
   })
 
-  it('shows existing audit provenance without presenting numeric confidence', async () => {
+  it('keeps methodology at page level and hides technical provenance from Faculty', async () => {
     vi.mocked(analysesApi.listFindings).mockResolvedValue([
       {
         ...FINDING,
@@ -285,13 +286,22 @@ describe('AnalysisResults', () => {
       ),
     )
 
-    expect(await screen.findByText('Analysis-assisted')).toBeInTheDocument()
-    expect(screen.getByText('Semantic confidence: High')).toBeInTheDocument()
-    expect(screen.getByText(/provider:/i)).toHaveTextContent('fake')
-    expect(screen.getByText(/model:/i)).toHaveTextContent('fake-semantic-v1')
-   expect(screen.getByText(/semantic confidence:/i)).toHaveTextContent(
-  'Semantic confidence: High',
-)
-expect(screen.queryByText(/84%/i)).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByText(/satisfied findings \(1\)/i))
+    expect(
+      screen.getByRole('link', {
+        name: 'How does the platform determine results?',
+      }),
+    ).toHaveAttribute('href', '/evaluation-scope#evaluation-methods')
+    expect(screen.queryByText('How was this result determined?'))
+      .not.toBeInTheDocument()
+    expect(screen.queryByText('Evidence reliability')).not.toBeInTheDocument()
+    expect(screen.queryByText('fake')).not.toBeInTheDocument()
+    expect(screen.queryByText('fake-semantic-v1')).not.toBeInTheDocument()
+    expect(screen.queryByText('semantic-rule-v1')).not.toBeInTheDocument()
+    expect(screen.queryByText('v2-batch4')).not.toBeInTheDocument()
+    expect(screen.queryByText('1.0.0')).not.toBeInTheDocument()
+    expect(screen.queryByText(/REQ018|RULE018/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/audit and methodology details/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/84%/i)).not.toBeInTheDocument()
   })
 })

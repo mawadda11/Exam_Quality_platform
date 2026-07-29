@@ -82,11 +82,11 @@ export function ReviewStartSummary({ analysis }: ReviewStartSummaryProps) {
 
       <dl className="review-files">
         <FileSummary label={t('Examination PDF')} file={exam} />
-        <FileSummary label={t('Populated TP-153')} file={tp153} />
+        <FileSummary label={t('Course Specification file')} file={tp153} />
       </dl>
 
       <Alert variant="info" title={t('Scope reminder')}>
-        {t('The analysis applies only to this uploaded examination and its corresponding populated TP-153. Starting the analysis does not issue an accreditation or institutional decision.')}
+        {t('The analysis applies only to this uploaded examination and its corresponding Course Specification. Starting the analysis does not issue an accreditation or institutional decision.')}
       </Alert>
     </div>
   )

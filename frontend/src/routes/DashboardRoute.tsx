@@ -60,7 +60,7 @@ export function DashboardRoute() {
             <PageState
               state="empty"
               title={t('No analyses yet')}
-              message={t('Create an analysis to upload an exam and its populated TP-153.')}
+              message={t('Create an analysis to upload an exam and its Course Specification.')}
               action={
                 <Link className="ui-button" to="/analyses/new">
                   {t('New Analysis')}

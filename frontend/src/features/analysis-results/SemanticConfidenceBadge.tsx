@@ -2,9 +2,9 @@ import { useI18n } from '../../i18n/I18nProvider'
 import type { SemanticConfidenceLevel } from '../../types/api'
 
 const CONFIDENCE_EXPLANATION_KEYS: Record<SemanticConfidenceLevel, string> = {
-  High: 'All required governed evidence conditions were satisfied.',
-  Medium: 'The governed evidence was usable but included a bounded limitation or mixed result.',
-  Low: 'Required evidence was missing or insufficient; the academic status must be Not Verified.',
+  High: 'The linked evidence was complete and clear for this judgment.',
+  Medium: 'The linked evidence was usable but included a limitation or mixed support.',
+  Low: 'The linked evidence was missing or insufficient for a reliable judgment.',
 }
 
 interface SemanticConfidenceBadgeProps {
@@ -19,7 +19,7 @@ export function SemanticConfidenceBadge({ level }: SemanticConfidenceBadgeProps)
       title={`${t(CONFIDENCE_EXPLANATION_KEYS[level])} ${t('This category is not a score, severity, priority, or probability.')}`}
       data-semantic-confidence={level}
     >
-      {t('Semantic confidence')}: {t(level)}
+      {t('Evidence reliability')}: {t(level)}
     </span>
   )
 }

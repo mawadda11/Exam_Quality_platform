@@ -125,4 +125,11 @@ describe('ReportSection', () => {
     })
     expect(screen.getByText(/insufficient evidence/i)).toBeInTheDocument()
   })
+
+  it('does not expose the retained knowledge-base version in report history', () => {
+    renderSection({ status: 'ready', data: [report({ kb_version: 'internal-kb-1.0' })] })
+
+    expect(screen.queryByText(/internal-kb-1\.0/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/knowledge-base version/i)).not.toBeInTheDocument()
+  })
 })

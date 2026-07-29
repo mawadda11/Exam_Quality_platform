@@ -44,7 +44,7 @@ export function ReanalysisAction({ analysisId, onCreated }: ReanalysisActionProp
           checked={reuseTp153}
           onChange={(event) => setReuseTp153(event.target.checked)}
         />
-        {t('Reuse the previous TP-153 (uncheck to upload a new one)')}
+        {t('Reuse the previous Course Specification (uncheck to upload a new one)')}
       </label>
       <Button
         onClick={() => void handleCreate()}

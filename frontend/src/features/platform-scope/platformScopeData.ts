@@ -18,7 +18,7 @@ export const SUPPORTED_EVALUATION_SCOPE: EvaluationScopeItem[] = [
   {
     ruleId: 'RULE003',
     title: 'Assessment-method consistency',
-    description: 'Checks consistency with the assessment methods documented in TP-153.',
+    description: 'Checks consistency with the assessment methods documented in the Course Specification.',
   },
   {
     ruleId: 'RULE004',
@@ -108,7 +108,7 @@ export const PLANNED_EVALUATION_SCOPE: EvaluationScopeItem[] = [
   {
     ruleId: 'RULE015',
     title: 'Supporting material legibility',
-    description: 'Requires an approved visual-quality method and governed legibility thresholds.',
+    description: 'Requires an approved visual-quality method and defined legibility criteria.',
   },
   {
     ruleId: 'RULE017',

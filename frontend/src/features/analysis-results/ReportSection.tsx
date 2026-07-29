@@ -105,7 +105,7 @@ export function ReportSection({
       </div>
 
       <Alert variant="info" title={t('Report language')}>
-        {t('Report narrative and governed presentation wording use the selected language. Original source wording and evidence remain available for audit.')}
+        {t('The report narrative uses the selected language. Original document excerpts remain unchanged and clearly identified.')}
       </Alert>
 
       {error && (
@@ -145,7 +145,7 @@ export function ReportSection({
                     <time dateTime={report.created_at}>{formatDateTime(report.created_at)}</time>
                   </strong>
                   <p className="report-list-meta">
-                    {scoreSummary(report)} · {t('Report language')}: {report.language === 'ar' ? (locale === 'ar' ? 'العربية' : 'Arabic') : (locale === 'ar' ? 'الإنجليزية' : 'English')} · {t('KB version')} <bdi>{report.kb_version}</bdi>
+                    {scoreSummary(report)} · {t('Report language')}: {report.language === 'ar' ? (locale === 'ar' ? 'العربية' : 'Arabic') : (locale === 'ar' ? 'الإنجليزية' : 'English')}
                   </p>
                 </div>
                 <Button

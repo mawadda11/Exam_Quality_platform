@@ -4,7 +4,7 @@ import { useI18n } from '../../i18n/I18nProvider'
 const NAVIGATION_ITEMS = [
   { to: '/dashboard', label: 'Dashboard', end: true },
   { to: '/analyses', label: 'Analyses', end: true },
-  { to: '/evaluation-scope', label: 'What We Evaluate', end: true },
+  { to: '/evaluation-scope', label: 'Methodology & Help', end: true },
 ] as const
 
 interface PrimaryNavigationProps {

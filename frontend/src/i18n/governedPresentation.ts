@@ -82,7 +82,7 @@ const META_AR: Readonly<Record<string, string>> = {
 const RECOMMENDATIONS_AR: Readonly<Record<string, readonly [string, string]>> = {
   REC001: ['اربط السؤال بناتج تعلم', 'راجع السؤال واربطه بناتج تعلم واحد على الأقل تدعمه أدلة المقرر.'],
   REC002: ['عزّز صلة السؤال بناتج التعلم', 'عدّل السؤال بحيث تقدم الإجابة المتوقعة دليلًا أوضح على ناتج التعلم المرتبط.'],
-  REC003: ['وائم الاختبار مع TP-153', 'راجع أسلوب أو نشاط التقييم الموثق وحقق الاتساق بين تصميم الاختبار وTP-153.'],
+  REC003: ['وائم الاختبار مع توصيف المقرر', 'راجع أسلوب أو نشاط التقييم الموثق وحقق الاتساق بين تصميم الاختبار وتوصيف المقرر.'],
   REC004: ['استخدم صيغة سؤال ملائمة', 'عدّل صيغة الاستجابة حتى يتمكن الطالب من إظهار ناتج التعلم المقصود.'],
   REC005: ['غطِّ ناتج التعلم غير المغطى', 'أضف سؤالًا مناسبًا يدعم ناتج التعلم المنطبق أو وثّق تقييمه في موضع آخر.'],
   REC006: ['حسّن توزيع تغطية نواتج التعلم', 'راجع توزيع الأسئلة أو الدرجات على نواتج التعلم المنطبقة وقلل التركّز غير المقصود.'],
@@ -103,18 +103,18 @@ const RECOMMENDATIONS_AR: Readonly<Record<string, readonly [string, string]>> = 
   REC021: ['أكمل التعليمات', 'أضف التعليمات اللازمة بشأن الإجابات أو المصادر أو الأدوات أو القيود.'],
   REC022: ['حدّد الإحالة المرجعية', 'استبدل الإحالات المبهمة بمعرّف محدد لشكل أو جدول أو سؤال أو صفحة.'],
   REC023: ['وفّر نسخة مقروءة من الاختبار', 'ارفع ملف اختبار كاملًا وأكثر وضوحًا قبل إعادة التحليل.'],
-  REC024: ['صحّح بيانات نواتج التعلم', 'أكمل عبارات نواتج التعلم وصحّح الرموز المكررة أو غير الصالحة عبر الإجراء الرسمي لـ TP-153.'],
-  REC025: ['وفّر موضوعات مقرر صالحة للاستخدام', 'أكمل قسم الموضوعات في TP-153 بموضوعات واضحة ومتميزة.'],
+  REC024: ['صحّح بيانات نواتج التعلم', 'أكمل عبارات نواتج التعلم وصحّح الرموز المكررة أو غير الصالحة عبر الإجراء الرسمي لتوصيف المقرر.'],
+  REC025: ['وفّر موضوعات مقرر صالحة للاستخدام', 'أكمل قسم الموضوعات في توصيف المقرر بموضوعات واضحة ومتميزة.'],
   REC026: ['أكمل بيانات التقييم', 'وفّر أساليب أو أنشطة التقييم المطلوبة بصورة مقروءة.'],
   REC027: ['اجعل التوصية قابلة للتنفيذ', 'حدّد المشكلة والعنصر والإجراء التصحيحي ورابط الدليل بدقة.'],
-  REC028: ['اقصر الاستنتاج على أدلة الاختبار', 'أعد صياغة الاستنتاجات لتشير فقط إلى الاختبار المرفوع وأدلة TP-153 المتاحة.'],
+  REC028: ['اقصر الاستنتاج على أدلة الاختبار', 'أعد صياغة الاستنتاجات لتشير فقط إلى الاختبار المرفوع وأدلة توصيف المقرر المتاحة.'],
   REC029: ['أعد حالة واحدة فقط', 'صحّح تنفيذ القاعدة بحيث تعيد كل عملية تقييم حالة واحدة مسموحًا بها.'],
   REC030: ['أضف تفسيرًا مستندًا إلى الأدلة', 'وضّح كيف تدعم الأدلة المذكورة المتطلب والحالة المحددة.'],
   REC031: ['اطلب دليلًا مفقودًا لنواتج التعلم', 'اطلب قسم نواتج تعلم مكتملًا ومقروءًا قبل إعادة فحوص نواتج التعلم.'],
   REC032: ['اطلب دليلًا مفقودًا للموضوعات', 'اطلب قسم موضوعات مقرر مكتملًا ومقروءًا قبل إعادة فحوص الموضوعات.'],
   REC033: ['اطلب دليل درجات مقروءًا', 'اطلب نسخة أوضح من الاختبار عندما يتعذر استخراج الدرجات بموثوقية.'],
   REC034: ['اطلب تعليمات مقروءة', 'اطلب نسخة أوضح من الاختبار عندما يتعذر قراءة نص التعليمات.'],
-  REC035: ['اطلب دليل التقييم', 'اطلب قسم التقييم المطلوب والمكتمل في TP-153.'],
+  REC035: ['اطلب دليل التقييم', 'اطلب قسم التقييم المطلوب والمكتمل في توصيف المقرر.'],
 }
 
 const STATUS_EXPLANATIONS_AR: Readonly<Record<AcademicStatus, string>> = {
@@ -125,22 +125,34 @@ const STATUS_EXPLANATIONS_AR: Readonly<Record<AcademicStatus, string>> = {
   'Not Applicable': 'هذا المتطلب غير منطبق على الأدلة المتاحة في هذا الاختبار.',
 }
 
+function presentCourseSpecificationTerminology(original: string): string {
+  return original
+    .replaceAll('TP-153 Course Specification', 'Course Specification')
+    .replaceAll('TP-153', 'Course Specification')
+}
+
 export function presentRequirementName(id: string, original: string, locale: Locale): string {
-  return locale === 'ar' ? (REQUIREMENT_NAMES_AR[id] ?? 'متطلب تقييم محكوم') : original
+  return locale === 'ar'
+    ? (REQUIREMENT_NAMES_AR[id] ?? 'متطلب تقييم محكوم')
+    : presentCourseSpecificationTerminology(original)
 }
 
 export function presentRuleName(id: string, original: string, locale: Locale): string {
   const requirementId = id.replace(/^RULE/, 'REQ')
-  return locale === 'ar' ? (REQUIREMENT_NAMES_AR[requirementId] ?? 'قاعدة تقييم محكومة') : original
+  return locale === 'ar'
+    ? (REQUIREMENT_NAMES_AR[requirementId] ?? 'قاعدة تقييم محكومة')
+    : presentCourseSpecificationTerminology(original)
 }
 
 export function presentGovernedLabel(original: string, locale: Locale): string {
-  if (locale !== 'ar') return original
+  if (locale !== 'ar') return presentCourseSpecificationTerminology(original)
   return DIMENSIONS_AR[original] ?? META_AR[original] ?? 'بيان محكوم'
 }
 
 export function presentFindingExplanation(finding: FindingResponse, locale: Locale): string {
-  if (locale !== 'ar') return finding.explanation
+  if (locale !== 'ar') {
+    return presentCourseSpecificationTerminology(finding.explanation)
+  }
   const requirement = presentRequirementName(
     finding.requirement_id,
     finding.requirement_name,
@@ -155,8 +167,8 @@ export function presentRecommendation(
 ): { title: string; text: string; targetUser: string; type: string } {
   if (locale !== 'ar') {
     return {
-      title: recommendation.title,
-      text: recommendation.text,
+      title: presentCourseSpecificationTerminology(recommendation.title),
+      text: presentCourseSpecificationTerminology(recommendation.text),
       targetUser: recommendation.target_user,
       type: recommendation.recommendation_type,
     }
@@ -169,4 +181,3 @@ export function presentRecommendation(
     type: META_AR[recommendation.recommendation_type] ?? 'توصية',
   }
 }
-

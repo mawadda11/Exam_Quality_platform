@@ -1,3 +1,6 @@
+import { BATCH5_ARABIC_MESSAGES } from './batch5ArabicMessages'
+import { BATCH5_REFINEMENT_ARABIC_MESSAGES } from './batch5RefinementArabicMessages'
+
 /**
  * Arabic presentation strings added during the Batch 3 bilingual UX completion.
  *
@@ -554,4 +557,6 @@ export const ADDITIONAL_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
   proximity_support: 'دليل قرب مساند',
   direct_text: 'نص مباشر',
   ocr: 'تعرّف ضوئي',
+  ...BATCH5_ARABIC_MESSAGES,
+  ...BATCH5_REFINEMENT_ARABIC_MESSAGES,
 }

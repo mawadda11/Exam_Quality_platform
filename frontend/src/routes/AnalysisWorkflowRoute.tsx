@@ -176,7 +176,7 @@ export function AnalysisDocumentsRoute() {
     <div className="route-stack route-content-form">
       <PageHeader
         title={t('Upload Documents')}
-        description={t('Upload the examination PDF and populated TP-153 required by this analysis.')}
+        description={t('Upload the examination PDF and Course Specification required by this analysis.')}
       />
       <div className="analysis-workflow-stepper">
         <AnalysisWorkflowStepper currentStep="documents" />

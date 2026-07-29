@@ -21,7 +21,7 @@ describe('AppShell', () => {
     )
     expect(screen.getByRole('link', { name: 'Analyses' })).not.toHaveAttribute('aria-current')
     expect(screen.getByRole('link', { name: 'New Analysis' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'What We Evaluate' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Methodology & Help' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Dashboard content' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Skip to main content' })).toHaveAttribute(
       'href',

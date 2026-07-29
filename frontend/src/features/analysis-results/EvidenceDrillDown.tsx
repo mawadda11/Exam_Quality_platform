@@ -7,10 +7,17 @@ const EVIDENCE_TYPE_LABELS: Record<string, string> = {
   marks: 'Marks',
   declared_total: 'Declared total',
   instructions: 'Instructions',
-  clo: 'CLO citation',
-  topic: 'Topic citation',
+  clo: 'Course learning outcome',
+  topic: 'Course topic',
   assessment_record: 'Assessment record',
   missing_section: 'Missing section',
+  figure: 'Figure or illustration',
+  table: 'Table',
+  code: 'Code block',
+  code_block: 'Code block',
+  reference: 'Reference or citation',
+  document_reference: 'Reference or citation',
+  supporting_material: 'Supporting material',
 }
 
 export type EvidenceLookupKind = 'clo' | 'topic' | 'question'
@@ -23,10 +30,10 @@ interface ResolvedEvidence {
 
 function resolveEvidence(item: FindingEvidenceRef, lookups: EvidenceLookups): ResolvedEvidence {
   if (item.evidence_type === 'clo') {
-    return { label: 'CLO citation', sourceText: lookups.cloByCode.get(item.item_reference)?.text ?? null, lookupKind: 'clo' }
+    return { label: 'Course learning outcome', sourceText: lookups.cloByCode.get(item.item_reference)?.text ?? null, lookupKind: 'clo' }
   }
   if (item.evidence_type === 'topic') {
-    return { label: 'Topic citation', sourceText: lookups.topicByCode.get(item.item_reference)?.text ?? null, lookupKind: 'topic' }
+    return { label: 'Course topic', sourceText: lookups.topicByCode.get(item.item_reference)?.text ?? null, lookupKind: 'topic' }
   }
   if (item.evidence_type === 'question_text') {
     return {
@@ -36,7 +43,7 @@ function resolveEvidence(item: FindingEvidenceRef, lookups: EvidenceLookups): Re
     }
   }
   return {
-    label: EVIDENCE_TYPE_LABELS[item.evidence_type] ?? item.evidence_type,
+    label: EVIDENCE_TYPE_LABELS[item.evidence_type] ?? 'Evidence item',
     sourceText: null,
     lookupKind: null,
   }
@@ -67,16 +74,16 @@ export function EvidenceDrillDown({ evidence, status, lookups, unavailableLookup
         const resolved = resolveEvidence(item, lookups)
         const enrichmentUnavailable = resolved.lookupKind !== null && unavailableLookups.has(resolved.lookupKind)
         return (
-          <li key={item.id} className="evidence-item">
+          <li key={item.id} id={`evidence-${item.id}`} className="evidence-item">
             <dl>
-              <div><dt>{t('Source')}</dt><dd>{item.source_document === 'exam' ? t('Exam') : 'TP-153'}</dd></div>
+              <div><dt>{t('Source')}</dt><dd>{item.source_document === 'exam' ? t('Exam') : t('Course Specification')}</dd></div>
               <div><dt>{t('Page')}</dt><dd>{item.page_number}</dd></div>
               <div><dt>{t('Evidence type')}</dt><dd>{t(resolved.label)}</dd></div>
               <div><dt>{t('Reference')}</dt><dd><bdi dir="auto">{item.item_reference}</bdi></dd></div>
             </dl>
             {resolved.sourceText && (
               <div className="evidence-source-text">
-                <strong>{t('Original source excerpt')}</strong>
+                <strong>{t('Original document excerpt')}</strong>
                 <p lang={locale === 'ar' ? undefined : 'en'} dir="auto">{resolved.sourceText}</p>
                 {locale === 'ar' && (
                   <p className="evidence-source-explanation">

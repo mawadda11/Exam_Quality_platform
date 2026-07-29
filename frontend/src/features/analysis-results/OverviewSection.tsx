@@ -11,6 +11,7 @@ import { ReanalysisAction } from './ReanalysisAction'
 import { RuleCoveragePanel } from './RuleCoveragePanel'
 import type { ResultResource } from './useAnalysisResultsData'
 import { useI18n } from '../../i18n/I18nProvider'
+import { MethodologyLink } from './MethodologyLink'
 
 interface OverviewSectionProps {
   analysis: AnalysisResponse
@@ -74,6 +75,7 @@ export function OverviewSection({
             <p className="results-supporting-text">
               {t('Results that could not be verified or did not apply remain visible, but they do not lower the score. Checks that are not yet available are also excluded.')}
             </p>
+            <MethodologyLink anchor="overall-score" />
           </div>
         </Card>
       </div>

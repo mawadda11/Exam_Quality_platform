@@ -1,4 +1,4 @@
-import { useId, useState, type ChangeEvent } from 'react'
+import { useId, useRef, useState, type ChangeEvent } from 'react'
 import { uploadAnalysisFile } from '../../api/analyses'
 import { Button } from '../../components/ui/Button'
 import type { UploadedFileResponse, UploadedFileType } from '../../types/api'
@@ -9,6 +9,7 @@ import { localizeInterfaceError } from '../../i18n/localizeError'
 interface FileUploadFieldProps {
   analysisId: string
   fileType: UploadedFileType
+  heading?: string
   label: string
   description: string
   uploaded: UploadedFileResponse | undefined
@@ -18,6 +19,7 @@ interface FileUploadFieldProps {
 export function FileUploadField({
   analysisId,
   fileType,
+  heading,
   label,
   description,
   uploaded,
@@ -25,6 +27,7 @@ export function FileUploadField({
 }: FileUploadFieldProps) {
   const { locale, t } = useI18n()
   const inputId = useId()
+  const inputRef = useRef<HTMLInputElement>(null)
   const descriptionId = `${inputId}-description`
   const statusId = `${inputId}-status`
   const errorId = `${inputId}-error`
@@ -105,7 +108,8 @@ export function FileUploadField({
     <section className="file-upload-card" data-upload-state={state}>
       <div className="file-upload-heading">
         <div>
-          <h3 id={`${inputId}-label`}>{label}</h3>
+          <h3 id={`${inputId}-label`}>{heading ?? label}</h3>
+          {heading && <p className="file-upload-field-label">{label}</p>}
           <p id={descriptionId}>{description}</p>
         </div>
         <span className="file-upload-state">{t(state)}</span>
@@ -115,14 +119,23 @@ export function FileUploadField({
         {t('Select')} {label}
       </label>
       <input
+        ref={inputRef}
         id={inputId}
-        className="file-upload-input"
+        className="file-upload-input visually-hidden"
         type="file"
         accept="application/pdf,.pdf"
         disabled={isUploading || isRefreshing || Boolean(displayedUpload)}
         onChange={handleChange}
         aria-describedby={describedBy}
       />
+      {!displayedUpload && !isUploading && !isRefreshing && (
+        <Button
+          variant="secondary"
+          onClick={() => inputRef.current?.click()}
+        >
+          {t(selectedFile ? 'Choose another PDF' : 'Choose PDF file')}
+        </Button>
+      )}
 
       <div id={statusId} className="file-upload-status" aria-live="polite">
         {!displayedUpload && !selectedFile && !uploadError && t('No PDF selected.')}

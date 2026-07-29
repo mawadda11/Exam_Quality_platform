@@ -138,12 +138,12 @@ export function AnalysisResults({
 
         {section === 'alignment-coverage' && (
           <AlignmentCoverageSection
+            analysis={analysis}
             findings={resources.findings}
+            questions={resources.questions}
             clos={resources.clos}
             topics={resources.topics}
             assessmentRecords={resources.assessmentRecords}
-            lookups={lookups}
-            unavailableLookups={unavailableLookups}
             onRetry={retryResource}
           />
         )}
@@ -182,7 +182,6 @@ export function AnalysisResults({
                 recommendations={resources.recommendations}
                 recommendationsByFinding={recommendationsByFinding}
                 lookups={lookups}
-                unavailableLookups={unavailableLookups}
                 onRetryRecommendations={() => retryResource('recommendations')}
               />
             )}

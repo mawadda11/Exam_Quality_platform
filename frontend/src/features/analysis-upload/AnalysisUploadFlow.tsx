@@ -177,10 +177,10 @@ export function AnalysisDocuments({ analysis, onRefreshed }: AnalysisDocumentsPr
       <div>
         <h2>{t('Upload Documents')}</h2>
         <p>
-          {t('Both the examination PDF and the populated TP-153 are required. Each upload can be retried independently.')}
+          {t('Both the examination PDF and the Course Specification are required. Each upload can be retried independently.')}
         </p>
         <p className="results-supporting-text">
-          {t('Arabic, English, and mixed examination and TP-153 PDF files are supported.')}
+          {t('Arabic, English, and mixed examination and Course Specification PDF files are supported.')}
         </p>
       </div>
 
@@ -212,8 +212,9 @@ export function AnalysisDocuments({ analysis, onRefreshed }: AnalysisDocumentsPr
         <FileUploadField
           analysisId={analysis.id}
           fileType="tp153"
-          label={t('Populated TP-153')}
-          description={t('Select the populated course specification PDF.')}
+          heading={t('Upload Course Specification')}
+          label={t('Course Specification file')}
+          description={t('Upload the completed official Course Specification PDF, such as a completed TP-153 template.')}
           uploaded={findUploaded('tp153')}
           onUploaded={onRefreshed}
         />
