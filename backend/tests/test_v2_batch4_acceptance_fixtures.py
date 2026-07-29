@@ -207,6 +207,13 @@ def test_exact_fixtures_complete_the_public_api_workflow_and_bilingual_reports(
     assert by_target["figure:unlabeled"]["resolution_status"] == "unresolved"
     assert len(by_target["figure:unlabeled"]["association_candidates"]) == 1
     assert not by_target["figure:unlabeled"]["association_candidates"][0]["selected"]
+    assert (
+        client.get(
+            f"/api/v1/analyses/{analysis_id}/question-types",
+            headers=auth_header(email),
+        ).status_code
+        == 404
+    )
 
     for language in ("en", "ar"):
         generated = client.post(

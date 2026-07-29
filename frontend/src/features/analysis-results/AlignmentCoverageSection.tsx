@@ -13,6 +13,7 @@ import type {
 } from '../../types/api'
 import { ALIGNMENT_COVERAGE_DIMENSIONS } from './dimensions'
 import {
+  independentlyScorableQuestions,
   sortQuestionReferences,
   sortQuestionsForFaculty,
 } from './facultyOrdering'
@@ -51,8 +52,13 @@ interface SummaryArea {
   title: string
   metrics: Array<{
     label: string
-    count: number
+    value: number | string
   }>
+}
+
+interface CountMetric {
+  label: string
+  count: number
 }
 
 function facultyReason(
@@ -96,9 +102,9 @@ function supportedState(status: AcademicStatus): string {
     case 'Partially Satisfied':
       return 'Partially supported'
     case 'Not Satisfied':
-      return 'No supported relationship found'
+      return 'Not supported'
     case 'Not Verified':
-      return 'Could not be verified'
+      return 'Not Verified'
     case 'Not Applicable':
       return 'Not Applicable'
   }
@@ -155,6 +161,7 @@ function questionRows(
         const sourceEvidence = evidenceById.get(judgment.source_evidence_id)
         const questionReference =
           sourceEvidence?.item_reference ?? judgment.source_evidence_id
+        if (!questionByReference.has(questionReference)) return
         const row = rows.get(questionReference) ?? {
           questionReference,
           question: questionByReference.get(questionReference),
@@ -236,13 +243,13 @@ function matchingJudgments(
   )
 }
 
-function relationshipMetrics(
+function linkedQuestionCount(
   rows: QuestionRelationshipRow[],
   kind: RelationshipKind,
-): SummaryArea['metrics'] {
+): number {
   const judgmentsFor = (row: QuestionRelationshipRow) =>
     row[`${kind}Judgments`]
-  const supported = rows.filter((row) =>
+  return rows.filter((row) =>
     judgmentsFor(row).some(
       (judgment) =>
         judgment.targets.length > 0 &&
@@ -250,33 +257,28 @@ function relationshipMetrics(
           judgment.status === 'Partially Satisfied'),
     ),
   ).length
-  const notVerified = rows.filter(
-    (row) =>
-      !judgmentsFor(row).some(
-        (judgment) =>
-          judgment.targets.length > 0 &&
-          (judgment.status === 'Satisfied' ||
-            judgment.status === 'Partially Satisfied'),
-      ) &&
-      judgmentsFor(row).some((judgment) => judgment.status === 'Not Verified'),
-  ).length
-  return [
-    { label: 'Suggested relationships', count: supported },
-    {
-      label: 'No supported relationship',
-      count: rows.length - supported - notVerified,
-    },
-    ...(notVerified > 0
-      ? [{ label: 'Could not be verified', count: notVerified }]
-      : []),
-  ]
+}
+
+function coveredRecordCount(
+  records: Array<CloResponse | TopicResponse>,
+  rows: QuestionRelationshipRow[],
+  kind: RelationshipKind,
+): number {
+  return records.filter((record) => {
+    const status = coverageStatus(
+      relatedRows(rows, record, kind).flatMap((row) =>
+        matchingJudgments(row, record, kind),
+      ),
+    )
+    return status === 'Satisfied' || status === 'Partially Satisfied'
+  }).length
 }
 
 function coverageMetrics(
   records: Array<CloResponse | TopicResponse>,
   rows: QuestionRelationshipRow[],
   kind: RelationshipKind,
-): SummaryArea['metrics'] {
+): CountMetric[] {
   const statuses = records.map((record) =>
     coverageStatus(
       relatedRows(rows, record, kind).flatMap((row) =>
@@ -284,7 +286,7 @@ function coverageMetrics(
       ),
     ),
   )
-  const metrics: SummaryArea['metrics'] = [
+  const metrics: CountMetric[] = [
     {
       label: 'Supported',
       count: statuses.filter((status) => status === 'Satisfied').length,
@@ -371,19 +373,27 @@ function RelationshipStates({
     ['CLO', row.cloJudgments],
     ['Course Topic', row.topicJudgments],
   ]
+  const badge = (status: AcademicStatus, key: string) => (
+    <span
+      key={key}
+      className="relationship-status-badge"
+      data-academic-status={status}
+    >
+      {t(supportedState(status))}
+    </span>
+  )
   return (
     <ul className="relationship-status-list">
       {states.map(([label, judgments]) => (
         <li key={label}>
           <strong>{t(label)}:</strong>{' '}
-          {judgments.length === 0
-            ? t('No supported relationship found')
-            : judgments.map((judgment, index) => (
-                <span key={judgment.key}>
-                  {index > 0 && ', '}
-                  {t(supportedState(judgment.status))}
-                </span>
-              ))}
+          <span className="relationship-badge-list">
+            {judgments.length === 0
+              ? badge('Not Satisfied', `${label}-unsupported`)
+              : judgments.map((judgment) =>
+                  badge(judgment.status, judgment.key),
+                )}
+          </span>
         </li>
       ))}
     </ul>
@@ -465,7 +475,7 @@ function QuestionComparison({
           onClose()
         }}
       >
-        {t('View comparison')} — <bdi>{row.questionReference}</bdi>
+        {t('View mapping details')} — <bdi>{row.questionReference}</bdi>
       </summary>
       <div className="comparison-grid">
         <section>
@@ -562,7 +572,9 @@ export function AlignmentCoverageSection({
     useState<QuestionRelationshipRow | null>(null)
   const comparisonRef = useRef<HTMLDetailsElement>(null)
   const loadedQuestions =
-    questions.status === 'ready' ? sortQuestionsForFaculty(questions.data) : []
+    questions.status === 'ready'
+      ? sortQuestionsForFaculty(independentlyScorableQuestions(questions.data))
+      : []
   const loadedClos = clos.status === 'ready' ? clos.data : []
   const loadedTopics = topics.status === 'ready' ? topics.data : []
 
@@ -608,35 +620,31 @@ export function AlignmentCoverageSection({
           )
           const summaryAreas: SummaryArea[] = [
             {
-              key: 'clo-relationships',
-              title: 'CLO Alignment',
+              key: 'question-relationships',
+              title: 'Question Relationships',
               metrics: [
-                { label: 'Total questions', count: rows.length },
-                ...relationshipMetrics(rows, 'clo'),
+                {
+                  label: 'Questions linked to a CLO',
+                  value: linkedQuestionCount(rows, 'clo'),
+                },
+                {
+                  label: 'Questions linked to a course topic',
+                  value: linkedQuestionCount(rows, 'topic'),
+                },
               ],
             },
             {
-              key: 'topic-relationships',
-              title: 'Topic Alignment',
+              key: 'coverage',
+              title: 'Coverage',
               metrics: [
-                { label: 'Total questions', count: rows.length },
-                ...relationshipMetrics(rows, 'topic'),
-              ],
-            },
-            {
-              key: 'clo-coverage',
-              title: 'CLO Coverage',
-              metrics: [
-                { label: 'Total CLOs', count: loadedClos.length },
-                ...coverageMetrics(loadedClos, rows, 'clo'),
-              ],
-            },
-            {
-              key: 'topic-coverage',
-              title: 'Topic Coverage',
-              metrics: [
-                { label: 'Total topics', count: loadedTopics.length },
-                ...coverageMetrics(loadedTopics, rows, 'topic'),
+                {
+                  label: 'CLO Coverage',
+                  value: `${coveredRecordCount(loadedClos, rows, 'clo')}/${loadedClos.length}`,
+                },
+                {
+                  label: 'Topic Coverage',
+                  value: `${coveredRecordCount(loadedTopics, rows, 'topic')}/${loadedTopics.length}`,
+                },
               ],
             },
           ]
@@ -666,7 +674,7 @@ export function AlignmentCoverageSection({
                         {area.metrics.map((metric) => (
                           <div key={metric.label}>
                             <dt>{t(metric.label)}</dt>
-                            <dd>{metric.count}</dd>
+                            <dd>{metric.value}</dd>
                           </div>
                         ))}
                       </dl>
@@ -688,7 +696,7 @@ export function AlignmentCoverageSection({
                 <h3>{t('Question-to-CLO-and-Topic relationships')}</h3>
                 <ResponsiveTable
                   caption={t('Question-to-CLO-and-Topic relationships')}
-                  className="academic-summary-table combined-relationship-table"
+                  className="combined-relationship-table"
                 >
                   <thead>
                     <tr>
@@ -697,7 +705,7 @@ export function AlignmentCoverageSection({
                       <th scope="col">{t('Suggested Course Topic')}</th>
                       <th scope="col">{t('Alignment status')}</th>
                       <th scope="col">{t('Short reason')}</th>
-                      <th scope="col">{t('View comparison')}</th>
+                      <th scope="col">{t('Details')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -718,13 +726,13 @@ export function AlignmentCoverageSection({
                         <td data-label={t('Short reason')}>
                           <RelationshipReasons row={row} />
                         </td>
-                        <td data-label={t('View comparison')}>
+                        <td data-label={t('Details')}>
                           <button
                             type="button"
                             className="inline-evidence-action"
                             onClick={() => openComparison(row)}
                           >
-                            {t('View comparison')}
+                            {t('View mapping details')}
                           </button>
                         </td>
                       </tr>
@@ -795,7 +803,12 @@ export function AlignmentCoverageSection({
                             <span dir="auto">{clo.text}</span>
                           </td>
                           <td data-label={t('Coverage status')}>
-                            {t(supportedState(coverageStatus(judgments)))}
+                            <span
+                              className="relationship-status-badge"
+                              data-academic-status={coverageStatus(judgments)}
+                            >
+                              {t(supportedState(coverageStatus(judgments)))}
+                            </span>
                           </td>
                           <td data-label={t('Related questions')}>
                             {orderedReferences.length === 0
@@ -855,7 +868,12 @@ export function AlignmentCoverageSection({
                             <span dir="auto">{topic.text}</span>
                           </th>
                           <td data-label={t('Coverage status')}>
-                            {t(supportedState(coverageStatus(judgments)))}
+                            <span
+                              className="relationship-status-badge"
+                              data-academic-status={coverageStatus(judgments)}
+                            >
+                              {t(supportedState(coverageStatus(judgments)))}
+                            </span>
                           </td>
                           <td data-label={t('Related questions')}>
                             {orderedReferences.length === 0

@@ -246,7 +246,7 @@ beforeEach(() => {
 })
 
 describe('AlignmentCoverageSection', () => {
-  it('renders four summary cards, one main table, and collapsed coverage details', () => {
+  it('renders two summary panels, one main table, and collapsed coverage details', () => {
     const { container } = renderSection()
 
     expect(screen.getAllByRole('table')).toHaveLength(3)
@@ -262,7 +262,13 @@ describe('AlignmentCoverageSection', () => {
       screen.queryByRole('table', { name: 'Question-to-topic relationships' }),
     ).not.toBeInTheDocument()
     expect(container.querySelectorAll('.alignment-compact-summary > li'))
-      .toHaveLength(4)
+      .toHaveLength(2)
+    expect(screen.getByRole('heading', { name: 'Question Relationships' }))
+      .toBeInTheDocument()
+    expect(screen.getByText('Questions linked to a CLO')).toBeInTheDocument()
+    expect(screen.getByText('Questions linked to a course topic'))
+      .toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Coverage' })).toBeInTheDocument()
     expect(container.querySelector('#clo-coverage')).not.toHaveAttribute('open')
     expect(container.querySelector('#topic-coverage')).not.toHaveAttribute('open')
     expect(container.querySelector('#clo-coverage summary')).toHaveTextContent(
@@ -275,6 +281,8 @@ describe('AlignmentCoverageSection', () => {
       .not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Action' }))
       .not.toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Details' }))
+      .toBeInTheDocument()
   })
 
   it('uses natural question order, preserves official CLO/topic order, and aligns related lists', () => {
@@ -333,7 +341,7 @@ describe('AlignmentCoverageSection', () => {
     ).toBeInTheDocument()
 
     fireEvent.click(
-      within(q2Row).getByRole('button', { name: 'View comparison' }),
+      within(q2Row).getByRole('button', { name: 'View mapping details' }),
     )
     const comparison = container.querySelector<HTMLElement>(
       '#question-comparison',
@@ -354,6 +362,25 @@ describe('AlignmentCoverageSection', () => {
     )
     expect(comparison).not.toHaveTextContent('Original document excerpt')
     expect(comparison).not.toHaveTextContent('EVIDENCE TYPE')
+    expect(screen.queryByText(/View comparison/i)).not.toBeInTheDocument()
+    const badges = q2Row.querySelectorAll('.relationship-status-badge')
+    expect(badges).toHaveLength(2)
+    expect(badges[0]).toHaveAttribute(
+      'data-academic-status',
+      'Partially Satisfied',
+    )
+    expect(badges[1]).toHaveAttribute('data-academic-status', 'Satisfied')
+    const q10Row = within(relationshipTable)
+      .getByRole('rowheader', { name: 'Q10' })
+      .closest('tr')!
+    expect(
+      within(q10Row).getAllByText('Not supported'),
+    ).toHaveLength(2)
+    expect(
+      q10Row.querySelectorAll(
+        '.relationship-status-badge[data-academic-status="Not Satisfied"]',
+      ),
+    ).toHaveLength(2)
   })
 
   it('does not duplicate the assessment-method result in Alignment', () => {
@@ -361,6 +388,40 @@ describe('AlignmentCoverageSection', () => {
     expect(screen.queryByText('Assessment Method Consistency'))
       .not.toBeInTheDocument()
     expect(screen.queryByText(/Written examination/)).not.toBeInTheDocument()
+  })
+
+  it('excludes structural parents from relationship rows and question counts', () => {
+    const parent: QuestionResponse = {
+      ...QUESTIONS[0],
+      id: 'parent-q3',
+      number_label: 'Q3',
+      question_text: 'Answer all parts.',
+      marks: 10,
+      sequence: 3,
+    }
+    const child: QuestionResponse = {
+      ...parent,
+      id: 'child-q3-a',
+      parent_question_id: parent.id,
+      number_label: 'Q3(a)',
+      question_text: 'Explain normalization.',
+      marks: 4,
+      sequence: 4,
+    }
+    renderSection({ questions: ready([parent, child]) })
+
+    const relationshipTable = screen.getByRole('table', {
+      name: 'Question-to-CLO-and-Topic relationships',
+    })
+    expect(within(relationshipTable).getByText('Q3(a)')).toBeInTheDocument()
+    expect(within(relationshipTable).queryByText('Q3')).not.toBeInTheDocument()
+    const relationshipsPanel = screen
+      .getByRole('heading', { name: 'Question Relationships' })
+      .closest('li')!
+    expect(relationshipsPanel).toHaveTextContent('Questions linked to a CLO0')
+    expect(relationshipsPanel).toHaveTextContent(
+      'Questions linked to a course topic0',
+    )
   })
 
   it('does not render raw academic evidence lists or repeated source metadata cards', () => {
@@ -391,7 +452,13 @@ describe('AlignmentCoverageSection', () => {
     expect(
       screen.getByRole('columnheader', { name: 'موضوع المقرر المقترح' }),
     ).toBeInTheDocument()
-    expect(screen.getAllByText('عرض المقارنة').length).toBeGreaterThan(0)
+    expect(screen.getByRole('heading', { name: 'ربط الأسئلة' }))
+      .toBeInTheDocument()
+    expect(screen.getByText('أسئلة مرتبطة بمخرج تعلم')).toBeInTheDocument()
+    expect(screen.getByText('أسئلة مرتبطة بموضوع مقرر')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'التغطية' })).toBeInTheDocument()
+    expect(screen.getAllByText('عرض تفاصيل الربط').length).toBeGreaterThan(0)
+    expect(screen.queryByText('عرض المقارنة')).not.toBeInTheDocument()
     expect(screen.getAllByText('لم يظهر ارتباط واضح').length)
       .toBeGreaterThan(0)
   })

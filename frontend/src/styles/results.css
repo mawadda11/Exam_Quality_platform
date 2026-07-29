@@ -611,7 +611,7 @@
 
 .alignment-compact-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
   padding: 0;
   margin: 0;
@@ -707,7 +707,11 @@
   background: var(--color-success-surface);
 }
 
-.material-relationship-status[data-relationship-result="missing"],
+.material-relationship-status[data-relationship-result="missing"] {
+  color: var(--color-danger);
+  background: var(--color-danger-surface);
+}
+
 .material-relationship-status[data-relationship-result="ambiguous"] {
   color: var(--color-warning);
   background: var(--color-warning-surface);
@@ -770,11 +774,6 @@
   margin: 0;
 }
 
-.physical-material-inventory > summary {
-  align-items: flex-start;
-  flex-direction: column;
-}
-
 .academic-table-section {
   display: grid;
   gap: var(--space-3);
@@ -790,7 +789,57 @@
 }
 
 .combined-relationship-table {
-  min-width: 68rem;
+  min-width: 76rem;
+  table-layout: fixed;
+}
+
+.combined-relationship-table th,
+.combined-relationship-table td {
+  overflow-wrap: anywhere;
+  border-block-end: var(--border-width) solid var(--color-border-strong);
+}
+
+.combined-relationship-table th + th,
+.combined-relationship-table td + td {
+  border-inline-start: var(--border-width) solid var(--color-border);
+}
+
+.combined-relationship-table thead th {
+  color: var(--color-surface);
+  background: var(--color-brand-navy);
+}
+
+.combined-relationship-table tbody th {
+  color: var(--color-brand-navy);
+  font-size: var(--font-size-sm);
+  letter-spacing: normal;
+  text-transform: none;
+  background: var(--color-canvas);
+}
+
+.combined-relationship-table tbody tr:nth-child(even) td {
+  background: var(--color-canvas);
+}
+
+.combined-relationship-table :is(th, td):nth-child(1) {
+  width: 8%;
+}
+
+.combined-relationship-table :is(th, td):nth-child(2),
+.combined-relationship-table :is(th, td):nth-child(3) {
+  width: 15%;
+}
+
+.combined-relationship-table :is(th, td):nth-child(4) {
+  width: 20%;
+}
+
+.combined-relationship-table :is(th, td):nth-child(5) {
+  width: 30%;
+}
+
+.combined-relationship-table :is(th, td):nth-child(6) {
+  width: 12%;
 }
 
 .relationship-status-list,
@@ -800,6 +849,50 @@
   padding: 0;
   margin: 0;
   list-style: none;
+}
+
+.relationship-status-list li {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.relationship-badge-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.relationship-status-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  min-height: 1.75rem;
+  padding: 0.15rem 0.55rem;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-pill);
+}
+
+.relationship-status-badge[data-academic-status="Satisfied"] {
+  color: var(--color-success);
+  background: var(--color-success-surface);
+}
+
+.relationship-status-badge[data-academic-status="Partially Satisfied"] {
+  color: var(--color-warning);
+  background: var(--color-warning-surface);
+}
+
+.relationship-status-badge[data-academic-status="Not Satisfied"] {
+  color: var(--color-danger);
+  background: var(--color-danger-surface);
+}
+
+.relationship-status-badge[data-academic-status="Not Verified"],
+.relationship-status-badge[data-academic-status="Not Applicable"] {
+  color: var(--color-neutral-status);
+  background: var(--color-neutral-status-surface);
 }
 
 .question-comparison {
@@ -1586,6 +1679,7 @@
   .questions-table td:last-child {
     min-width: 15rem;
   }
+
 }
 
 @media (max-width: 24rem) {
@@ -1608,4 +1702,5 @@
     grid-template-columns: 1fr;
     gap: var(--space-1);
   }
+
 }

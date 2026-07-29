@@ -225,17 +225,18 @@ describe('StructuredEvidenceSection', () => {
     ).toBeInTheDocument()
   })
 
-  it('keeps one collapsed inventory record per physical material', async () => {
+  it('keeps the relationship table and omits the duplicate physical inventory', async () => {
     render(<StructuredEvidenceSection analysisId="analysis-1" />)
 
-    const disclosure = await screen.findByText('Physical material inventory (6)')
-    expect(disclosure.closest('details')).not.toHaveAttribute('open')
-    fireEvent.click(disclosure)
-    const inventory = screen.getByRole('table', {
-      name: 'Physical material inventory',
-    })
-    expect(within(inventory).getAllByRole('rowheader')).toHaveLength(6)
-    expect(within(inventory).getAllByText('Figure 2')).toHaveLength(2)
+    expect(
+      await screen.findByRole('table', {
+        name: 'Question-to-material relationships',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('table', { name: 'Physical material inventory' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/Physical material inventory/)).not.toBeInTheDocument()
   })
 
   it('uses the approved Arabic relationship labels and RTL headers', async () => {

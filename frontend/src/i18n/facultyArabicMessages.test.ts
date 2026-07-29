@@ -27,7 +27,7 @@ describe('faculty Arabic terminology', () => {
     ['Suggested Course Topic', 'موضوع المقرر المقترح'],
     ['Alignment status', 'حالة المواءمة'],
     ['Short reason', 'سبب مختصر'],
-    ['View comparison', 'عرض المقارنة'],
+    ['View mapping details', 'عرض تفاصيل الربط'],
     ['Supported', 'مدعوم'],
     ['Partially supported', 'مدعوم جزئيًا'],
     ['No supported relationship found', 'لم يظهر ارتباط واضح'],

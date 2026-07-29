@@ -3,6 +3,7 @@ import type { QuestionResponse } from '../../types/api'
 import {
   compareNaturalCloIdentifiers,
   compareNaturalQuestionReferences,
+  independentlyScorableQuestions,
   sortQuestionReferences,
   sortQuestionsForFaculty,
 } from './facultyOrdering'
@@ -55,6 +56,25 @@ describe('faculty natural ordering', () => {
 
     expect(sortQuestionsForFaculty([child, parent, first]).map((item) => item.id))
       .toEqual(['first', 'parent', 'child'])
+  })
+
+  it('returns only the lowest independently scorable question level', () => {
+    const parent = question('parent', 'Q1', { marks: 10 })
+    const childA = question('child-a', 'Q1(a)', {
+      parent_question_id: parent.id,
+      marks: 4,
+    })
+    const childB = question('child-b', 'Q1(b)', {
+      parent_question_id: parent.id,
+      marks: 6,
+    })
+    const standalone = question('standalone', 'Q2', { marks: 5 })
+
+    expect(
+      independentlyScorableQuestions([parent, childA, childB, standalone]).map(
+        (item) => item.id,
+      ),
+    ).toEqual(['child-a', 'child-b', 'standalone'])
   })
 
   it('falls back to page, natural reference, and stable identifier order', () => {

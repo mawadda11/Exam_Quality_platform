@@ -105,6 +105,17 @@ export function sortQuestionsForFaculty(
   return [...questions].sort(compareQuestionRecords)
 }
 
+export function independentlyScorableQuestions(
+  questions: QuestionResponse[],
+): QuestionResponse[] {
+  const structuralParentIds = new Set(
+    questions
+      .map((question) => question.parent_question_id)
+      .filter((id): id is string => id !== null),
+  )
+  return questions.filter((question) => !structuralParentIds.has(question.id))
+}
+
 export function sortQuestionReferences(
   references: string[],
   questions: QuestionResponse[],

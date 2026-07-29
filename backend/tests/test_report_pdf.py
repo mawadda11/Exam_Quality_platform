@@ -123,6 +123,8 @@ def test_structured_evidence_is_present_in_english_and_arabic_reports() -> None:
         assert "Relational Database Schema" in text
         assert "Refer to Figure 1" in text
         assert "v2-b4-structured-evidence" in text
+        assert "Question Type Distribution" not in text
+        assert "Automatic question types" not in text
     assert english != arabic
 
 

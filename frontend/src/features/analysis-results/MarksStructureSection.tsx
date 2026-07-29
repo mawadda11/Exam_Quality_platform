@@ -32,6 +32,8 @@ export function MarksStructureSection({ findings, lookups }: MarksStructureSecti
               key={finding.id}
               finding={finding}
               lookups={lookups}
+              showSpecializedLink={false}
+              showDirectEvidence={false}
             />
           ))}
         </ul>
