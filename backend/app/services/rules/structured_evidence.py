@@ -116,9 +116,7 @@ def _selected_reference_ids(
     return {
         item.reference_id
         for item in associations
-        if item.selected
-        and item.exact_label_match
-        and item.basis is AssociationBasis.EXACT_LABEL
+        if item.selected and item.exact_label_match and item.basis is AssociationBasis.EXACT_LABEL
     }
 
 
@@ -150,9 +148,7 @@ def _reference_labels(
     reference_ids: set[uuid.UUID],
 ) -> str:
     return ", ".join(
-        dict.fromkeys(
-            item.target_label for item in references if item.id in reference_ids
-        )
+        dict.fromkeys(item.target_label for item in references if item.id in reference_ids)
     )
 
 
@@ -180,9 +176,7 @@ def evaluate_referenced_material_availability(
         item.source_record_id: item for item in snapshot.document_references if item.included
     }
     selected_reference_ids = _selected_reference_ids(associations)
-    proximity_only_ids = _proximity_only_reference_ids(
-        associations, selected_reference_ids
-    )
+    proximity_only_ids = _proximity_only_reference_ids(associations, selected_reference_ids)
     ambiguous_ids = _ambiguous_reference_ids(material_references, reviewed)
     missing_ids = {
         item.id
@@ -208,9 +202,7 @@ def evaluate_referenced_material_availability(
             confidence=_confidence(material_references, materials),
             evidence_ids=_evidence_ids(session, analysis_id, material_references, materials),
         )
-    unresolved = [
-        item for item in material_references if item.id not in selected_reference_ids
-    ]
+    unresolved = [item for item in material_references if item.id not in selected_reference_ids]
     if unresolved:
         return RuleFindingResult(
             status=AcademicStatus.NOT_SATISFIED,
@@ -344,9 +336,7 @@ def evaluate_resolvable_cross_references(
         item.source_record_id: item for item in snapshot.document_references if item.included
     }
     selected_reference_ids = _selected_reference_ids(associations)
-    proximity_only_ids = _proximity_only_reference_ids(
-        associations, selected_reference_ids
-    )
+    proximity_only_ids = _proximity_only_reference_ids(associations, selected_reference_ids)
     ambiguous_ids = _ambiguous_reference_ids(references, reviewed)
     missing_ids = {
         item.id

@@ -700,8 +700,7 @@ def list_analysis_document_references(
                 extraction_method=row.extraction_method,
                 resolution_status=resolution_status,
                 association_candidates=[
-                    ReferenceAssociationResponse.model_validate(item)
-                    for item in active_candidates
+                    ReferenceAssociationResponse.model_validate(item) for item in active_candidates
                 ],
                 created_at=row.created_at,
             )

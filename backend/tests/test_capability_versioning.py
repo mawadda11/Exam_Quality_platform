@@ -23,18 +23,12 @@ def test_pilot_correctness_is_the_current_cumulative_capability_version() -> Non
 
 
 def test_batch4_structured_rules_remain_enabled_for_cumulative_successor() -> None:
-    assert batch4_structured_rules_enabled(
-        _AnalysisVersion(BATCH4_CAPABILITY_VERSION)
-    )
-    assert batch4_structured_rules_enabled(
-        _AnalysisVersion(PILOT_CORRECTNESS_CAPABILITY_VERSION)
-    )
+    assert batch4_structured_rules_enabled(_AnalysisVersion(BATCH4_CAPABILITY_VERSION))
+    assert batch4_structured_rules_enabled(_AnalysisVersion(PILOT_CORRECTNESS_CAPABILITY_VERSION))
 
 
 def test_historical_null_and_legacy_versions_do_not_gain_batch4_rules() -> None:
     historical = _AnalysisVersion(None)
     assert effective_capability_version(historical) == LEGACY_CAPABILITY_VERSION
     assert not batch4_structured_rules_enabled(historical)
-    assert not batch4_structured_rules_enabled(
-        _AnalysisVersion(LEGACY_CAPABILITY_VERSION)
-    )
+    assert not batch4_structured_rules_enabled(_AnalysisVersion(LEGACY_CAPABILITY_VERSION))

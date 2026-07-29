@@ -190,11 +190,7 @@ def parse_declared_total(line: str) -> float | None:
     if label is None:
         return None
     value = _TOTAL_VALUE_AFTER_LABEL.match(normalized[label.end() :])
-    return (
-        parse_localized_number(value.group("value"))
-        if value is not None
-        else None
-    )
+    return parse_localized_number(value.group("value")) if value is not None else None
 
 
 def has_declared_total_label(line: str) -> bool:

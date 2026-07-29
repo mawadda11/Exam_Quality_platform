@@ -164,12 +164,8 @@ def test_document_reference_endpoint_exposes_only_active_revision_candidates(
 
     with Session(db_engine) as session:
         analysis_uuid = uuid.UUID(analysis_id)
-        reference = session.query(DocumentReference).filter_by(
-            analysis_id=analysis_uuid
-        ).one()
-        material = session.query(SupportingMaterial).filter_by(
-            analysis_id=analysis_uuid
-        ).one()
+        reference = session.query(DocumentReference).filter_by(analysis_id=analysis_uuid).one()
+        material = session.query(SupportingMaterial).filter_by(analysis_id=analysis_uuid).one()
         revision = ExtractionReviewRevision(
             analysis_id=analysis_uuid,
             revision_number=1,

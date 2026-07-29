@@ -28,7 +28,4 @@ def effective_capability_version(analysis: _HasCapabilityVersion) -> str:
 def batch4_structured_rules_enabled(analysis: _HasCapabilityVersion) -> bool:
     """Keep Batch 4 governed rules enabled in every cumulative successor."""
 
-    return (
-        effective_capability_version(analysis)
-        in _BATCH4_CUMULATIVE_CAPABILITY_VERSIONS
-    )
+    return effective_capability_version(analysis) in _BATCH4_CUMULATIVE_CAPABILITY_VERSIONS

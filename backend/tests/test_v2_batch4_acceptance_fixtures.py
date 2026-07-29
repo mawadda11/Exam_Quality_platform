@@ -160,9 +160,7 @@ def test_exact_fixtures_complete_the_public_api_workflow_and_bilingual_reports(
     assert len(snapshot["supporting_materials"]) == 6
     assert len(snapshot["supporting_annotations"]) == 10
     assert len(snapshot["document_references"]) == 6
-    declared = [
-        item for item in snapshot["evidence"] if item["evidence_type"] == "declared_total"
-    ]
+    declared = [item for item in snapshot["evidence"] if item["evidence_type"] == "declared_total"]
     assert len(declared) == 1
     assert parse_declared_total(declared[0]["extracted_text"]) == 40
 
@@ -310,9 +308,7 @@ def test_exact_exam_fixture_extracts_hierarchy_marks_materials_and_references() 
         for reference in result.document_references
     )
 
-    declared_totals = [
-        item for item in result.evidence if item.evidence_type == "declared_total"
-    ]
+    declared_totals = [item for item in result.evidence if item.evidence_type == "declared_total"]
     assert len(declared_totals) == 1
     assert declared_totals[0].page_number == 1
     assert declared_totals[0].geometry is not None
@@ -333,11 +329,10 @@ def test_exact_exam_fixture_calculates_forty_and_satisfies_correct_total_marks(
 
         result = evaluate_marks_and_total(questions, evidence)
 
-    assert sum(
-        question.marks or 0
-        for question in questions
-        if question.number_label not in {"Q1"}
-    ) == 40
+    assert (
+        sum(question.marks or 0 for question in questions if question.number_label not in {"Q1"})
+        == 40
+    )
     assert result.status.value == "Satisfied"
     assert "Calculated total marks (40" in result.explanation
     assert "declared total marks (40" in result.explanation

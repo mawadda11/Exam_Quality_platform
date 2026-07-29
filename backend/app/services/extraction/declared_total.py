@@ -54,11 +54,7 @@ def _vertical_gap(left: Geometry, right: Geometry) -> float:
 def _isolated_value(line: PdfLayoutLine) -> float | None:
     normalized = normalize_arabic_for_matching(line.reading_text)
     match = _ISOLATED_TOTAL_VALUE.match(normalized)
-    return (
-        parse_localized_number(match.group("value"))
-        if match is not None
-        else None
-    )
+    return parse_localized_number(match.group("value")) if match is not None else None
 
 
 def extract_layout_declared_total(
