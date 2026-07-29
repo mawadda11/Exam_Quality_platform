@@ -31,7 +31,7 @@ function finding(dimension: string, name: string): FindingResponse {
 }
 
 describe('MarksStructureSection', () => {
-  it('shows only existing marks and structure findings without deriving totals', () => {
+  it('shows the persisted Satisfied total-marks result without deriving totals', () => {
     render(
       <MarksStructureSection
         findings={[
@@ -43,6 +43,7 @@ describe('MarksStructureSection', () => {
     )
 
     expect(screen.getByText('Correct Total Marks')).toBeInTheDocument()
+    expect(screen.getByText('Satisfied')).toBeInTheDocument()
     expect(screen.queryByText('CLO Mapping')).not.toBeInTheDocument()
     expect(screen.queryByText(/calculated total/i)).not.toBeInTheDocument()
   })

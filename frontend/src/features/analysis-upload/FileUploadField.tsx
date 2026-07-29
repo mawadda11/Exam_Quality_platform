@@ -1,4 +1,10 @@
-import { useId, useRef, useState, type ChangeEvent } from 'react'
+import {
+  useId,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ReactNode,
+} from 'react'
 import { uploadAnalysisFile } from '../../api/analyses'
 import { Button } from '../../components/ui/Button'
 import type { UploadedFileResponse, UploadedFileType } from '../../types/api'
@@ -12,6 +18,8 @@ interface FileUploadFieldProps {
   heading?: string
   label: string
   description: string
+  contextLabel: string
+  contextValue: ReactNode
   uploaded: UploadedFileResponse | undefined
   onUploaded: () => Promise<void>
 }
@@ -22,6 +30,8 @@ export function FileUploadField({
   heading,
   label,
   description,
+  contextLabel,
+  contextValue,
   uploaded,
   onUploaded,
 }: FileUploadFieldProps) {
@@ -112,8 +122,16 @@ export function FileUploadField({
           {heading && <p className="file-upload-field-label">{label}</p>}
           <p id={descriptionId}>{description}</p>
         </div>
-        <span className="file-upload-state">{t(state)}</span>
+        <span className="file-upload-state">
+          {t(state === 'missing' ? 'Missing' : state)}
+        </span>
       </div>
+      <dl className="file-upload-context">
+        <div>
+          <dt>{contextLabel}</dt>
+          <dd>{contextValue}</dd>
+        </div>
+      </dl>
 
       <label className="visually-hidden" htmlFor={inputId}>
         {t('Select')} {label}

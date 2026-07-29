@@ -79,9 +79,7 @@ export function sectionDestinationForFinding(
   finding: FindingResponse,
 ): FindingSectionDestination | null {
   if (
-    ALIGNMENT_COVERAGE_DIMENSIONS.has(finding.dimension) ||
-    finding.dimension === 'Assessment Alignment' ||
-    finding.rule_id === 'RULE003'
+    ALIGNMENT_COVERAGE_DIMENSIONS.has(finding.dimension)
   ) {
     return {
       section: 'alignment-coverage',

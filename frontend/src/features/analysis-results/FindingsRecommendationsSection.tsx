@@ -51,8 +51,12 @@ export function FindingsRecommendationsSection({
   const [filters, setFilters] = useState<FindingFilterValues>(
     EMPTY_FINDING_FILTERS,
   )
-  const filteredFindings = filterFindings(findings, filters)
-  const counts = countFindingStatuses(findings)
+  const visibleFindings = findings.filter(
+    (finding) =>
+      finding.rule_id !== 'RULE003' || finding.status !== 'Satisfied',
+  )
+  const filteredFindings = filterFindings(visibleFindings, filters)
+  const counts = countFindingStatuses(visibleFindings)
   const missingEvidenceCount = counts.get('Not Verified') ?? 0
   const attention = sortFindingsForFaculty(
     filteredFindings.filter((finding) =>
@@ -102,7 +106,7 @@ export function FindingsRecommendationsSection({
         />
       </div>
 
-      {findings.length > 0 && (
+      {visibleFindings.length > 0 && (
         <>
           <ul
             className="finding-status-summary"
@@ -119,7 +123,7 @@ export function FindingsRecommendationsSection({
             ))}
           </ul>
           <FindingFilters
-            findings={findings}
+            findings={visibleFindings}
             values={filters}
             resultCount={filteredFindings.length}
             onChange={setFilters}
@@ -159,7 +163,7 @@ export function FindingsRecommendationsSection({
         </section>
       )}
 
-      {findings.length === 0 ? (
+      {visibleFindings.length === 0 ? (
         <p className="results-empty-state">{t('No findings are available.')}</p>
       ) : filteredFindings.length === 0 ? (
         <div className="results-empty-state" role="status">

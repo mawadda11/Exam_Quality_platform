@@ -1,14 +1,10 @@
 import { useRef, useState } from 'react'
 import { Alert } from '../../components/ui/Alert'
 import { Button } from '../../components/ui/Button'
-import { Card } from '../../components/ui/Card'
 import { ResponsiveTable } from '../../components/ui/ResponsiveTable'
-import { presentFindingExplanation } from '../../i18n/governedPresentation'
 import { useI18n } from '../../i18n/I18nProvider'
 import type {
   AcademicStatus,
-  AnalysisResponse,
-  AssessmentRecordResponse,
   CloResponse,
   FindingEvidenceRef,
   FindingResponse,
@@ -22,16 +18,13 @@ import {
 } from './facultyOrdering'
 import { MethodologyLink } from './MethodologyLink'
 import { ResultResourceState } from './ResultResourceState'
-import { StatusBadge } from './StatusBadge'
 import type { ResultResource, ResultsResourceKey } from './useAnalysisResultsData'
 
 interface AlignmentCoverageSectionProps {
-  analysis: AnalysisResponse
   findings: ResultResource<FindingResponse[]>
   questions: ResultResource<QuestionResponse[]>
   clos: ResultResource<CloResponse[]>
   topics: ResultResource<TopicResponse[]>
-  assessmentRecords: ResultResource<AssessmentRecordResponse[]>
   onRetry: (resource: ResultsResourceKey) => void
 }
 
@@ -56,9 +49,10 @@ interface QuestionRelationshipRow {
 interface SummaryArea {
   key: string
   title: string
-  status: AcademicStatus | undefined
-  count: number
-  countMessage: string
+  metrics: Array<{
+    label: string
+    count: number
+  }>
 }
 
 function facultyReason(
@@ -240,6 +234,81 @@ function matchingJudgments(
   return row[`${kind}Judgments`].filter((judgment) =>
     judgment.targets.some((target) => recordMatchesTarget(record, target)),
   )
+}
+
+function relationshipMetrics(
+  rows: QuestionRelationshipRow[],
+  kind: RelationshipKind,
+): SummaryArea['metrics'] {
+  const judgmentsFor = (row: QuestionRelationshipRow) =>
+    row[`${kind}Judgments`]
+  const supported = rows.filter((row) =>
+    judgmentsFor(row).some(
+      (judgment) =>
+        judgment.targets.length > 0 &&
+        (judgment.status === 'Satisfied' ||
+          judgment.status === 'Partially Satisfied'),
+    ),
+  ).length
+  const notVerified = rows.filter(
+    (row) =>
+      !judgmentsFor(row).some(
+        (judgment) =>
+          judgment.targets.length > 0 &&
+          (judgment.status === 'Satisfied' ||
+            judgment.status === 'Partially Satisfied'),
+      ) &&
+      judgmentsFor(row).some((judgment) => judgment.status === 'Not Verified'),
+  ).length
+  return [
+    { label: 'Suggested relationships', count: supported },
+    {
+      label: 'No supported relationship',
+      count: rows.length - supported - notVerified,
+    },
+    ...(notVerified > 0
+      ? [{ label: 'Could not be verified', count: notVerified }]
+      : []),
+  ]
+}
+
+function coverageMetrics(
+  records: Array<CloResponse | TopicResponse>,
+  rows: QuestionRelationshipRow[],
+  kind: RelationshipKind,
+): SummaryArea['metrics'] {
+  const statuses = records.map((record) =>
+    coverageStatus(
+      relatedRows(rows, record, kind).flatMap((row) =>
+        matchingJudgments(row, record, kind),
+      ),
+    ),
+  )
+  const metrics: SummaryArea['metrics'] = [
+    {
+      label: 'Supported',
+      count: statuses.filter((status) => status === 'Satisfied').length,
+    },
+    {
+      label: 'Partially supported',
+      count: statuses.filter((status) => status === 'Partially Satisfied').length,
+    },
+    {
+      label: 'Unsupported',
+      count: statuses.filter((status) => status === 'Not Satisfied').length,
+    },
+  ]
+  const notVerified = statuses.filter((status) => status === 'Not Verified').length
+  if (notVerified > 0) {
+    metrics.push({ label: 'Could not be verified', count: notVerified })
+  }
+  const notApplicable = statuses.filter(
+    (status) => status === 'Not Applicable',
+  ).length
+  if (notApplicable > 0) {
+    metrics.push({ label: 'Not Applicable', count: notApplicable })
+  }
+  return metrics
 }
 
 function ResourceIssue({
@@ -481,92 +550,11 @@ function QuestionComparison({
   )
 }
 
-function assessmentMatchesExamType(
-  record: AssessmentRecordResponse,
-  examType: AnalysisResponse['exam_type'],
-): boolean {
-  const value = `${record.method} ${record.activity ?? ''}`.toLocaleLowerCase()
-  if (examType === 'Final') return /final|نهائي/u.test(value)
-  return /mid[\s-]?term|نصفي|منتصف/u.test(value)
-}
-
-function AssessmentConsistency({
-  analysis,
-  findings,
-  records,
-}: {
-  analysis: AnalysisResponse
-  findings: FindingResponse[]
-  records: AssessmentRecordResponse[]
-}) {
-  const { locale, t } = useI18n()
-  const finding = findings[0]
-  const match = records.find((record) =>
-    assessmentMatchesExamType(record, analysis.exam_type),
-  )
-  return (
-    <Card
-      as="section"
-      className="results-content-card assessment-consistency-section"
-      id="assessment-method-consistency"
-    >
-      <div className="compact-assessment-heading">
-        <h3>{t('Assessment Method Consistency')}</h3>
-        {finding && <StatusBadge status={finding.status} />}
-      </div>
-      {finding ? (
-        <p dir="auto">
-          {finding.status === 'Satisfied' && match
-            ? t(
-                'The document was identified as a {examType}, and a matching assessment method was found in the Course Specification.',
-                { examType: t(`${analysis.exam_type} Examination`) },
-              )
-            : presentFindingExplanation(finding, locale)}
-        </p>
-      ) : (
-        <p>{t('No assessment-consistency result is available.')}</p>
-      )}
-      {finding && match && (
-        <details className="assessment-comparison">
-          <summary>{t('View comparison')}</summary>
-          <dl>
-            <div>
-              <dt>{t('Detected Exam type')}</dt>
-              <dd dir="auto">
-                {t(`${analysis.exam_type} Examination`)}
-                <CompactMetadata
-                  reference={analysis.exam_type}
-                  source="Exam"
-                  page={undefined}
-                />
-              </dd>
-            </div>
-            <div>
-              <dt>{t('Matching assessment method')}</dt>
-              <dd dir="auto">
-                {match.method}
-                {match.activity ? ` — ${match.activity}` : ''}
-                <CompactMetadata
-                  reference={t('Assessment method')}
-                  source="Course Specification"
-                  page={match.page_number}
-                />
-              </dd>
-            </div>
-          </dl>
-        </details>
-      )}
-    </Card>
-  )
-}
-
 export function AlignmentCoverageSection({
-  analysis,
   findings,
   questions,
   clos,
   topics,
-  assessmentRecords,
   onRetry,
 }: AlignmentCoverageSectionProps) {
   const { t } = useI18n()
@@ -577,8 +565,6 @@ export function AlignmentCoverageSection({
     questions.status === 'ready' ? sortQuestionsForFaculty(questions.data) : []
   const loadedClos = clos.status === 'ready' ? clos.data : []
   const loadedTopics = topics.status === 'ready' ? topics.data : []
-  const loadedAssessmentRecords =
-    assessmentRecords.status === 'ready' ? assessmentRecords.data : []
 
   function openComparison(row: QuestionRelationshipRow): void {
     setSelectedRow(row)
@@ -607,10 +593,7 @@ export function AlignmentCoverageSection({
       >
         {(loadedFindings) => {
           const relevant = loadedFindings.filter(
-            (finding) =>
-              ALIGNMENT_COVERAGE_DIMENSIONS.has(finding.dimension) ||
-              finding.dimension === 'Assessment Alignment' ||
-              finding.rule_id === 'RULE003',
+            (finding) => ALIGNMENT_COVERAGE_DIMENSIONS.has(finding.dimension),
           )
           const cloRelationshipFindings = relevant.filter(
             (finding) => finding.rule_id === 'RULE001',
@@ -618,60 +601,43 @@ export function AlignmentCoverageSection({
           const topicRelationshipFindings = relevant.filter(
             (finding) => finding.rule_id === 'RULE007',
           )
-          const cloCoverageFindings = relevant.filter(
-            (finding) => finding.dimension === 'CLO Coverage',
-          )
-          const topicCoverageFindings = relevant.filter(
-            (finding) => finding.dimension === 'Topic Coverage',
-          )
-          const assessmentFindings = relevant.filter(
-            (finding) =>
-              finding.dimension === 'Assessment Alignment' ||
-              finding.rule_id === 'RULE003',
-          )
           const rows = questionRows(
             cloRelationshipFindings,
             topicRelationshipFindings,
             loadedQuestions,
           )
-          const matchingAssessmentCount = loadedAssessmentRecords.filter(
-            (record) => assessmentMatchesExamType(record, analysis.exam_type),
-          ).length
           const summaryAreas: SummaryArea[] = [
             {
               key: 'clo-relationships',
               title: 'CLO Alignment',
-              status: cloRelationshipFindings[0]?.status,
-              count: rows.filter((row) => row.cloJudgments.length > 0).length,
-              countMessage: '{count} suggested question relationships',
+              metrics: [
+                { label: 'Total questions', count: rows.length },
+                ...relationshipMetrics(rows, 'clo'),
+              ],
             },
             {
               key: 'topic-relationships',
               title: 'Topic Alignment',
-              status: topicRelationshipFindings[0]?.status,
-              count: rows.filter((row) => row.topicJudgments.length > 0).length,
-              countMessage: '{count} suggested question relationships',
+              metrics: [
+                { label: 'Total questions', count: rows.length },
+                ...relationshipMetrics(rows, 'topic'),
+              ],
             },
             {
               key: 'clo-coverage',
               title: 'CLO Coverage',
-              status: cloCoverageFindings[0]?.status,
-              count: loadedClos.length,
-              countMessage: '{count} Course Specification CLOs',
+              metrics: [
+                { label: 'Total CLOs', count: loadedClos.length },
+                ...coverageMetrics(loadedClos, rows, 'clo'),
+              ],
             },
             {
               key: 'topic-coverage',
               title: 'Topic Coverage',
-              status: topicCoverageFindings[0]?.status,
-              count: loadedTopics.length,
-              countMessage: '{count} Course Specification topics',
-            },
-            {
-              key: 'assessment',
-              title: 'Assessment Method Consistency',
-              status: assessmentFindings[0]?.status,
-              count: matchingAssessmentCount,
-              countMessage: '{count} matching assessment methods',
+              metrics: [
+                { label: 'Total topics', count: loadedTopics.length },
+                ...coverageMetrics(loadedTopics, rows, 'topic'),
+              ],
             },
           ]
 
@@ -695,11 +661,15 @@ export function AlignmentCoverageSection({
                 >
                   {summaryAreas.map((area) => (
                     <li key={area.key}>
-                      <span>{t(area.title)}</span>
-                      <strong>
-                        {t(area.countMessage, { count: area.count })}
-                      </strong>
-                      {area.status && <StatusBadge status={area.status} />}
+                      <h4>{t(area.title)}</h4>
+                      <dl>
+                        {area.metrics.map((metric) => (
+                          <div key={metric.label}>
+                            <dt>{t(metric.label)}</dt>
+                            <dd>{metric.count}</dd>
+                          </div>
+                        ))}
+                      </dl>
                     </li>
                   ))}
                 </ul>
@@ -780,8 +750,20 @@ export function AlignmentCoverageSection({
                 </details>
               )}
 
-              <section className="academic-table-section" id="clo-coverage">
-                <h3>{t('CLO Coverage')}</h3>
+              <details
+                className="academic-table-section coverage-table-disclosure"
+                id="clo-coverage"
+              >
+                <summary>
+                  <span>
+                    {t('CLO Coverage')} ({loadedClos.length})
+                  </span>
+                  <small>
+                    {coverageMetrics(loadedClos, rows, 'clo')
+                      .map((metric) => `${t(metric.label)}: ${metric.count}`)
+                      .join(' · ')}
+                  </small>
+                </summary>
                 <ResponsiveTable
                   caption={t('CLO Coverage')}
                   className="academic-summary-table"
@@ -792,7 +774,6 @@ export function AlignmentCoverageSection({
                       <th scope="col">{t('CLO text')}</th>
                       <th scope="col">{t('Coverage status')}</th>
                       <th scope="col">{t('Related questions')}</th>
-                      <th scope="col">{t('Action')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -826,28 +807,27 @@ export function AlignmentCoverageSection({
                                   </span>
                                 ))}
                           </td>
-                          <td data-label={t('Action')}>
-                            {matches[0] ? (
-                              <button
-                                type="button"
-                                className="inline-evidence-action"
-                                onClick={() => openComparison(matches[0])}
-                              >
-                                {t('View comparison')}
-                              </button>
-                            ) : (
-                              '—'
-                            )}
-                          </td>
                         </tr>
                       )
                     })}
                   </tbody>
                 </ResponsiveTable>
-              </section>
+              </details>
 
-              <section className="academic-table-section" id="topic-coverage">
-                <h3>{t('Topic Coverage')}</h3>
+              <details
+                className="academic-table-section coverage-table-disclosure"
+                id="topic-coverage"
+              >
+                <summary>
+                  <span>
+                    {t('Topic Coverage')} ({loadedTopics.length})
+                  </span>
+                  <small>
+                    {coverageMetrics(loadedTopics, rows, 'topic')
+                      .map((metric) => `${t(metric.label)}: ${metric.count}`)
+                      .join(' · ')}
+                  </small>
+                </summary>
                 <ResponsiveTable
                   caption={t('Topic Coverage')}
                   className="academic-summary-table"
@@ -857,7 +837,6 @@ export function AlignmentCoverageSection({
                       <th scope="col">{t('Course Topic')}</th>
                       <th scope="col">{t('Coverage status')}</th>
                       <th scope="col">{t('Related questions')}</th>
-                      <th scope="col">{t('Action')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -888,31 +867,12 @@ export function AlignmentCoverageSection({
                                   </span>
                                 ))}
                           </td>
-                          <td data-label={t('Action')}>
-                            {matches[0] ? (
-                              <button
-                                type="button"
-                                className="inline-evidence-action"
-                                onClick={() => openComparison(matches[0])}
-                              >
-                                {t('View comparison')}
-                              </button>
-                            ) : (
-                              '—'
-                            )}
-                          </td>
                         </tr>
                       )
                     })}
                   </tbody>
                 </ResponsiveTable>
-              </section>
-
-              <AssessmentConsistency
-                analysis={analysis}
-                findings={assessmentFindings}
-                records={loadedAssessmentRecords}
-              />
+              </details>
             </>
           )
         }}
@@ -934,12 +894,6 @@ export function AlignmentCoverageSection({
         resource={topics}
         label="Course Specification topics"
         resourceKey="topics"
-        onRetry={onRetry}
-      />
-      <ResourceIssue
-        resource={assessmentRecords}
-        label="Course Specification assessment methods"
-        resourceKey="assessmentRecords"
         onRetry={onRetry}
       />
     </div>

@@ -23,6 +23,7 @@ import type {
   ExtractionReviewTopic,
 } from '../../types/api'
 import { MethodologyLink } from '../analysis-results/MethodologyLink'
+import { splitMaterialAnnotationText } from '../analysis-results/materialRelationships'
 
 type ReviewTab = 'questions' | 'clos' | 'topics' | 'structured'
 type EditableCollection =
@@ -473,8 +474,155 @@ function TopicsPanel({
   )
 }
 
+function MaterialReviewCard({
+  item,
+  annotations,
+  originalMaterial,
+  originalAnnotations,
+  disabled,
+  onChange,
+}: {
+  item: ExtractionReviewSupportingMaterial
+  annotations: ExtractionReviewSupportingAnnotation[]
+  originalMaterial: ExtractionReviewSupportingMaterial | undefined
+  originalAnnotations: ExtractionReviewSupportingAnnotation[]
+  disabled: boolean
+  onChange: (
+    collection: EditableCollection,
+    id: string,
+    patch: Partial<ReviewRecord>,
+  ) => void
+}) {
+  const { t } = useI18n()
+  const labelAnnotation = annotations.find(
+    (annotation) => annotation.annotation_type === 'label',
+  )
+  const captionAnnotation = annotations.find(
+    (annotation) => annotation.annotation_type === 'caption',
+  )
+  const labelParts = labelAnnotation
+    ? splitMaterialAnnotationText(labelAnnotation.original_text)
+    : null
+  const captionParts = captionAnnotation
+    ? splitMaterialAnnotationText(captionAnnotation.original_text)
+    : null
+
+  function setIncluded(included: boolean): void {
+    onChange('supporting_materials', item.source_record_id, { included })
+    for (const annotation of annotations) {
+      onChange('supporting_annotations', annotation.source_record_id, { included })
+    }
+  }
+
+  function restoreMachineValue(): void {
+    if (originalMaterial) {
+      onChange('supporting_materials', item.source_record_id, originalMaterial)
+    }
+    for (const annotation of originalAnnotations) {
+      onChange('supporting_annotations', annotation.source_record_id, annotation)
+    }
+  }
+
+  return (
+    <Card
+      as="article"
+      className="review-record-card review-material-card"
+    >
+      <RecordHeader
+        title={t(item.material_type.replace('_', ' '))}
+        included={item.included}
+        pageNumber={item.page_number}
+        confidence={item.extraction_confidence}
+        disabled={disabled}
+        onIncludedChange={setIncluded}
+        onRestore={restoreMachineValue}
+      />
+      <div className="review-material-fields">
+        <label>
+          {t('Reference label')}
+          <input
+            value={labelParts?.label ?? labelAnnotation?.original_text ?? ''}
+            disabled={disabled || !item.included || !labelAnnotation}
+            dir="auto"
+            className="bidi-plaintext"
+            placeholder={t('No label extracted')}
+            onChange={(event) => {
+              if (labelAnnotation) {
+                onChange('supporting_annotations', labelAnnotation.source_record_id, {
+                  original_text: event.target.value,
+                })
+              }
+            }}
+          />
+        </label>
+        <label className="review-field-wide">
+          {t('Caption or title')}
+          <textarea
+            value={
+              captionParts?.remainder ??
+              captionAnnotation?.original_text ??
+              labelParts?.remainder ??
+              ''
+            }
+            disabled={disabled || !item.included || !captionAnnotation}
+            dir="auto"
+            className="bidi-plaintext"
+            rows={2}
+            placeholder={t('No caption extracted')}
+            onChange={(event) => {
+              if (captionAnnotation) {
+                onChange(
+                  'supporting_annotations',
+                  captionAnnotation.source_record_id,
+                  { original_text: event.target.value },
+                )
+              }
+            }}
+          />
+        </label>
+        {item.source_text && (
+          <label className="review-field-wide">
+            {t('Extracted description')}
+            <textarea
+              value={item.source_text}
+              disabled={disabled || !item.included}
+              dir="auto"
+              className="bidi-plaintext"
+              rows={4}
+              onChange={(event) =>
+                onChange('supporting_materials', item.source_record_id, {
+                  source_text: event.target.value,
+                })
+              }
+            />
+          </label>
+        )}
+      </div>
+      <details className="review-audit-details">
+        <summary>{t('Machine-extracted audit record')}</summary>
+        {originalMaterial?.source_text && (
+          <pre dir="auto" className="bidi-plaintext">
+            {originalMaterial.source_text}
+          </pre>
+        )}
+        {originalAnnotations.map((annotation) => (
+          <p
+            key={annotation.source_record_id}
+            dir="auto"
+            className="bidi-plaintext"
+          >
+            <strong>{t(annotation.annotation_type)}:</strong>{' '}
+            <bdi dir="auto">{annotation.original_text}</bdi>
+          </p>
+        ))}
+      </details>
+    </Card>
+  )
+}
+
 interface StructuredEvidencePanelProps {
   snapshot: ExtractionReviewSnapshot
+  original: ExtractionReviewSnapshot
   disabled: boolean
   onChange: (
     collection: EditableCollection,
@@ -485,6 +633,7 @@ interface StructuredEvidencePanelProps {
 
 function StructuredEvidencePanel({
   snapshot,
+  original,
   disabled,
   onChange,
 }: StructuredEvidencePanelProps) {
@@ -496,63 +645,30 @@ function StructuredEvidencePanel({
   return (
     <div className="review-record-list">
       <h2>{t('Supporting materials')} ({materials.length})</h2>
-      {materials.map((item) => (
-        <Card as="article" key={item.source_record_id} className="review-record-card">
-          <label>
-            <input
-              type="checkbox"
-              checked={item.included}
-              disabled={disabled}
-              onChange={(event) =>
-                onChange('supporting_materials', item.source_record_id, {
-                  included: event.target.checked,
-                })
-              }
-            />
-            {t('Include')} {t(item.material_type.replace('_', ' '))}
-          </label>
-          <p>{t('Page')} {item.page_number} · {t('Confidence')} {Math.round(item.extraction_confidence * 100)}%</p>
-          {item.source_text && (
-            <>
-              <strong>{t('Original source text')}</strong>
-              <pre dir="auto">{item.source_text}</pre>
-            </>
-          )}
-        </Card>
-      ))}
-
-      <h2>{t('Labels and captions')} ({annotations.length})</h2>
-      {annotations.map((item) => (
-        <Card as="article" key={item.source_record_id} className="review-record-card">
-          <label>
-            <input
-              type="checkbox"
-              checked={item.included}
-              disabled={disabled}
-              onChange={(event) =>
-                onChange('supporting_annotations', item.source_record_id, {
-                  included: event.target.checked,
-                })
-              }
-            />
-            {t('Include')} {t(item.annotation_type)}
-          </label>
-          <label>
-            {t('Extracted text')}
-            <textarea
-              value={item.original_text}
-              disabled={disabled || !item.included}
-              dir="auto"
-              className="bidi-plaintext"
-              onChange={(event) =>
-                onChange('supporting_annotations', item.source_record_id, {
-                  original_text: event.target.value,
-                })
-              }
-            />
-          </label>
-        </Card>
-      ))}
+      {materials.map((item) => {
+        const materialAnnotations = annotations.filter(
+          (annotation) =>
+            annotation.material_source_record_id === item.source_record_id,
+        )
+        const originalMaterial = (original.supporting_materials ?? []).find(
+          (candidate) => candidate.source_record_id === item.source_record_id,
+        )
+        const originalAnnotations = (original.supporting_annotations ?? []).filter(
+          (annotation) =>
+            annotation.material_source_record_id === item.source_record_id,
+        )
+        return (
+          <MaterialReviewCard
+            key={item.source_record_id}
+            item={item}
+            annotations={materialAnnotations}
+            originalMaterial={originalMaterial}
+            originalAnnotations={originalAnnotations}
+            disabled={disabled}
+            onChange={onChange}
+          />
+        )
+      })}
 
       <h2>{t('Explicit references')} ({references.length})</h2>
       {references.map((item) => (
@@ -589,25 +705,35 @@ function StructuredEvidencePanel({
         </Card>
       ))}
 
-      <h2>{t('Association candidates')} ({associations.length})</h2>
-      <ul className="review-warning-list">
-        {associations.map((item) => (
-          <li key={item.source_record_id}>
-            {t(item.basis)} · {item.selected ? t('Selected exact target') : t('Review candidate')}
-            {item.ambiguity_reason
-              ? ` · ${
-                  locale === 'ar'
-                    ? t(
-                        item.basis === 'proximity_support'
-                          ? 'Proximity is supporting evidence only.'
-                          : 'Multiple exact targets share this label.',
-                      )
-                    : item.ambiguity_reason
-                }`
-              : ''}
-          </li>
-        ))}
-      </ul>
+      {associations.length > 0 && (
+        <details className="review-audit-details">
+          <summary>
+            {t('Association review details')} ({associations.length})
+          </summary>
+          <ul className="review-warning-list">
+            {associations.map((item) => (
+              <li key={item.source_record_id}>
+                {item.selected
+                  ? t('Uniquely linked material')
+                  : item.basis === 'proximity_support'
+                    ? t('Nearby material suggestion only')
+                    : t('Possible matching material')}
+                {item.ambiguity_reason
+                  ? ` · ${
+                      locale === 'ar'
+                        ? t(
+                            item.basis === 'proximity_support'
+                              ? 'Proximity is supporting evidence only.'
+                              : 'Multiple exact targets share this label.',
+                          )
+                        : item.ambiguity_reason
+                    }`
+                  : ''}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   )
 }
@@ -835,6 +961,7 @@ export function ExtractionReviewWorkspace({
         {activeTab === 'structured' && (
           <StructuredEvidencePanel
             snapshot={draft}
+            original={review.original_snapshot}
             disabled={!review.can_edit}
             onChange={changeRecord}
           />

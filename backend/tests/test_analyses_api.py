@@ -5,6 +5,8 @@ import uuid
 from fastapi.testclient import TestClient
 from helpers import auth_header
 
+from app.services.rules.versioning import CURRENT_CAPABILITY_VERSION
+
 VALID_ANALYSIS_PAYLOAD = {
     "course": {"code": "cpit-450", "name": "Software Engineering"},
     "exam_type": "Midterm",
@@ -25,7 +27,7 @@ def test_create_analysis_returns_201_with_expected_shape(client: TestClient) -> 
     assert body["tp153_uploaded"] is False
     assert body["ready_for_analysis"] is False
     assert body["uploaded_files"] == []
-    assert body["capability_version"] == "v2-b4-structured-evidence"
+    assert body["capability_version"] == CURRENT_CAPABILITY_VERSION
 
 
 def test_create_analysis_missing_auth_header_returns_401(client: TestClient) -> None:

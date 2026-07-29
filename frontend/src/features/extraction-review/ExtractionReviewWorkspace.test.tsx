@@ -139,6 +139,19 @@ describe('ExtractionReviewWorkspace', () => {
         extraction_method: 'direct_text',
         geometry: null,
       },
+      {
+        source_record_id: '60000000-0000-0000-0000-000000000002',
+        included: true,
+        material_source_record_id: '50000000-0000-0000-0000-000000000001',
+        source_document: 'exam',
+        annotation_type: 'caption',
+        original_text: 'Figure 1: Relational Database Schema',
+        normalized_label: 'figure:1',
+        page_number: 2,
+        extraction_confidence: 0.93,
+        extraction_method: 'direct_text',
+        geometry: null,
+      },
     ]
     structuredSnapshot.document_references = [
       {
@@ -183,20 +196,52 @@ describe('ExtractionReviewWorkspace', () => {
     )
 
     fireEvent.click(await screen.findByRole('tab', { name: /materials & references/i }))
-    expect(screen.getByText('Figure 1')).toBeInTheDocument()
+    expect(screen.getByLabelText('Reference label')).toHaveValue('Figure 1')
+    expect(screen.getByLabelText('Caption or title')).toHaveValue(
+      'Relational Database Schema',
+    )
     expect(screen.getByText('Refer to Figure 1')).toBeInTheDocument()
     expect(screen.getByLabelText('Target label')).toHaveValue('Figure 1')
-    expect(screen.getByText(/exact_label/i)).toBeInTheDocument()
-    expect(screen.getByText(/selected exact target/i)).toBeInTheDocument()
+    expect(screen.queryByText(/Labels and captions/i)).not.toBeInTheDocument()
+    expect(screen.getAllByLabelText('Include in analysis')).toHaveLength(1)
+    expect(screen.getByText(/association review details/i)).toBeInTheDocument()
+    expect(screen.getByText(/uniquely linked material/i)).toBeInTheDocument()
   })
 
   it('edits and saves logical Arabic and English annotation text with bidi isolation', async () => {
     const structuredSnapshot = structuredClone(ORIGINAL_SNAPSHOT)
+    structuredSnapshot.supporting_materials = [
+      {
+        source_record_id: '50000000-0000-0000-0000-000000000001',
+        included: true,
+        question_source_record_id: '10000000-0000-0000-0000-000000000001',
+        source_document: 'exam',
+        material_type: 'figure',
+        source_text: '',
+        page_number: 2,
+        extraction_confidence: 0.94,
+        extraction_method: 'direct_text',
+        geometry: null,
+      },
+    ]
     structuredSnapshot.supporting_annotations = [
       {
         source_record_id: '60000000-0000-0000-0000-000000000001',
         included: true,
-        material_source_record_id: null,
+        material_source_record_id: '50000000-0000-0000-0000-000000000001',
+        source_document: 'exam',
+        annotation_type: 'label',
+        original_text: 'الشكل 1',
+        normalized_label: 'figure:1',
+        page_number: 2,
+        extraction_confidence: 0.93,
+        extraction_method: 'direct_text',
+        geometry: null,
+      },
+      {
+        source_record_id: '60000000-0000-0000-0000-000000000002',
+        included: true,
+        material_source_record_id: '50000000-0000-0000-0000-000000000001',
         source_document: 'exam',
         annotation_type: 'caption',
         original_text: 'الشكل 1: Relational Database Schema',
@@ -224,12 +269,21 @@ describe('ExtractionReviewWorkspace', () => {
     render(<ExtractionReviewWorkspace analysisId="analysis-1" onConfirmed={vi.fn()} />)
 
     fireEvent.click(await screen.findByRole('tab', { name: /materials & references/i }))
-    const annotation = screen.getByLabelText('Extracted text')
-    expect(annotation).toHaveValue('الشكل 1: Relational Database Schema')
+    const label = screen.getByLabelText('Reference label')
+    const annotation = screen.getByLabelText('Caption or title')
+    expect(label).toHaveValue('الشكل 1')
+    expect(annotation).toHaveValue('Relational Database Schema')
     expect(annotation).toHaveAttribute('dir', 'auto')
     expect(annotation).toHaveClass('bidi-plaintext')
     fireEvent.change(annotation, {
-      target: { value: 'الشكل 1: Relational Database Schema — reviewed' },
+      target: { value: 'Relational Database Schema — reviewed' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Restore machine value' }))
+    expect(screen.getByLabelText('Caption or title')).toHaveValue(
+      'Relational Database Schema',
+    )
+    fireEvent.change(screen.getByLabelText('Caption or title'), {
+      target: { value: 'Relational Database Schema — reviewed' },
     })
     fireEvent.click(screen.getByRole('button', { name: /save new revision/i }))
 
@@ -240,7 +294,10 @@ describe('ExtractionReviewWorkspace', () => {
         expect.objectContaining({
           supporting_annotations: [
             expect.objectContaining({
-              original_text: 'الشكل 1: Relational Database Schema — reviewed',
+              original_text: 'الشكل 1',
+            }),
+            expect.objectContaining({
+              original_text: 'Relational Database Schema — reviewed',
             }),
           ],
         }),

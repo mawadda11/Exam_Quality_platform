@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as analysesApi from '../../api/analyses'
 import { ApiError } from '../../api/client'
@@ -105,13 +111,12 @@ describe('AnalysisUploadFlow', () => {
 
     expect(screen.getByText('CPIT-450')).toBeInTheDocument()
     expect(screen.getByText(/software engineering/i)).toBeInTheDocument()
-    expect(screen.getByText(/browser will require you to select that file again/i))
-      .toBeInTheDocument()
     expect(
       screen.getByText(
-        /arabic, english, and mixed examination and course specification pdf files are supported/i,
+        'Both documents are required to continue. Unsaved file selections must be selected again after refreshing the page.',
       ),
-    ).toBeInTheDocument()
+    )
+      .toBeInTheDocument()
     expect(
       screen.getByRole('heading', { name: 'Upload Course Specification' }),
     ).toBeInTheDocument()
@@ -121,7 +126,19 @@ describe('AnalysisUploadFlow', () => {
         'Upload the completed official Course Specification PDF, such as a completed TP-153 template.',
       ),
     ).toBeInTheDocument()
-    expect(screen.getAllByText('missing')).toHaveLength(2)
+    expect(screen.getAllByText('Missing')).toHaveLength(2)
+    expect(screen.queryByRole('heading', { name: 'Upload Documents' }))
+      .not.toBeInTheDocument()
+    const examCard = screen
+      .getByRole('heading', { name: 'Examination PDF' })
+      .closest('section')!
+    const courseCard = screen
+      .getByRole('heading', { name: 'Upload Course Specification' })
+      .closest('section')!
+    expect(examCard).toHaveTextContent('Midterm — 2026 Spring')
+    expect(within(examCard).queryByText('CPIT-450')).not.toBeInTheDocument()
+    expect(within(courseCard).getByText('CPIT-450')).toBeInTheDocument()
+    expect(courseCard).not.toHaveTextContent('Midterm — 2026 Spring')
   })
 
   it('renders only backend-confirmed readiness and persisted uploaded files', () => {
@@ -160,7 +177,7 @@ describe('AnalysisUploadFlow', () => {
     ).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'اختيار ملف PDF' }))
       .toHaveLength(2)
-    expect(screen.getAllByText('لم يُرفع')).toHaveLength(2)
+    expect(screen.getAllByText('غير مرفوع')).toHaveLength(2)
     expect(screen.queryByText('تعذر عرض النص المترجم.')).not.toBeInTheDocument()
   })
 

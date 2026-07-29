@@ -138,12 +138,10 @@ export function AnalysisResults({
 
         {section === 'alignment-coverage' && (
           <AlignmentCoverageSection
-            analysis={analysis}
             findings={resources.findings}
             questions={resources.questions}
             clos={resources.clos}
             topics={resources.topics}
-            assessmentRecords={resources.assessmentRecords}
             onRetry={retryResource}
           />
         )}

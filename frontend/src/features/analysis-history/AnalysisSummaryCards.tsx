@@ -8,17 +8,17 @@ export function AnalysisSummaryCards({ analyses }: { analyses: AnalysisResponse[
   const metrics = calculateAnalysisMetrics(analyses)
   return (
     <section className="analysis-summary-grid" aria-label={t('Analysis summary')}>
-      <Card as="article">
-        <h2>{t('Total analyses')}</h2>
+      <Card as="article" className="analysis-summary-card">
         <strong>{metrics.total}</strong>
+        <h2>{t('Total analyses')}</h2>
       </Card>
-      <Card as="article">
-        <h2>{t('Completed analyses')}</h2>
+      <Card as="article" className="analysis-summary-card">
         <strong>{metrics.completed}</strong>
+        <h2>{t('Completed analyses')}</h2>
       </Card>
-      <Card as="article">
-        <h2>{t('Linked reanalyses')}</h2>
+      <Card as="article" className="analysis-summary-card">
         <strong>{metrics.linkedReanalyses}</strong>
+        <h2>{t('Linked reanalyses')}</h2>
       </Card>
     </section>
   )

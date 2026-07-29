@@ -38,6 +38,67 @@
   gap: var(--space-4);
 }
 
+.review-material-card {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.review-material-fields {
+  display: grid;
+  grid-template-columns: minmax(10rem, 0.4fr) minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+.review-material-fields label {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  font-weight: 600;
+}
+
+.review-material-fields input,
+.review-material-fields textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--control-min-height);
+  padding: var(--space-3);
+  color: var(--color-text);
+  font: inherit;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+}
+
+.review-material-fields textarea {
+  resize: vertical;
+}
+
+.review-material-fields input:focus-visible,
+.review-material-fields textarea:focus-visible,
+.review-audit-details > summary:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.review-audit-details {
+  padding-block-start: var(--space-2);
+  border-block-start: var(--border-width) solid var(--color-border);
+}
+
+.review-audit-details > summary {
+  display: flex;
+  min-height: var(--control-min-height);
+  align-items: center;
+  color: var(--color-brand-navy);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.review-audit-details pre {
+  max-width: 100%;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
 .review-record {
   display: grid;
   gap: var(--space-4);
@@ -161,6 +222,10 @@
   }
 
   .review-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .review-material-fields {
     grid-template-columns: 1fr;
   }
 
