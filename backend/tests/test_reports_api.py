@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.domain import AcademicStatus, ProcessingStage
 from app.models.analysis import Analysis
 from app.models.finding import Finding
+from app.models.report import Report
 
 ANALYSIS_PAYLOAD = {
     "course": {"code": "CPIT-450", "name": "Software Engineering"},
@@ -258,3 +259,172 @@ def test_create_report_rejects_unsupported_language(client: TestClient, db_engin
         json={"language": "fr"},
     )
     assert response.status_code == 422
+
+
+def test_report_library_is_bounded_and_owner_filtered(
+    client: TestClient, db_engine: Engine
+) -> None:
+    owner_email = "library-owner@kau.edu.sa"
+    owner_analysis = _create_analysis(client, owner_email)
+    _insert_finding(
+        db_engine,
+        owner_analysis,
+        "REQ018",
+        "RULE018",
+        AcademicStatus.SATISFIED,
+    )
+    _mark_completed(db_engine, owner_analysis)
+    owner_report = client.post(
+        f"/api/v1/analyses/{owner_analysis}/reports",
+        headers=auth_header(owner_email),
+    )
+    assert owner_report.status_code == 201
+
+    no_report_analysis = client.post(
+        "/api/v1/analyses",
+        headers=auth_header(owner_email),
+        json={
+            "course": {"code": "CPIT-451", "name": "Secure Systems"},
+            "exam_type": "Final",
+            "term": "2026 Spring",
+        },
+    )
+    assert no_report_analysis.status_code == 201
+    _mark_completed(db_engine, no_report_analysis.json()["id"])
+
+    incomplete_analysis = client.post(
+        "/api/v1/analyses",
+        headers=auth_header(owner_email),
+        json={
+            "course": {"code": "CPIT-452", "name": "Incomplete Systems"},
+            "exam_type": "Midterm",
+            "term": "2026 Spring",
+        },
+    )
+    assert incomplete_analysis.status_code == 201
+
+    intruder_email = "library-intruder@kau.edu.sa"
+    intruder_analysis = client.post(
+        "/api/v1/analyses",
+        headers=auth_header(intruder_email),
+        json={
+            "course": {"code": "CPIT-499", "name": "Private Capstone"},
+            "exam_type": "Final",
+            "term": "2026 Spring",
+        },
+    )
+    assert intruder_analysis.status_code == 201
+
+    response = client.get(
+        "/api/v1/reports?page=1&page_size=1",
+        headers=auth_header(owner_email),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 2
+    assert body["page"] == 1
+    assert body["page_size"] == 1
+    assert body["total_pages"] == 2
+    assert len(body["items"]) == 1
+
+    all_owner_items = client.get(
+        "/api/v1/reports?page=1&page_size=12",
+        headers=auth_header(owner_email),
+    ).json()["items"]
+    assert {item["analysis"]["id"] for item in all_owner_items} == {
+        owner_analysis,
+        no_report_analysis.json()["id"],
+    }
+    assert {item["status"] for item in all_owner_items} == {
+        "available",
+        "not_generated",
+    }
+    assert all("owner_user_id" not in item["analysis"] for item in all_owner_items)
+    assert all("storage_key" not in (item["report"] or {}) for item in all_owner_items)
+    assert incomplete_analysis.json()["id"] not in {
+        item["analysis"]["id"] for item in all_owner_items
+    }
+    assert "Incomplete Systems" not in str(all_owner_items)
+    assert "Private Capstone" not in str(all_owner_items)
+
+
+def test_report_library_filters_searches_sorts_and_identifies_outdated_snapshots(
+    client: TestClient, db_engine: Engine
+) -> None:
+    email = "library-filter@kau.edu.sa"
+    first_analysis = _create_analysis(client, email)
+    _insert_finding(
+        db_engine,
+        first_analysis,
+        "REQ018",
+        "RULE018",
+        AcademicStatus.SATISFIED,
+    )
+    _mark_completed(db_engine, first_analysis)
+    english_report = client.post(
+        f"/api/v1/analyses/{first_analysis}/reports",
+        headers=auth_header(email),
+    )
+    assert english_report.status_code == 201
+
+    second_analysis_response = client.post(
+        "/api/v1/analyses",
+        headers=auth_header(email),
+        json={
+            "course": {"code": "ACCT-210", "name": "Accounting Systems"},
+            "exam_type": "Final",
+            "term": "2026 Fall",
+        },
+    )
+    second_analysis = second_analysis_response.json()["id"]
+    _insert_finding(
+        db_engine,
+        second_analysis,
+        "REQ019",
+        "RULE019",
+        AcademicStatus.NOT_VERIFIED,
+    )
+    _mark_completed(db_engine, second_analysis)
+    arabic_report = client.post(
+        f"/api/v1/analyses/{second_analysis}/reports",
+        headers=auth_header(email),
+        json={"language": "ar"},
+    )
+    assert arabic_report.status_code == 201
+
+    with Session(db_engine) as session:
+        report = session.execute(
+            select(Report).where(Report.id == uuid.UUID(english_report.json()["id"]))
+        ).scalar_one()
+        report.capability_version = "older-capability"
+        session.commit()
+
+    outdated = client.get(
+        "/api/v1/reports?status=outdated",
+        headers=auth_header(email),
+    )
+    assert outdated.status_code == 200
+    assert outdated.json()["total"] == 1
+    assert outdated.json()["items"][0]["report"]["id"] == english_report.json()["id"]
+    assert outdated.json()["items"][0]["status"] == "outdated"
+
+    insufficient = client.get(
+        "/api/v1/reports?status=insufficient_evidence&language=ar&exam_type=Final",
+        headers=auth_header(email),
+    )
+    assert insufficient.status_code == 200
+    assert insufficient.json()["total"] == 1
+    assert insufficient.json()["items"][0]["report"]["id"] == arabic_report.json()["id"]
+    assert insufficient.json()["items"][0]["status"] == "insufficient_evidence"
+
+    searched = client.get(
+        f"/api/v1/reports?q={arabic_report.json()['id']}&sort=course",
+        headers=auth_header(email),
+    )
+    assert searched.status_code == 200
+    assert searched.json()["total"] == 1
+    assert searched.json()["items"][0]["analysis"]["course_name"] == "Accounting Systems"
+
+
+def test_report_library_requires_authentication(client: TestClient) -> None:
+    assert client.get("/api/v1/reports").status_code == 401

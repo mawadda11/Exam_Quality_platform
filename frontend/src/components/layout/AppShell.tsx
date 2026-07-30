@@ -6,6 +6,7 @@ import { RouteFocusManager } from './RouteFocusManager'
 import { UserAccountPanel } from './UserAccountPanel'
 import { LanguageSwitcher } from '../../i18n/LanguageSwitcher'
 import { useI18n } from '../../i18n/I18nProvider'
+import { SidebarIcon } from './SidebarIcon'
 
 export function AppShell() {
   const { t } = useI18n()
@@ -19,7 +20,7 @@ export function AppShell() {
       <aside className="app-sidebar">
         <BrandMark />
         <Link className="ui-button app-new-analysis-action" to="/analyses/new">
-          <span aria-hidden="true">+</span>
+          <SidebarIcon name="new-analysis" />
           {t('New Analysis')}
         </Link>
         <PrimaryNavigation />

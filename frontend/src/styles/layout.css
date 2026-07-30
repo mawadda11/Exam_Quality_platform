@@ -41,6 +41,7 @@
 
 .app-new-analysis-action {
   width: 100%;
+  gap: var(--space-3);
   color: var(--color-brand-navy);
   background: #5eead4;
   border-color: #5eead4;
@@ -73,12 +74,24 @@
   display: flex;
   min-height: var(--control-min-height);
   align-items: center;
+  gap: var(--space-3);
   padding: var(--space-2) var(--space-4);
   color: #dbeafe;
   font-weight: 600;
   text-decoration: none;
   border: var(--border-width) solid transparent;
   border-radius: var(--radius-lg);
+}
+
+.sidebar-navigation-icon {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: 0 0 1.15rem;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
 }
 
 .primary-navigation-link:hover {

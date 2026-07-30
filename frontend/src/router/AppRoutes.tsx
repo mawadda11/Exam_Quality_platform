@@ -19,6 +19,8 @@ import { DashboardRoute } from '../routes/DashboardRoute'
 import { EvaluationScopeRoute } from '../routes/EvaluationScopeRoute'
 import { NewAnalysisRoute } from '../routes/NewAnalysisRoute'
 import { NotFoundRoute } from '../routes/NotFoundRoute'
+import { ReportPreviewRoute } from '../routes/ReportPreviewRoute'
+import { ReportsRoute } from '../routes/ReportsRoute'
 import { ForgotPasswordRoute } from '../routes/auth/ForgotPasswordRoute'
 import { LoginRoute } from '../routes/auth/LoginRoute'
 import { RegisterRoute } from '../routes/auth/RegisterRoute'
@@ -40,6 +42,8 @@ export function AppRoutes() {
           <Route path="/dashboard" element={<DashboardRoute />} />
           <Route path="/analyses" element={<AnalysesRoute />} />
           <Route path="/analyses/new" element={<NewAnalysisRoute />} />
+          <Route path="/reports" element={<ReportsRoute />} />
+          <Route path="/reports/:reportId/preview" element={<ReportPreviewRoute />} />
           <Route path="/evaluation-scope" element={<EvaluationScopeRoute />} />
           <Route path="/analyses/:analysisId" element={<AnalysisRouteLayout />}>
             <Route index element={<AnalysisIndexRoute />} />

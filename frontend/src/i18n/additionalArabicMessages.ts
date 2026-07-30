@@ -2,6 +2,7 @@ import { BATCH5_ARABIC_MESSAGES } from './batch5ArabicMessages'
 import { BATCH5_REFINEMENT_ARABIC_MESSAGES } from './batch5RefinementArabicMessages'
 import { METHODOLOGY_ARABIC_MESSAGES } from './methodologyArabicMessages'
 import { PILOT_REFINEMENT_ARABIC_MESSAGES } from './pilotRefinementArabicMessages'
+import { REPORTS_ARABIC_MESSAGES } from './reportsArabicMessages'
 
 /**
  * Arabic presentation strings added during the Batch 3 bilingual UX completion.
@@ -563,4 +564,5 @@ export const ADDITIONAL_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
   ...BATCH5_REFINEMENT_ARABIC_MESSAGES,
   ...PILOT_REFINEMENT_ARABIC_MESSAGES,
   ...METHODOLOGY_ARABIC_MESSAGES,
+  ...REPORTS_ARABIC_MESSAGES,
 }

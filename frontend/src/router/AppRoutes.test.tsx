@@ -4,6 +4,7 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as analysesApi from '../api/analyses'
 import * as authApi from '../api/auth'
+import * as reportsApi from '../api/reports'
 import { setStoredAccessToken } from '../api/authToken'
 import { ApiError } from '../api/client'
 import { AuthProvider } from '../features/auth/AuthProvider'
@@ -17,6 +18,7 @@ import { AppRoutes } from './AppRoutes'
 
 vi.mock('../api/analyses')
 vi.mock('../api/auth')
+vi.mock('../api/reports')
 
 const QUEUED_ANALYSIS: AnalysisResponse = {
   id: 'analysis-1',
@@ -183,6 +185,13 @@ beforeEach(() => {
     created_at: '2026-01-01T00:00:00Z',
   })
   vi.mocked(analysesApi.listAnalyses).mockResolvedValue([])
+  vi.mocked(reportsApi.listReportLibrary).mockResolvedValue({
+    items: [],
+    total: 0,
+    page: 1,
+    page_size: 12,
+    total_pages: 0,
+  })
   vi.mocked(analysesApi.getExtractionReview).mockResolvedValue(EXTRACTION_REVIEW)
   mockResults()
 })
@@ -254,6 +263,21 @@ describe('AppRoutes', () => {
       .toHaveTextContent('extracting_tp153')
     expect(analysesApi.listAnalyses).toHaveBeenCalledTimes(1)
     expect(analysesApi.getAnalysisScore).not.toHaveBeenCalled()
+  })
+
+  it('protects and renders the reports library route', async () => {
+    renderAt('/reports')
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Reports' }),
+    ).toBeInTheDocument()
+    expect(reportsApi.listReportLibrary).toHaveBeenCalledWith(
+      expect.objectContaining({ page: 1, page_size: 12 }),
+    )
+    expect(screen.getByRole('link', { name: 'Reports' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
   })
 
   it('shows an API-derived dashboard error without requesting metric details', async () => {
