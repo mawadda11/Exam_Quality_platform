@@ -132,8 +132,6 @@ export function AnalysisResults({
               <QuestionsSection
                 questions={questions}
                 findings={resources.findings}
-                clos={resources.clos}
-                topics={resources.topics}
               />
             )}
           </ResultResourceState>

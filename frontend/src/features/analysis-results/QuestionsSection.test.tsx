@@ -55,6 +55,7 @@ const TOPIC1: TopicResponse = {
   analysis_id: 'analysis-1',
   code: 'TOPIC1',
   text: 'Data structures',
+  expected_hours: null,
   page_number: 2,
   confidence: 0.9,
   geometry: null,
@@ -191,8 +192,6 @@ function renderSection(props: Partial<Parameters<typeof QuestionsSection>[0]> = 
           status: 'ready',
           data: [CHILD_A_FINDING, CHILD_A_CLO_FINDING, CHILD_B_TOPIC_FINDING],
         }}
-        clos={{ status: 'ready', data: [CLO1] }}
-        topics={{ status: 'ready', data: [TOPIC1] }}
         {...props}
       />
     </I18nProvider>,
