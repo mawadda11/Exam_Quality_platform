@@ -395,7 +395,11 @@ describe('AlignmentCoverageSection', () => {
       .toHaveAttribute('dir', 'auto')
     expect(within(dialog).getByText('Design relational database solutions.'))
       .toHaveAttribute('dir', 'auto')
-    expect(within(dialog).getByText('Database design')).toHaveAttribute('dir', 'auto')
+    expect(
+      within(dialog).getByText('Database design', {
+        selector: 'p[dir="auto"]',
+      }),
+    ).toHaveAttribute('dir', 'auto')
     expect(within(dialog).getByText('Suggested CLO')).toBeInTheDocument()
     expect(within(dialog).getByText('Suggested Course Topic')).toBeInTheDocument()
     expect(dialog).not.toHaveTextContent('Original document excerpt')
