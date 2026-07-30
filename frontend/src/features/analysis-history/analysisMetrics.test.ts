@@ -27,7 +27,7 @@ function analysis(id: string, state: ProcessingStage): AnalysisResponse {
 }
 
 describe('calculateAnalysisMetrics', () => {
-  it('calculates only the two approved dashboard metrics', () => {
+  it('calculates the approved dashboard metrics', () => {
     const metrics = calculateAnalysisMetrics([
       analysis('1', 'completed'),
       analysis('2', 'failed'),
@@ -37,6 +37,7 @@ describe('calculateAnalysisMetrics', () => {
 
     expect(metrics.total).toBe(4)
     expect(metrics.completed).toBe(2)
+    expect(metrics.needsAttention).toBe(1)
   })
 
   it('uses the first five backend-ordered records as recent analyses', () => {

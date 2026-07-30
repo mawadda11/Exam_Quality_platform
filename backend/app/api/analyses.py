@@ -810,6 +810,9 @@ def create_report(
         supporting_annotations=supporting_annotations,
         supporting_annotation_texts=reviewed_annotation_texts,
         document_references=document_references,
+        questions=list(analysis.questions),
+        clos=list(analysis.clos),
+        topics=list(analysis.topics),
     )
     pdf_bytes = render_report_pdf(content, language=payload.language)
 

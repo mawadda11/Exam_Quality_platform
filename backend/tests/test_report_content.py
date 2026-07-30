@@ -237,6 +237,336 @@ def test_report_content_preserves_semantic_confidence_and_derived_relationships(
     assert entry.retrieved_knowledge_ids == ("REQ001", "RULE001")
 
 
+def test_relationship_entries_compute_linked_questions_marks_and_coverage_status() -> None:
+    from app.models.clo import Clo
+    from app.models.question import Question
+    from app.models.topic import Topic
+
+    analysis = _analysis()
+    q1 = Question(
+        id=uuid.uuid4(),
+        analysis_id=analysis.id,
+        parent_question_id=None,
+        number_label="Q1",
+        question_text="Explain testing.",
+        page_number=1,
+        marks=5,
+        sequence=1,
+        confidence=1.0,
+    )
+    q2 = Question(
+        id=uuid.uuid4(),
+        analysis_id=analysis.id,
+        parent_question_id=None,
+        number_label="Q2",
+        question_text="Design a schema.",
+        page_number=2,
+        marks=10,
+        sequence=2,
+        confidence=1.0,
+    )
+    clo = Clo(
+        id=uuid.uuid4(),
+        analysis_id=analysis.id,
+        code="CLO1",
+        text="Explain software quality concepts.",
+        page_number=3,
+        confidence=1.0,
+    )
+    topic = Topic(
+        id=uuid.uuid4(),
+        analysis_id=analysis.id,
+        code="T1",
+        text="Software testing",
+        page_number=4,
+        confidence=1.0,
+    )
+
+    q1_evidence = Evidence(
+        id=uuid.uuid4(),
+        analysis_id=analysis.id,
+        source_document=UploadedFileType.EXAM,
+        evidence_type="question_text",
+        page_number=1,
+        item_reference="Q1",
+        extracted_text="Explain testing.",
+        confidence=1.0,
+    )
+    q2_evidence = Evidence(
+        id=uuid.uuid4(),
+        analysis_id=analysis.id,
+        source_document=UploadedFileType.EXAM,
+        evidence_type="question_text",
+        page_number=2,
+        item_reference="Q2",
+        extracted_text="Design a schema.",
+        confidence=1.0,
+    )
+    clo_evidence = Evidence(
+        id=uuid.uuid4(),
+        analysis_id=analysis.id,
+        source_document=UploadedFileType.TP153,
+        evidence_type="clo",
+        page_number=3,
+        item_reference="CLO1",
+        extracted_text=clo.text,
+        confidence=1.0,
+    )
+    topic_evidence = Evidence(
+        id=uuid.uuid4(),
+        analysis_id=analysis.id,
+        source_document=UploadedFileType.TP153,
+        evidence_type="topic",
+        page_number=4,
+        item_reference="T1",
+        extracted_text=topic.text,
+        confidence=1.0,
+    )
+
+    clo_finding = _finding(
+        analysis.id,
+        "REQ001",
+        "RULE001",
+        AcademicStatus.PARTIALLY_SATISFIED,
+        evidence=[q1_evidence, q2_evidence, clo_evidence],
+    )
+    clo_finding.evaluation_details = {
+        "schema_version": 1,
+        "decision": "Partially Satisfied",
+        "evidence_used": [str(q1_evidence.id), str(q2_evidence.id), str(clo_evidence.id)],
+        "reasoning": "Mixed support.",
+        "recommendation": None,
+        "confidence_basis": [],
+        "item_judgments": [
+            {
+                "source_evidence_id": str(q1_evidence.id),
+                "target_evidence_ids": [str(clo_evidence.id)],
+                "status": "Satisfied",
+                "reasoning": "Q1 fully supports CLO1.",
+            },
+            {
+                "source_evidence_id": str(q2_evidence.id),
+                "target_evidence_ids": [str(clo_evidence.id)],
+                "status": "Not Satisfied",
+                "reasoning": "Q2 does not support CLO1.",
+            },
+        ],
+        "retrieved_knowledge_ids": [],
+    }
+
+    topic_finding = _finding(
+        analysis.id,
+        "REQ007",
+        "RULE007",
+        AcademicStatus.SATISFIED,
+        evidence=[q1_evidence, topic_evidence],
+    )
+    topic_finding.evaluation_details = {
+        "schema_version": 1,
+        "decision": "Satisfied",
+        "evidence_used": [str(q1_evidence.id), str(topic_evidence.id)],
+        "reasoning": "Direct match.",
+        "recommendation": None,
+        "confidence_basis": [],
+        "item_judgments": [
+            {
+                "source_evidence_id": str(q1_evidence.id),
+                "target_evidence_ids": [str(topic_evidence.id)],
+                "status": "Satisfied",
+                "reasoning": "Q1 directly assesses this topic.",
+            },
+        ],
+        "retrieved_knowledge_ids": [],
+    }
+
+    content = assemble_report_content(
+        analysis,
+        [clo_finding, topic_finding],
+        KB_SOURCE,
+        GENERATED_AT,
+        questions=[q1, q2],
+        clos=[clo],
+        topics=[topic],
+    )
+
+    assert len(content.clo_entries) == 1
+    clo_entry = content.clo_entries[0]
+    assert clo_entry.identifier == "CLO1"
+    # Both Q1 (Satisfied) and Q2 (Not Satisfied) judged CLO1 - both are "linked"
+    # for display, but only Q1's marks count toward total_marks.
+    assert clo_entry.linked_question_labels == ("Q1", "Q2")
+    assert clo_entry.total_marks == 5
+    assert clo_entry.coverage_status is AcademicStatus.SATISFIED
+
+    assert len(content.topic_entries) == 1
+    topic_entry = content.topic_entries[0]
+    assert topic_entry.identifier == "T1"
+    assert topic_entry.linked_question_labels == ("Q1",)
+    assert topic_entry.total_marks == 5
+    assert topic_entry.coverage_status is AcademicStatus.SATISFIED
+    # Both records here have real codes, so neither identifier fell back to
+    # source text.
+    assert clo_entry.identifier_is_source_text is False
+    assert topic_entry.identifier_is_source_text is False
+
+
+def test_topic_entry_identifier_falls_back_to_source_text_only_without_a_code() -> None:
+    """An uncoded topic's identifier is its full extracted text, flagged so
+    the report renderer knows to apply the report-language display rule to
+    it - unlike a genuine short code, which is always shown as-is."""
+    from app.models.topic import Topic
+
+    analysis = _analysis()
+    coded_topic = Topic(
+        id=uuid.uuid4(),
+        analysis_id=analysis.id,
+        code="T1",
+        text="Software testing",
+        page_number=1,
+        confidence=1.0,
+    )
+    uncoded_topic = Topic(
+        id=uuid.uuid4(),
+        analysis_id=analysis.id,
+        code=None,
+        text="Database normalization",
+        page_number=2,
+        confidence=1.0,
+    )
+
+    content = assemble_report_content(
+        analysis,
+        [],
+        KB_SOURCE,
+        GENERATED_AT,
+        topics=[coded_topic, uncoded_topic],
+    )
+
+    entries_by_identifier = {entry.identifier: entry for entry in content.topic_entries}
+    assert entries_by_identifier["T1"].identifier_is_source_text is False
+    assert entries_by_identifier["Database normalization"].identifier_is_source_text is True
+
+
+def test_relationship_entries_default_to_not_satisfied_when_no_judgment_cites_the_record() -> None:
+    from app.models.clo import Clo
+
+    analysis = _analysis()
+    clo = Clo(
+        id=uuid.uuid4(),
+        analysis_id=analysis.id,
+        code="CLO9",
+        text="Uncited outcome.",
+        page_number=1,
+        confidence=1.0,
+    )
+
+    content = assemble_report_content(
+        analysis,
+        [],
+        KB_SOURCE,
+        GENERATED_AT,
+        clos=[clo],
+    )
+
+    assert len(content.clo_entries) == 1
+    assert content.clo_entries[0].coverage_status is AcademicStatus.NOT_SATISFIED
+    assert content.clo_entries[0].linked_question_labels == ()
+    assert content.clo_entries[0].total_marks == 0
+
+
+def test_exam_summary_matches_marks_and_structure_totals() -> None:
+    """Regression test: the Exam Summary's declared/calculated totals must
+    equal what RULE018's own Marks & Structure finding reports for the same
+    exam - it must never show "missing" while Marks & Structure shows 40/40.
+
+    Reproduces the real extraction pipeline shape: the persisted
+    declared_total evidence carries item_reference="total" (a constant
+    marker, not the number) and the number embedded in extracted_text
+    (e.g. "Total Marks: 40"); no "calculated_total" evidence is ever
+    persisted (app.services.rules.marks_total never creates one), so the
+    calculated total must be derived from scorable leaf marks instead.
+    """
+    from app.models.question import Question
+
+    analysis = _analysis()
+    parent = Question(
+        id=uuid.uuid4(),
+        analysis_id=analysis.id,
+        parent_question_id=None,
+        number_label="Q1",
+        question_text="Answer both parts.",
+        page_number=1,
+        marks=40,
+        sequence=1,
+        confidence=1.0,
+    )
+    child = Question(
+        id=uuid.uuid4(),
+        analysis_id=analysis.id,
+        parent_question_id=parent.id,
+        number_label="Q1(a)",
+        question_text="Explain normalization.",
+        page_number=1,
+        marks=40,
+        sequence=2,
+        confidence=1.0,
+    )
+    declared_evidence = Evidence(
+        id=uuid.uuid4(),
+        analysis_id=analysis.id,
+        source_document=UploadedFileType.EXAM,
+        evidence_type="declared_total",
+        page_number=1,
+        item_reference="total",
+        extracted_text="Total Marks: 40",
+        confidence=1.0,
+    )
+    marks_finding = _finding(
+        analysis.id,
+        "REQ018",
+        "RULE018",
+        AcademicStatus.SATISFIED,
+        evidence=[declared_evidence],
+    )
+
+    content = assemble_report_content(
+        analysis,
+        [marks_finding],
+        KB_SOURCE,
+        GENERATED_AT,
+        questions=[parent, child],
+    )
+
+    assert content.exam_summary is not None
+    assert content.exam_summary.scorable_question_count == 1
+    assert content.exam_summary.declared_total_marks == 40
+    assert content.exam_summary.calculated_total_marks == 40
+
+
+def test_exam_summary_leaves_marks_totals_null_without_a_marks_finding() -> None:
+    content = assemble_report_content(_analysis(), [], KB_SOURCE, GENERATED_AT)
+
+    assert content.exam_summary is not None
+    assert content.exam_summary.declared_total_marks is None
+    assert content.exam_summary.calculated_total_marks is None
+    assert content.exam_summary.scorable_question_count == 0
+
+
+def test_strengths_and_areas_for_improvement_properties() -> None:
+    analysis = _analysis()
+    findings = [
+        _finding(analysis.id, "REQ001", "RULE001", AcademicStatus.SATISFIED),
+        _finding(analysis.id, "REQ005", "RULE005", AcademicStatus.PARTIALLY_SATISFIED),
+        _finding(analysis.id, "REQ007", "RULE007", AcademicStatus.NOT_SATISFIED),
+        _finding(analysis.id, "REQ009", "RULE009", AcademicStatus.NOT_VERIFIED),
+    ]
+
+    content = assemble_report_content(analysis, findings, KB_SOURCE, GENERATED_AT)
+
+    assert [f.requirement_id for f in content.strengths] == ["REQ001"]
+    assert [f.requirement_id for f in content.areas_for_improvement] == ["REQ005", "REQ007"]
+
+
 def test_report_content_includes_assessment_records_and_runtime_coverage() -> None:
     from app.models.assessment_record import AssessmentRecord
     from app.services.rules.coverage_audit import build_rule_coverage_audit

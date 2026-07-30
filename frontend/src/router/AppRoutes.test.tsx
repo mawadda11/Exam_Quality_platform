@@ -204,12 +204,19 @@ describe('AppRoutes', () => {
     expect(screen.getByLabelText('Current route')).toHaveTextContent('/dashboard')
   })
 
-  it('builds dashboard metrics from one history request without score or detail calls', async () => {
+  it('builds dashboard metrics from one history request and one lightweight reports count, without score or detail calls', async () => {
     vi.mocked(analysesApi.listAnalyses).mockResolvedValue([
       COMPLETED_ANALYSIS,
       { ...QUEUED_ANALYSIS, id: 'analysis-2', state: 'validating' },
-      { ...QUEUED_ANALYSIS, id: 'analysis-3' },
+      { ...QUEUED_ANALYSIS, id: 'analysis-3', state: 'failed' },
     ])
+    vi.mocked(reportsApi.listReportLibrary).mockResolvedValue({
+      items: [],
+      total: 5,
+      page: 1,
+      page_size: 1,
+      total_pages: 5,
+    })
 
     renderAt('/dashboard')
 
@@ -219,10 +226,25 @@ describe('AppRoutes', () => {
     const completedCard = screen
       .getByRole('heading', { name: 'Completed analyses' })
       .closest('article')
+    const attentionCard = screen
+      .getByRole('heading', { name: 'Analyses needing attention' })
+      .closest('article')
+    const reportsCard = screen
+      .getByRole('heading', { name: 'Reports available' })
+      .closest('article')
 
     expect(totalCard && within(totalCard).getByText('3')).toBeInTheDocument()
     expect(completedCard && within(completedCard).getByText('1')).toBeInTheDocument()
+    expect(attentionCard && within(attentionCard).getByText('1')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(reportsCard && within(reportsCard).getByText('5')).toBeInTheDocument(),
+    )
     expect(analysesApi.listAnalyses).toHaveBeenCalledTimes(1)
+    expect(reportsApi.listReportLibrary).toHaveBeenCalledWith({
+      status: 'available',
+      page: 1,
+      page_size: 1,
+    })
     expect(analysesApi.getAnalysis).not.toHaveBeenCalled()
     expect(analysesApi.getAnalysisScore).not.toHaveBeenCalled()
   })

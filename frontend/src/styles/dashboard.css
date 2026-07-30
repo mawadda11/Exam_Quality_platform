@@ -1,6 +1,6 @@
 .analysis-summary-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-4);
 }
 
@@ -8,6 +8,18 @@
   display: grid;
   gap: var(--space-1);
   padding: var(--space-4);
+}
+
+.analysis-summary-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  margin-block-end: var(--space-1);
+  color: var(--color-brand-teal-strong);
+  background: var(--color-brand-teal-subtle);
+  border-radius: var(--radius-md);
 }
 
 .analysis-summary-card h2 {

@@ -32,7 +32,7 @@ interface StructuredData {
   questions: QuestionResponse[]
 }
 
-const RESULT_LABELS: Record<MaterialRelationshipResult, string> = {
+export const RESULT_LABELS: Record<MaterialRelationshipResult, string> = {
   linked: 'Linked',
   missing: 'Missing reference',
   ambiguous: 'Ambiguous reference',

@@ -14,10 +14,11 @@ from app.services.reporting.content import (
     ReportContent,
     ReportDocumentReferenceEntry,
     ReportFindingEntry,
+    ReportRelationshipEntry,
     ReportSupportingAnnotationEntry,
     ReportSupportingMaterialEntry,
 )
-from app.services.reporting.pdf import render_report_pdf
+from app.services.reporting.pdf import _source_text, render_report_pdf
 
 GENERATED_AT = datetime(2026, 7, 24, 12, 0, tzinfo=UTC)
 
@@ -119,10 +120,12 @@ def test_structured_evidence_is_present_in_english_and_arabic_reports() -> None:
     arabic_text = _pdf_text(arabic)
 
     for text in (english_text, arabic_text):
-        assert "SELECT student_id FROM results" in text
-        assert "Relational Database Schema" in text
         assert "Refer to Figure 1" in text
-        assert "v2-b4-structured-evidence" in text
+        # Full code/table/caption excerpts stay in audit storage and are not
+        # repeated in the concise faculty appendix.
+        assert "SELECT student_id FROM results" not in text
+        assert "Relational Database Schema" not in text
+        assert "v2-b4-structured-evidence" not in text
         assert "Question Type Distribution" not in text
         assert "Automatic question types" not in text
     assert english != arabic
@@ -272,10 +275,104 @@ def test_render_report_pdf_keeps_internal_assessments_and_coverage_out_of_user_r
 
     assert pdf_bytes.startswith(b"%PDF")
     assert pdf_bytes.rstrip().endswith(b"%%EOF")
-    assert "Evidence-linked item judgments" in text
+    assert "Technical Traceability Appendix" not in text
+    assert "Evidence-linked item judgments" not in text
     assert "TP-153 Assessment Source Records" not in text
     assert "Rule Execution Coverage" not in text
     assert "Earned credit:" not in text
+    assert "Q1 | Exam" not in text
+    assert "CLO1 | TP-153" not in text
+
+
+def test_render_report_pdf_omits_judgment_inventory_with_many_judgments() -> None:
+    """The faculty PDF never repeats the technical judgment inventory."""
+    from dataclasses import replace
+
+    from app.services.reporting.content import ReportItemJudgment
+
+    source = EvidenceCitation(
+        id=uuid.uuid4(),
+        source_document=UploadedFileType.EXAM,
+        evidence_type="question_text",
+        page_number=1,
+        item_reference="Q1",
+    )
+    target = EvidenceCitation(
+        id=uuid.uuid4(),
+        source_document=UploadedFileType.TP153,
+        evidence_type="clo",
+        page_number=3,
+        item_reference="CLO1",
+    )
+    judgments = tuple(
+        ReportItemJudgment(
+            source_evidence_id=source.id,  # type: ignore[arg-type]
+            source_evidence=source,
+            target_evidence_ids=(target.id,),  # type: ignore[arg-type]
+            target_evidence=(target,),
+            unresolved_target_evidence_ids=(),
+            status=AcademicStatus.SATISFIED,
+            reasoning=f"Judgment {i}.",
+        )
+        for i in range(12)
+    )
+    entry = replace(_finding_entry(), item_judgments=judgments, evidence=(source, target))
+
+    pdf_bytes = render_report_pdf(_content(findings=(entry,)))
+    text = _pdf_text(pdf_bytes)
+
+    assert "Technical Traceability Appendix" not in text
+    assert "evidence-linked item judgments" not in text
+    assert "Q1 | Exam" not in text
+    assert "Source evidence" not in text
+    assert "Target evidence" not in text
+
+
+def test_render_report_pdf_omits_capability_versions_from_faculty_reports() -> None:
+    for capability_version in ("v2-b6-question-types", "v2-pilot-correctness"):
+        pdf_bytes = render_report_pdf(_content(capability_version=capability_version))
+        text = _pdf_text(pdf_bytes)
+
+        assert capability_version not in text
+        assert "Capability:" not in text
+        assert "Not applicable (legacy analysis)" not in text
+
+
+def test_render_report_pdf_preserves_source_language_independent_of_report_language() -> None:
+    content = _content(
+        clo_entries=(
+            ReportRelationshipEntry(
+                identifier="CLO1",
+                text="يشرح مفاهيم قواعد البيانات العلائقية",
+                linked_question_labels=("Q1",),
+                total_marks=5,
+                coverage_status=AcademicStatus.SATISFIED,
+            ),
+        ),
+        topic_entries=(
+            ReportRelationshipEntry(
+                identifier="English source topic",
+                text="English source topic",
+                linked_question_labels=("Q1",),
+                total_marks=5,
+                coverage_status=AcademicStatus.SATISFIED,
+                identifier_is_source_text=True,
+            ),
+        ),
+    )
+
+    english_text = _pdf_text(render_report_pdf(content, language=ReportLanguage.ENGLISH))
+    arabic_text = _pdf_text(render_report_pdf(content, language=ReportLanguage.ARABIC))
+
+    # Arabic glyph extraction from a rendered PDF is renderer-dependent,
+    # especially when HarfBuzz is unavailable. Verify the preservation rule
+    # directly and use a Latin source string for the cross-language PDF check.
+    assert _source_text("يشرح مفاهيم قواعد البيانات العلائقية", "fallback") == (
+        "يشرح مفاهيم قواعد البيانات العلائقية"
+    )
+    assert "English source topic" in arabic_text
+    assert "Not available in this report language" not in english_text
+    assert "غير متاح بلغة هذا التقرير" not in arabic_text
 
 
 def test_render_report_pdf_supports_arabic_and_mixed_unicode_evidence() -> None:
@@ -312,6 +409,169 @@ def test_render_report_pdf_supports_arabic_and_mixed_unicode_evidence() -> None:
     assert pdf_bytes.startswith(b"%PDF")
     assert pdf_bytes.rstrip().endswith(b"%%EOF")
     assert len(pdf_bytes) > 0
+
+
+def test_render_report_pdf_uses_numbered_sections_matching_the_web_report() -> None:
+    pdf_bytes = render_report_pdf(_content())
+    text = _pdf_text(pdf_bytes)
+
+    for heading in (
+        "1. Report Header",
+        "2. Executive Summary",
+        "3. Overall Exam Quality Score",
+        "4. Status Distribution",
+        "5. Exam Summary",
+        "6. CLO Analysis",
+        "7. Topic Analysis",
+        "8. Marks & Structure",
+        "9. Materials & References",
+        "10. Key Findings",
+        "11. Missing or Unverified Evidence",
+        "12. Recommendations",
+        "13. Scope Disclaimer",
+    ):
+        assert heading in text, f"missing section heading: {heading}"
+
+
+def test_render_report_pdf_omits_technical_provenance_from_faculty_report() -> None:
+    entry = _finding_entry(
+        requirement_id="REQ001",
+        rule_id="RULE001",
+        status=AcademicStatus.SATISFIED,
+    )
+    from dataclasses import replace
+
+    entry = replace(
+        entry,
+        ai_provider="anthropic",
+        ai_model="claude-governed-v1",
+        prompt_template_version="semantic-rule-v3",
+    )
+    text = _pdf_text(render_report_pdf(_content(findings=(entry,))))
+
+    assert "Technical Traceability Appendix" not in text
+    assert "anthropic" not in text
+    assert "claude-governed-v1" not in text
+    assert "semantic-rule-v3" not in text
+
+
+def test_render_report_pdf_shows_clo_and_topic_analysis_tables() -> None:
+    from app.services.reporting.content import ReportRelationshipEntry
+
+    content = _content(
+        clo_entries=(
+            ReportRelationshipEntry(
+                identifier="CLO1",
+                text="Explain fundamental computing concepts.",
+                linked_question_labels=("Q1", "Q2"),
+                total_marks=10,
+                coverage_status=AcademicStatus.SATISFIED,
+            ),
+        ),
+        topic_entries=(
+            ReportRelationshipEntry(
+                identifier="T1",
+                text="Software testing",
+                linked_question_labels=(),
+                total_marks=0,
+                coverage_status=AcademicStatus.NOT_SATISFIED,
+            ),
+        ),
+    )
+    pdf_bytes = render_report_pdf(content)
+    # A wrapped table cell's second line is extracted by pdfplumber on its
+    # own text band below the row's single-line cells, so the visually
+    # correct wrapped sentence is not always one contiguous plaintext
+    # substring - check both halves rather than the full phrase.
+    text = " ".join(_pdf_text(pdf_bytes).split())
+
+    assert "CLO1" in text
+    assert "Explain fundamental" in text
+    assert "computing concepts." in text
+    assert "T1" in text
+
+
+def test_render_report_pdf_topic_table_has_no_duplicate_clo_text_column() -> None:
+    """Regression test: the Topic Analysis table must use exactly
+    Topic | Linked Questions | Total Marks | Coverage Status - no separate
+    text/description column duplicated (and mislabelled "CLO text") from the
+    CLO table."""
+    from app.services.reporting.content import ReportRelationshipEntry
+
+    content = _content(
+        topic_entries=(
+            ReportRelationshipEntry(
+                identifier="T1",
+                text="Software testing and quality assurance practices.",
+                linked_question_labels=("Q1",),
+                total_marks=5,
+                coverage_status=AcademicStatus.SATISFIED,
+            ),
+        ),
+    )
+    pdf_bytes = render_report_pdf(content)
+    text = " ".join(_pdf_text(pdf_bytes).split())
+    topic_section = text[text.index("7. Topic Analysis") : text.index("8. Marks")]
+
+    # Header cells can wrap onto two lines, which pdfplumber extracts as
+    # separate text bands interleaved with other cells - check word
+    # fragments rather than full contiguous phrases.
+    assert "T1" in topic_section
+    assert "Linked" in topic_section
+    assert "questions" in topic_section
+    assert "Total marks" in topic_section
+    assert "Coverage" in topic_section
+    assert "status" in topic_section
+    assert "CLO text" not in topic_section
+    assert "Software testing" not in topic_section
+
+
+def test_render_report_pdf_preserves_uncoded_topic_source_text_in_any_report_language() -> None:
+    """Source-document topic text remains in its original language even when
+    the report interface language differs."""
+    from app.services.reporting.content import ReportRelationshipEntry
+
+    content = _content(
+        topic_entries=(
+            ReportRelationshipEntry(
+                identifier="خوارزميات الفرز",
+                text="خوارزميات الفرز",
+                linked_question_labels=(),
+                total_marks=0,
+                coverage_status=AcademicStatus.NOT_SATISFIED,
+                identifier_is_source_text=True,
+            ),
+        ),
+    )
+    pdf_bytes = render_report_pdf(content)
+    text = " ".join(_pdf_text(pdf_bytes).split())
+
+    assert "خوارزميات الفرز" in text
+    assert "Not available in this report" not in text
+
+
+def test_render_report_pdf_never_contains_question_type_content() -> None:
+    pdf_bytes = render_report_pdf(_content(findings=(_finding_entry(),)))
+    text = _pdf_text(pdf_bytes)
+
+    assert "Question Type" not in text
+    assert "question-type" not in text.lower()
+
+
+def test_render_report_pdf_arabic_keeps_provider_details_out_of_the_primary_body() -> None:
+    # pdfplumber does not reliably round-trip HarfBuzz-shaped Arabic glyph
+    # order back to logical text, so - matching the existing Arabic PDF
+    # tests in this file - this checks PDF validity plus the always-Latin
+    # provider/model strings rather than asserting extracted Arabic text.
+    from dataclasses import replace
+
+    entry = replace(_finding_entry(), ai_provider="anthropic", ai_model="claude")
+    pdf_bytes = render_report_pdf(_content(findings=(entry,)), language=ReportLanguage.ARABIC)
+
+    assert pdf_bytes.startswith(b"%PDF")
+    text = _pdf_text(pdf_bytes)
+    assert "anthropic" not in text
+    assert "claude" not in text
 
 
 def test_report_renderer_enables_harfbuzz_and_detects_arabic_paragraphs(monkeypatch) -> None:

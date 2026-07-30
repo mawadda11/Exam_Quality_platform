@@ -11,6 +11,7 @@ relationships independently.
 from __future__ import annotations
 
 import uuid
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -25,18 +26,23 @@ from app.core.domain import (
 )
 from app.models.analysis import Analysis
 from app.models.assessment_record import AssessmentRecord
+from app.models.clo import Clo
 from app.models.document_reference import DocumentReference
 from app.models.finding import Finding
+from app.models.question import Question
 from app.models.supporting_material import SupportingMaterial
 from app.models.supporting_material_annotation import SupportingMaterialAnnotation
+from app.models.topic import Topic
 from app.schemas.finding import FindingEvaluationDetails
 from app.schemas.rule_coverage import RuleCoverageAuditResponse
+from app.services.extraction.line_classification import parse_declared_total
 from app.services.knowledge_base.manifest import KB_VERSION
 from app.services.knowledge_base.reference_data import (
     RecommendationDisplay,
     get_controlled_recommendations,
     get_requirement_display,
 )
+from app.services.rules.question_hierarchy import scorable_leaves
 from app.services.rules.scoring import calculate_overall_score, count_statuses
 from app.services.rules.versioning import (
     LEGACY_CAPABILITY_VERSION,
@@ -106,6 +112,37 @@ class ReportDocumentReferenceEntry:
 
 
 @dataclass(frozen=True)
+class ReportRelationshipEntry:
+    """One CLO or topic row for the report's CLO/Topic Analysis tables.
+
+    Mirrors the same worst-status-wins rollup and Satisfied/Partially
+    Satisfied marks criterion already used by the frontend Alignment &
+    Coverage page, computed here from the same governed RULE001/RULE007
+    item judgments rather than recalculated independently.
+    """
+
+    identifier: str
+    text: str
+    linked_question_labels: tuple[str, ...]
+    total_marks: float
+    coverage_status: AcademicStatus
+    # True when `identifier` had to fall back to the full source text because
+    # no short code was available (e.g. an uncoded course topic) - the report
+    # renderer applies the report-language display rule only in that case,
+    # never to a genuine short code such as "CLO1".
+    identifier_is_source_text: bool = False
+
+
+@dataclass(frozen=True)
+class ReportExamSummary:
+    scorable_question_count: int
+    declared_total_marks: float | None
+    calculated_total_marks: float | None
+    supporting_material_count: int
+    missing_or_ambiguous_reference_count: int
+
+
+@dataclass(frozen=True)
 class ReportFindingEntry:
     requirement_id: str
     rule_id: str
@@ -159,11 +196,23 @@ class ReportContent:
     supporting_annotations: tuple[ReportSupportingAnnotationEntry, ...] = ()
     document_references: tuple[ReportDocumentReferenceEntry, ...] = ()
     capability_version: str = LEGACY_CAPABILITY_VERSION
+    clo_entries: tuple[ReportRelationshipEntry, ...] = ()
+    topic_entries: tuple[ReportRelationshipEntry, ...] = ()
+    exam_summary: ReportExamSummary | None = None
 
     @property
     def missing_evidence(self) -> tuple[ReportFindingEntry, ...]:
         # Not Verified remains visible but is excluded from the denominator.
         return tuple(f for f in self.findings if f.status is AcademicStatus.NOT_VERIFIED)
+
+    @property
+    def strengths(self) -> tuple[ReportFindingEntry, ...]:
+        return tuple(f for f in self.findings if f.status is AcademicStatus.SATISFIED)
+
+    @property
+    def areas_for_improvement(self) -> tuple[ReportFindingEntry, ...]:
+        attention = {AcademicStatus.PARTIALLY_SATISFIED, AcademicStatus.NOT_SATISFIED}
+        return tuple(f for f in self.findings if f.status in attention)
 
     @property
     def earned_credit(self) -> Decimal:
@@ -313,6 +362,139 @@ def _document_reference_entry(
     )
 
 
+# Best-to-worst is deliberately the reverse of scoring precedence: a single
+# Satisfied relationship is enough to call a CLO/topic covered, matching the
+# same worst-status-wins-only-when-nothing-better-exists rollup already used
+# by the frontend Alignment & Coverage page's coverageStatus().
+_COVERAGE_STATUS_BEST_FIRST = (
+    AcademicStatus.SATISFIED,
+    AcademicStatus.PARTIALLY_SATISFIED,
+    AcademicStatus.NOT_VERIFIED,
+    AcademicStatus.NOT_APPLICABLE,
+)
+_MARKS_CONTRIBUTING_STATUSES = {AcademicStatus.SATISFIED, AcademicStatus.PARTIALLY_SATISFIED}
+
+
+def _coverage_status(statuses: Sequence[AcademicStatus]) -> AcademicStatus:
+    for candidate in _COVERAGE_STATUS_BEST_FIRST:
+        if candidate in statuses:
+            return candidate
+    return AcademicStatus.NOT_SATISFIED
+
+
+def _relationship_entries(
+    records: Sequence[tuple[str, str, bool]],
+    questions: Sequence[Question],
+    findings: Sequence[Finding],
+    *,
+    rule_id: str,
+    target_evidence_type: str,
+) -> tuple[ReportRelationshipEntry, ...]:
+    marks_by_label = {q.number_label: (q.marks or 0.0) for q in scorable_leaves(questions)}
+    sequence_by_label = {q.number_label: q.sequence for q in questions}
+    matches: dict[str, list[tuple[str, AcademicStatus]]] = defaultdict(list)
+
+    for finding in findings:
+        if finding.rule_id != rule_id or finding.evaluation_details is None:
+            continue
+        details = FindingEvaluationDetails.model_validate(finding.evaluation_details, strict=False)
+        evidence_by_id = {link.evidence.id: link.evidence for link in finding.evidence_links}
+        for judgment in details.item_judgments:
+            source = evidence_by_id.get(judgment.source_evidence_id)
+            if source is None or source.evidence_type != "question_text":
+                continue
+            for target_id in judgment.target_evidence_ids:
+                target = evidence_by_id.get(target_id)
+                if target is None or target.evidence_type != target_evidence_type:
+                    continue
+                matches[target.item_reference].append((source.item_reference, judgment.status))
+
+    entries: list[ReportRelationshipEntry] = []
+    for identifier, text, identifier_is_source_text in records:
+        pairs = matches.get(identifier, [])
+        linked_labels = sorted(
+            dict.fromkeys(label for label, _ in pairs),
+            key=lambda label: sequence_by_label.get(label, len(sequence_by_label)),
+        )
+        supported_labels = {
+            label for label, status in pairs if status in _MARKS_CONTRIBUTING_STATUSES
+        }
+        total_marks = sum(marks_by_label.get(label, 0.0) for label in supported_labels)
+        coverage_status = (
+            _coverage_status([status for _, status in pairs])
+            if pairs
+            else AcademicStatus.NOT_SATISFIED
+        )
+        entries.append(
+            ReportRelationshipEntry(
+                identifier=identifier,
+                text=text,
+                linked_question_labels=tuple(linked_labels),
+                total_marks=total_marks,
+                coverage_status=coverage_status,
+                identifier_is_source_text=identifier_is_source_text,
+            )
+        )
+    return tuple(entries)
+
+
+def _marks_totals_from_findings(
+    findings: Sequence[Finding],
+    questions: Sequence[Question],
+) -> tuple[float | None, float | None]:
+    """Declared total is parsed from the RULE018 finding's own linked
+    declared-total evidence text; calculated total is the sum of scorable
+    leaf marks. This mirrors RULE018's own arithmetic exactly (see
+    app.services.rules.marks_total.evaluate_marks_and_total) so the Exam
+    Summary always agrees with the Marks & Structure narrative for the same
+    finding, instead of independently recomputing or misreading evidence
+    fields.
+    """
+    marks_finding = next((f for f in findings if f.rule_id == "RULE018"), None)
+    if marks_finding is None:
+        return None, None
+    declared_total_evidence = next(
+        (
+            link.evidence
+            for link in marks_finding.evidence_links
+            if link.evidence.evidence_type == "declared_total"
+        ),
+        None,
+    )
+    declared = (
+        None
+        if declared_total_evidence is None
+        else parse_declared_total(declared_total_evidence.extracted_text)
+    )
+    leaves = scorable_leaves(questions)
+    calculated = (
+        None
+        if not leaves or any(leaf.marks is None for leaf in leaves)
+        else float(sum((Decimal(str(leaf.marks)) for leaf in leaves), start=Decimal("0")))
+    )
+    return declared, calculated
+
+
+def _build_exam_summary(
+    questions: Sequence[Question],
+    findings: Sequence[Finding],
+    supporting_materials: Sequence[SupportingMaterial],
+    document_references: Sequence[ReportDocumentReferenceEntry],
+) -> ReportExamSummary:
+    declared, calculated = _marks_totals_from_findings(findings, questions)
+    return ReportExamSummary(
+        scorable_question_count=len(scorable_leaves(questions)),
+        declared_total_marks=declared,
+        calculated_total_marks=calculated,
+        supporting_material_count=len(supporting_materials),
+        missing_or_ambiguous_reference_count=sum(
+            1
+            for reference in document_references
+            if reference.resolution_status in {"ambiguous", "unresolved"}
+        ),
+    )
+
+
 def assemble_report_content(
     analysis: Analysis,
     findings: Sequence[Finding],
@@ -325,11 +507,35 @@ def assemble_report_content(
     supporting_annotations: Sequence[SupportingMaterialAnnotation] = (),
     supporting_annotation_texts: Mapping[uuid.UUID, str] | None = None,
     document_references: Sequence[DocumentReference] = (),
+    questions: Sequence[Question] = (),
+    clos: Sequence[Clo] = (),
+    topics: Sequence[Topic] = (),
 ) -> ReportContent:
     statuses = [f.status for f in findings]
     score_result = calculate_overall_score(statuses)
     counts = count_statuses(statuses)
     entries = tuple(_build_finding_entry(f, kb_source_dir) for f in findings)
+    document_reference_entries = tuple(
+        _document_reference_entry(item, analysis.confirmed_review_id)
+        for item in document_references
+    )
+    clo_entries = _relationship_entries(
+        [(clo.code, clo.text, False) for clo in clos],
+        questions,
+        findings,
+        rule_id="RULE001",
+        target_evidence_type="clo",
+    )
+    topic_entries = _relationship_entries(
+        [(topic.code or topic.text, topic.text, topic.code is None) for topic in topics],
+        questions,
+        findings,
+        rule_id="RULE007",
+        target_evidence_type="topic",
+    )
+    exam_summary = _build_exam_summary(
+        questions, findings, supporting_materials, document_reference_entries
+    )
 
     return ReportContent(
         analysis_id=analysis.id,
@@ -360,9 +566,9 @@ def assemble_report_content(
             )
             for item in supporting_annotations
         ),
-        document_references=tuple(
-            _document_reference_entry(item, analysis.confirmed_review_id)
-            for item in document_references
-        ),
+        document_references=document_reference_entries,
         capability_version=effective_capability_version(analysis),
+        clo_entries=clo_entries,
+        topic_entries=topic_entries,
+        exam_summary=exam_summary,
     )

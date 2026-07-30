@@ -1,16 +1,19 @@
 import { Link } from 'react-router-dom'
 import { Button } from '../components/ui/Button'
+import { Icon } from '../components/ui/Icon'
 import { PageHeader } from '../components/ui/PageHeader'
 import { PageState } from '../components/ui/PageState'
 import { AnalysisHistoryTable } from '../features/analysis-history/AnalysisHistoryTable'
 import { AnalysisSummaryCards } from '../features/analysis-history/AnalysisSummaryCards'
 import { calculateAnalysisMetrics } from '../features/analysis-history/analysisMetrics'
 import { useAnalyses } from '../features/analysis-history/useAnalyses'
+import { useReportsAvailableCount } from '../features/analysis-history/useReportsAvailableCount'
 import { useI18n } from '../i18n/I18nProvider'
 
 export function DashboardRoute() {
   const { t } = useI18n()
   const state = useAnalyses()
+  const reportsAvailable = useReportsAvailableCount()
   const metrics =
     state.status === 'ready' ? calculateAnalysisMetrics(state.analyses) : null
 
@@ -22,6 +25,7 @@ export function DashboardRoute() {
         description={t('Create a new evidence-based exam analysis or return to an existing analysis.')}
         actions={
           <Link className="ui-button" to="/analyses/new">
+            <Icon name="plus" />
             {t('New Analysis')}
           </Link>
         }
@@ -44,7 +48,7 @@ export function DashboardRoute() {
       )}
       {state.status === 'ready' && (
         <>
-          <AnalysisSummaryCards analyses={state.analyses} />
+          <AnalysisSummaryCards analyses={state.analyses} reportsAvailable={reportsAvailable} />
           {metrics && metrics.recent.length > 0 ? (
             <section className="dashboard-recent">
               <div className="dashboard-section-heading">

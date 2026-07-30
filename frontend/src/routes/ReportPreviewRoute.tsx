@@ -3,8 +3,10 @@ import { Link, useParams } from 'react-router-dom'
 import { downloadBlob, downloadReportFile } from '../api/analyses'
 import { getReportMetadata } from '../api/reports'
 import { Button } from '../components/ui/Button'
+import { Icon } from '../components/ui/Icon'
 import { PageHeader } from '../components/ui/PageHeader'
 import { PageState } from '../components/ui/PageState'
+import { ReportPreviewContent } from '../features/reports/ReportPreviewContent'
 import { useI18n } from '../i18n/I18nProvider'
 import { localizeInterfaceError } from '../i18n/localizeError'
 import type { ReportResponse } from '../types/api'
@@ -12,7 +14,7 @@ import type { ReportResponse } from '../types/api'
 type PreviewState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
-  | { status: 'ready'; report: ReportResponse; blob: Blob; url: string }
+  | { status: 'ready'; report: ReportResponse; blob: Blob }
 
 export function ReportPreviewRoute() {
   const { reportId = '' } = useParams()
@@ -22,15 +24,10 @@ export function ReportPreviewRoute() {
 
   useEffect(() => {
     let active = true
-    let objectUrl: string | null = null
-    void Promise.all([
-      getReportMetadata(reportId),
-      downloadReportFile(reportId),
-    ])
+    void Promise.all([getReportMetadata(reportId), downloadReportFile(reportId)])
       .then(([report, blob]) => {
         if (!active) return
-        objectUrl = URL.createObjectURL(blob)
-        setState({ status: 'ready', report, blob, url: objectUrl })
+        setState({ status: 'ready', report, blob })
       })
       .catch((error: unknown) => {
         if (!active) return
@@ -46,7 +43,6 @@ export function ReportPreviewRoute() {
       })
     return () => {
       active = false
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
   }, [locale, reloadToken, reportId, t])
 
@@ -61,7 +57,7 @@ export function ReportPreviewRoute() {
                   ? 'Arabic Report'
                   : 'English Report',
               )
-            : t('Review the generated PDF before downloading it.')
+            : t('Review the exam quality report before downloading it.')
         }
         actions={
           <Link className="ui-button ui-button--secondary" to="/reports">
@@ -99,23 +95,29 @@ export function ReportPreviewRoute() {
 
       {state.status === 'ready' && (
         <>
-          <div className="report-preview-actions">
-            <Button
-              onClick={() =>
-                downloadBlob(
-                  state.blob,
-                  `report-${state.report.language}-${state.report.id}.pdf`,
-                )
-              }
-            >
-              {t('Download PDF')}
-            </Button>
+          <div className="report-preview-toolbar">
+            <span className="report-preview-language-indicator">
+              {t(state.report.language === 'ar' ? 'Arabic Report' : 'English Report')}
+            </span>
+            <div className="report-preview-toolbar-actions">
+              <Button variant="secondary" onClick={() => window.print()}>
+                <Icon name="print" className="ui-icon--sm" />
+                {t('Print')}
+              </Button>
+              <Button
+                onClick={() =>
+                  downloadBlob(
+                    state.blob,
+                    `report-${state.report.language}-${state.report.id}.pdf`,
+                  )
+                }
+              >
+                <Icon name="download" className="ui-icon--sm" />
+                {t('Download PDF')}
+              </Button>
+            </div>
           </div>
-          <iframe
-            className="report-preview-frame"
-            src={state.url}
-            title={t('Report PDF preview')}
-          />
+          <ReportPreviewContent analysisId={state.report.analysis_id} report={state.report} />
         </>
       )}
     </div>

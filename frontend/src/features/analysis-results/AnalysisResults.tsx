@@ -128,7 +128,14 @@ export function AnalysisResults({
             errorTitle={t('Could not load questions')}
             onRetry={() => retryResource('questions')}
           >
-            {(questions) => <QuestionsSection questions={questions} />}
+            {(questions) => (
+              <QuestionsSection
+                questions={questions}
+                findings={resources.findings}
+                clos={resources.clos}
+                topics={resources.topics}
+              />
+            )}
           </ResultResourceState>
         )}
 

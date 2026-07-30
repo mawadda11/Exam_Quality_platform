@@ -18,7 +18,10 @@ import {
   sortQuestionsForFaculty,
 } from './facultyOrdering'
 import { MethodologyLink } from './MethodologyLink'
+import { RelationshipMappingDrawer } from './RelationshipMappingDrawer'
+import { QuestionRelationshipDrawer } from './QuestionRelationshipDrawer'
 import { ResultResourceState } from './ResultResourceState'
+import { StatusBadge } from './StatusBadge'
 import type { ResultResource, ResultsResourceKey } from './useAnalysisResultsData'
 
 interface AlignmentCoverageSectionProps {
@@ -29,9 +32,9 @@ interface AlignmentCoverageSectionProps {
   onRetry: (resource: ResultsResourceKey) => void
 }
 
-type RelationshipKind = 'clo' | 'topic'
+export type RelationshipKind = 'clo' | 'topic'
 
-interface RelationshipJudgment {
+export interface RelationshipJudgment {
   key: string
   kind: RelationshipKind
   status: AcademicStatus
@@ -39,13 +42,17 @@ interface RelationshipJudgment {
   targets: FindingEvidenceRef[]
 }
 
-interface QuestionRelationshipRow {
+export interface QuestionRelationshipRow {
   questionReference: string
   question: QuestionResponse | undefined
   sourceEvidence: FindingEvidenceRef | undefined
   cloJudgments: RelationshipJudgment[]
   topicJudgments: RelationshipJudgment[]
 }
+
+export type MappingTarget =
+  | { kind: 'clo'; record: CloResponse }
+  | { kind: 'topic'; record: TopicResponse }
 
 interface SummaryArea {
   key: string
@@ -56,12 +63,7 @@ interface SummaryArea {
   }>
 }
 
-interface CountMetric {
-  label: string
-  count: number
-}
-
-function facultyReason(
+export function facultyReason(
   status: AcademicStatus,
   sourceReason: string,
   locale: 'ar' | 'en',
@@ -95,22 +97,7 @@ function facultyReason(
   }
 }
 
-function supportedState(status: AcademicStatus): string {
-  switch (status) {
-    case 'Satisfied':
-      return 'Supported'
-    case 'Partially Satisfied':
-      return 'Partially supported'
-    case 'Not Satisfied':
-      return 'Not supported'
-    case 'Not Verified':
-      return 'Not Verified'
-    case 'Not Applicable':
-      return 'Not Applicable'
-  }
-}
-
-function coverageStatus(judgments: RelationshipJudgment[]): AcademicStatus {
+export function coverageStatus(judgments: RelationshipJudgment[]): AcademicStatus {
   if (judgments.some((judgment) => judgment.status === 'Satisfied')) {
     return 'Satisfied'
   }
@@ -128,7 +115,7 @@ function coverageStatus(judgments: RelationshipJudgment[]): AcademicStatus {
   return 'Not Satisfied'
 }
 
-function questionRows(
+export function questionRows(
   cloFindings: FindingResponse[],
   topicFindings: FindingResponse[],
   questions: QuestionResponse[],
@@ -201,7 +188,7 @@ function questionRows(
   return orderedReferences.map((reference) => rows.get(reference)!)
 }
 
-function uniqueTargets(judgments: RelationshipJudgment[]): FindingEvidenceRef[] {
+export function uniqueTargets(judgments: RelationshipJudgment[]): FindingEvidenceRef[] {
   const targets = new Map<string, FindingEvidenceRef>()
   for (const judgment of judgments) {
     for (const target of judgment.targets) targets.set(target.id, target)
@@ -221,7 +208,7 @@ function recordMatchesTarget(
   )
 }
 
-function relatedRows(
+export function relatedRows(
   rows: QuestionRelationshipRow[],
   record: CloResponse | TopicResponse,
   kind: RelationshipKind,
@@ -233,7 +220,7 @@ function relatedRows(
   )
 }
 
-function matchingJudgments(
+export function matchingJudgments(
   row: QuestionRelationshipRow,
   record: CloResponse | TopicResponse,
   kind: RelationshipKind,
@@ -241,6 +228,20 @@ function matchingJudgments(
   return row[`${kind}Judgments`].filter((judgment) =>
     judgment.targets.some((target) => recordMatchesTarget(record, target)),
   )
+}
+
+export function totalMarksForRecord(
+  rows: QuestionRelationshipRow[],
+  record: CloResponse | TopicResponse,
+  kind: RelationshipKind,
+): number {
+  return relatedRows(rows, record, kind)
+    .filter((row) =>
+      matchingJudgments(row, record, kind).some(
+        (judgment) => judgment.status === 'Satisfied' || judgment.status === 'Partially Satisfied',
+      ),
+    )
+    .reduce((total, row) => total + (row.question?.marks ?? 0), 0)
 }
 
 function linkedQuestionCount(
@@ -272,45 +273,6 @@ function coveredRecordCount(
     )
     return status === 'Satisfied' || status === 'Partially Satisfied'
   }).length
-}
-
-function coverageMetrics(
-  records: Array<CloResponse | TopicResponse>,
-  rows: QuestionRelationshipRow[],
-  kind: RelationshipKind,
-): CountMetric[] {
-  const statuses = records.map((record) =>
-    coverageStatus(
-      relatedRows(rows, record, kind).flatMap((row) =>
-        matchingJudgments(row, record, kind),
-      ),
-    ),
-  )
-  const metrics: CountMetric[] = [
-    {
-      label: 'Supported',
-      count: statuses.filter((status) => status === 'Satisfied').length,
-    },
-    {
-      label: 'Partially supported',
-      count: statuses.filter((status) => status === 'Partially Satisfied').length,
-    },
-    {
-      label: 'Unsupported',
-      count: statuses.filter((status) => status === 'Not Satisfied').length,
-    },
-  ]
-  const notVerified = statuses.filter((status) => status === 'Not Verified').length
-  if (notVerified > 0) {
-    metrics.push({ label: 'Could not be verified', count: notVerified })
-  }
-  const notApplicable = statuses.filter(
-    (status) => status === 'Not Applicable',
-  ).length
-  if (notApplicable > 0) {
-    metrics.push({ label: 'Not Applicable', count: notApplicable })
-  }
-  return metrics
 }
 
 function ResourceIssue({
@@ -374,13 +336,7 @@ function RelationshipStates({
     ['Course Topic', row.topicJudgments],
   ]
   const badge = (status: AcademicStatus, key: string) => (
-    <span
-      key={key}
-      className="relationship-status-badge"
-      data-academic-status={status}
-    >
-      {t(supportedState(status))}
-    </span>
+    <StatusBadge key={key} status={status} />
   )
   return (
     <ul className="relationship-status-list">
@@ -435,130 +391,6 @@ function RelationshipReasons({
   )
 }
 
-function CompactMetadata({
-  reference,
-  source,
-  page,
-}: {
-  reference: string
-  source: string
-  page: number | undefined
-}) {
-  const { t } = useI18n()
-  return (
-    <small className="comparison-source-metadata">
-      <bdi>{reference}</bdi> — {t(source)}
-      {page ? `, ${t('page')} ${page}` : ''}
-    </small>
-  )
-}
-
-function QuestionComparison({
-  row,
-  clos,
-  topics,
-  onClose,
-}: {
-  row: QuestionRelationshipRow
-  clos: CloResponse[]
-  topics: TopicResponse[]
-  onClose: () => void
-}) {
-  const { locale, t } = useI18n()
-  const cloTargets = uniqueTargets(row.cloJudgments)
-  const topicTargets = uniqueTargets(row.topicJudgments)
-  return (
-    <>
-      <summary
-        onClick={(event) => {
-          event.preventDefault()
-          onClose()
-        }}
-      >
-        {t('View mapping details')} — <bdi>{row.questionReference}</bdi>
-      </summary>
-      <div className="comparison-grid">
-        <section>
-          <h4>{t('Question text')}</h4>
-          <p dir="auto">
-            {row.question?.question_text ?? t('Question text is unavailable.')}
-          </p>
-          <CompactMetadata
-            reference={row.questionReference}
-            source="Exam"
-            page={row.question?.page_number ?? row.sourceEvidence?.page_number}
-          />
-        </section>
-
-        {cloTargets.map((target) => {
-          const clo = clos.find((item) => item.code === target.item_reference)
-          const judgments = row.cloJudgments.filter((judgment) =>
-            judgment.targets.some((item) => item.id === target.id),
-          )
-          return (
-            <section key={target.id}>
-              <h4>{t('Suggested CLO')}</h4>
-              <p dir="auto">{clo?.text ?? target.item_reference}</p>
-              <p className="comparison-reason" dir="auto">
-                <strong>{t('Relationship reason')}:</strong>{' '}
-                {judgments
-                  .map((judgment) =>
-                    facultyReason(
-                      judgment.status,
-                      judgment.reasoning,
-                      locale,
-                      t,
-                    ),
-                  )
-                  .join(' ')}
-              </p>
-              <CompactMetadata
-                reference={clo?.code ?? target.item_reference}
-                source="Course Specification"
-                page={clo?.page_number ?? target.page_number}
-              />
-            </section>
-          )
-        })}
-
-        {topicTargets.map((target) => {
-          const topic = topics.find(
-            (item) =>
-              item.code === target.item_reference ||
-              item.text === target.item_reference,
-          )
-          const judgments = row.topicJudgments.filter((judgment) =>
-            judgment.targets.some((item) => item.id === target.id),
-          )
-          return (
-            <section key={target.id}>
-              <h4>{t('Suggested Course Topic')}</h4>
-              <p dir="auto">{topic?.text ?? target.item_reference}</p>
-              <p className="comparison-reason" dir="auto">
-                <strong>{t('Relationship reason')}:</strong>{' '}
-                {judgments
-                  .map((judgment) =>
-                    facultyReason(
-                      judgment.status,
-                      judgment.reasoning,
-                      locale,
-                      t,
-                    ),
-                  )
-                  .join(' ')}
-              </p>
-              <CompactMetadata
-                reference={topic?.code ?? t('Course Topic')}
-                source="Course Specification"
-                page={topic?.page_number ?? target.page_number}
-              />
-            </section>
-          )
-        })}
-      </div>
-    </>
-  )
-}
 
 export function AlignmentCoverageSection({
   findings,
@@ -568,9 +400,10 @@ export function AlignmentCoverageSection({
   onRetry,
 }: AlignmentCoverageSectionProps) {
   const { t } = useI18n()
-  const [selectedRow, setSelectedRow] =
-    useState<QuestionRelationshipRow | null>(null)
-  const comparisonRef = useRef<HTMLDetailsElement>(null)
+  const [selectedRow, setSelectedRow] = useState<QuestionRelationshipRow | null>(null)
+  const [mappingTarget, setMappingTarget] = useState<MappingTarget | null>(null)
+  const mappingTriggerRefs = useRef(new Map<string, HTMLButtonElement>())
+  const activeMappingTriggerRef = useRef<HTMLButtonElement | null>(null)
   const loadedQuestions =
     questions.status === 'ready'
       ? sortQuestionsForFaculty(independentlyScorableQuestions(questions.data))
@@ -578,9 +411,14 @@ export function AlignmentCoverageSection({
   const loadedClos = clos.status === 'ready' ? clos.data : []
   const loadedTopics = topics.status === 'ready' ? topics.data : []
 
-  function openComparison(row: QuestionRelationshipRow): void {
+  function openComparison(row: QuestionRelationshipRow, triggerKey: string): void {
+    activeMappingTriggerRef.current = mappingTriggerRefs.current.get(triggerKey) ?? null
     setSelectedRow(row)
-    window.setTimeout(() => comparisonRef.current?.focus(), 0)
+  }
+
+  function openMapping(target: MappingTarget, triggerKey: string): void {
+    activeMappingTriggerRef.current = mappingTriggerRefs.current.get(triggerKey) ?? null
+    setMappingTarget(target)
   }
 
   return (
@@ -728,9 +566,16 @@ export function AlignmentCoverageSection({
                         </td>
                         <td data-label={t('Details')}>
                           <button
+                            ref={(element) => {
+                              const triggerKey = `question-${row.questionReference}`
+                              if (element) mappingTriggerRefs.current.set(triggerKey, element)
+                              else mappingTriggerRefs.current.delete(triggerKey)
+                            }}
                             type="button"
                             className="inline-evidence-action"
-                            onClick={() => openComparison(row)}
+                            onClick={() =>
+                              openComparison(row, `question-${row.questionReference}`)
+                            }
                           >
                             {t('View mapping details')}
                           </button>
@@ -741,47 +586,24 @@ export function AlignmentCoverageSection({
                 </ResponsiveTable>
               </section>
 
-              {selectedRow && (
-                <details
-                  ref={comparisonRef}
-                  id="question-comparison"
-                  className="question-comparison"
-                  open
-                  tabIndex={-1}
-                >
-                  <QuestionComparison
-                    row={selectedRow}
-                    clos={loadedClos}
-                    topics={loadedTopics}
-                    onClose={() => setSelectedRow(null)}
-                  />
-                </details>
-              )}
 
-              <details
-                className="academic-table-section coverage-table-disclosure"
-                id="clo-coverage"
-              >
-                <summary>
-                  <span>
-                    {t('CLO Coverage')} ({loadedClos.length})
-                  </span>
-                  <small>
-                    {coverageMetrics(loadedClos, rows, 'clo')
-                      .map((metric) => `${t(metric.label)}: ${metric.count}`)
-                      .join(' · ')}
-                  </small>
-                </summary>
+
+              <section className="academic-table-section" id="clo-coverage">
+                <h3>
+                  {t('CLO Analysis')} ({loadedClos.length})
+                </h3>
                 <ResponsiveTable
-                  caption={t('CLO Coverage')}
+                  caption={t('CLO Analysis')}
                   className="academic-summary-table"
                 >
                   <thead>
                     <tr>
                       <th scope="col">{t('CLO')}</th>
                       <th scope="col">{t('CLO text')}</th>
+                      <th scope="col">{t('Linked questions')}</th>
                       <th scope="col">{t('Coverage status')}</th>
-                      <th scope="col">{t('Related questions')}</th>
+                      <th scope="col">{t('Total marks')}</th>
+                      <th scope="col">{t('Details')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -794,6 +616,7 @@ export function AlignmentCoverageSection({
                         matches.map((row) => row.questionReference),
                         loadedQuestions,
                       )
+                      const triggerKey = `clo-${clo.id}`
                       return (
                         <tr key={clo.id}>
                           <th scope="row" data-label={t('CLO')}>
@@ -802,15 +625,7 @@ export function AlignmentCoverageSection({
                           <td data-label={t('CLO text')}>
                             <span dir="auto">{clo.text}</span>
                           </td>
-                          <td data-label={t('Coverage status')}>
-                            <span
-                              className="relationship-status-badge"
-                              data-academic-status={coverageStatus(judgments)}
-                            >
-                              {t(supportedState(coverageStatus(judgments)))}
-                            </span>
-                          </td>
-                          <td data-label={t('Related questions')}>
+                          <td data-label={t('Linked questions')}>
                             {orderedReferences.length === 0
                               ? t('None')
                               : orderedReferences.map((reference, index) => (
@@ -820,36 +635,54 @@ export function AlignmentCoverageSection({
                                   </span>
                                 ))}
                           </td>
+                          <td data-label={t('Coverage status')}>
+                            <StatusBadge status={coverageStatus(judgments)} />
+                          </td>
+                          <td data-label={t('Total marks')}>
+                            {totalMarksForRecord(rows, clo, 'clo')}
+                          </td>
+                          <td data-label={t('Details')}>
+                            <button
+                              ref={(element) => {
+                                if (element) mappingTriggerRefs.current.set(triggerKey, element)
+                                else mappingTriggerRefs.current.delete(triggerKey)
+                              }}
+                              type="button"
+                              className="inline-evidence-action"
+                              onClick={() =>
+                                openMapping({ kind: 'clo', record: clo }, triggerKey)
+                              }
+                            >
+                              {t('View mapping details')}
+                            </button>
+                          </td>
                         </tr>
                       )
                     })}
                   </tbody>
                 </ResponsiveTable>
-              </details>
+              </section>
 
-              <details
-                className="academic-table-section coverage-table-disclosure"
-                id="topic-coverage"
-              >
-                <summary>
-                  <span>
-                    {t('Topic Coverage')} ({loadedTopics.length})
-                  </span>
-                  <small>
-                    {coverageMetrics(loadedTopics, rows, 'topic')
-                      .map((metric) => `${t(metric.label)}: ${metric.count}`)
-                      .join(' · ')}
-                  </small>
-                </summary>
+              <section className="academic-table-section" id="topic-coverage">
+                <h3>
+                  {t('Topic Analysis')} ({loadedTopics.length})
+                </h3>
+                <p className="results-supporting-text">
+                  {t(
+                    'A Midterm or Final exam may legitimately cover a subset of course topics. Topic coverage is informational and does not by itself indicate a quality problem.',
+                  )}
+                </p>
                 <ResponsiveTable
-                  caption={t('Topic Coverage')}
+                  caption={t('Topic Analysis')}
                   className="academic-summary-table"
                 >
                   <thead>
                     <tr>
                       <th scope="col">{t('Course Topic')}</th>
+                      <th scope="col">{t('Linked questions')}</th>
+                      <th scope="col">{t('Total marks')}</th>
                       <th scope="col">{t('Coverage status')}</th>
-                      <th scope="col">{t('Related questions')}</th>
+                      <th scope="col">{t('Details')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -862,20 +695,13 @@ export function AlignmentCoverageSection({
                         matches.map((row) => row.questionReference),
                         loadedQuestions,
                       )
+                      const triggerKey = `topic-${topic.id}`
                       return (
                         <tr key={topic.id}>
                           <th scope="row" data-label={t('Course Topic')}>
                             <span dir="auto">{topic.text}</span>
                           </th>
-                          <td data-label={t('Coverage status')}>
-                            <span
-                              className="relationship-status-badge"
-                              data-academic-status={coverageStatus(judgments)}
-                            >
-                              {t(supportedState(coverageStatus(judgments)))}
-                            </span>
-                          </td>
-                          <td data-label={t('Related questions')}>
+                          <td data-label={t('Linked questions')}>
                             {orderedReferences.length === 0
                               ? t('None')
                               : orderedReferences.map((reference, index) => (
@@ -885,12 +711,53 @@ export function AlignmentCoverageSection({
                                   </span>
                                 ))}
                           </td>
+                          <td data-label={t('Total marks')}>
+                            {totalMarksForRecord(rows, topic, 'topic')}
+                          </td>
+                          <td data-label={t('Coverage status')}>
+                            <StatusBadge status={coverageStatus(judgments)} />
+                          </td>
+                          <td data-label={t('Details')}>
+                            {matches.length === 0 ? (
+                              '—'
+                            ) : (
+                              <button
+                                ref={(element) => {
+                                  if (element)
+                                    mappingTriggerRefs.current.set(triggerKey, element)
+                                  else mappingTriggerRefs.current.delete(triggerKey)
+                                }}
+                                type="button"
+                                className="inline-evidence-action"
+                                onClick={() =>
+                                  openMapping({ kind: 'topic', record: topic }, triggerKey)
+                                }
+                              >
+                                {t('View mapping details')}
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       )
                     })}
                   </tbody>
                 </ResponsiveTable>
-              </details>
+              </section>
+
+              <QuestionRelationshipDrawer
+                row={selectedRow}
+                clos={loadedClos}
+                topics={loadedTopics}
+                onClose={() => setSelectedRow(null)}
+                returnFocusRef={activeMappingTriggerRef}
+              />
+
+              <RelationshipMappingDrawer
+                target={mappingTarget}
+                rows={rows}
+                onClose={() => setMappingTarget(null)}
+                returnFocusRef={activeMappingTriggerRef}
+              />
             </>
           )
         }}

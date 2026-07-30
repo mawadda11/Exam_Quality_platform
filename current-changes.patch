@@ -1,0 +1,4629 @@
+﻿diff --git a/backend/app/api/analyses.py b/backend/app/api/analyses.py
+index 99c50c0..75aa8a5 100644
+--- a/backend/app/api/analyses.py
++++ b/backend/app/api/analyses.py
+@@ -810,6 +810,9 @@ def create_report(
+         supporting_annotations=supporting_annotations,
+         supporting_annotation_texts=reviewed_annotation_texts,
+         document_references=document_references,
++        questions=list(analysis.questions),
++        clos=list(analysis.clos),
++        topics=list(analysis.topics),
+     )
+     pdf_bytes = render_report_pdf(content, language=payload.language)
+ 
+diff --git a/backend/app/services/reporting/content.py b/backend/app/services/reporting/content.py
+index 180bce4..c886255 100644
+--- a/backend/app/services/reporting/content.py
++++ b/backend/app/services/reporting/content.py
+@@ -11,6 +11,7 @@ relationships independently.
+ from __future__ import annotations
+ 
+ import uuid
++from collections import defaultdict
+ from collections.abc import Mapping, Sequence
+ from dataclasses import dataclass
+ from datetime import datetime
+@@ -25,18 +26,23 @@ from app.core.domain import (
+ )
+ from app.models.analysis import Analysis
+ from app.models.assessment_record import AssessmentRecord
++from app.models.clo import Clo
+ from app.models.document_reference import DocumentReference
+ from app.models.finding import Finding
++from app.models.question import Question
+ from app.models.supporting_material import SupportingMaterial
+ from app.models.supporting_material_annotation import SupportingMaterialAnnotation
++from app.models.topic import Topic
+ from app.schemas.finding import FindingEvaluationDetails
+ from app.schemas.rule_coverage import RuleCoverageAuditResponse
++from app.services.extraction.line_classification import parse_declared_total
+ from app.services.knowledge_base.manifest import KB_VERSION
+ from app.services.knowledge_base.reference_data import (
+     RecommendationDisplay,
+     get_controlled_recommendations,
+     get_requirement_display,
+ )
++from app.services.rules.question_hierarchy import scorable_leaves
+ from app.services.rules.scoring import calculate_overall_score, count_statuses
+ from app.services.rules.versioning import (
+     LEGACY_CAPABILITY_VERSION,
+@@ -105,6 +111,37 @@ class ReportDocumentReferenceEntry:
+     candidate_count: int
+ 
+ 
++@dataclass(frozen=True)
++class ReportRelationshipEntry:
++    """One CLO or topic row for the report's CLO/Topic Analysis tables.
++
++    Mirrors the same worst-status-wins rollup and Satisfied/Partially
++    Satisfied marks criterion already used by the frontend Alignment &
++    Coverage page, computed here from the same governed RULE001/RULE007
++    item judgments rather than recalculated independently.
++    """
++
++    identifier: str
++    text: str
++    linked_question_labels: tuple[str, ...]
++    total_marks: float
++    coverage_status: AcademicStatus
++    # True when `identifier` had to fall back to the full source text because
++    # no short code was available (e.g. an uncoded course topic) - the report
++    # renderer applies the report-language display rule only in that case,
++    # never to a genuine short code such as "CLO1".
++    identifier_is_source_text: bool = False
++
++
++@dataclass(frozen=True)
++class ReportExamSummary:
++    scorable_question_count: int
++    declared_total_marks: float | None
++    calculated_total_marks: float | None
++    supporting_material_count: int
++    missing_or_ambiguous_reference_count: int
++
++
+ @dataclass(frozen=True)
+ class ReportFindingEntry:
+     requirement_id: str
+@@ -159,12 +196,24 @@ class ReportContent:
+     supporting_annotations: tuple[ReportSupportingAnnotationEntry, ...] = ()
+     document_references: tuple[ReportDocumentReferenceEntry, ...] = ()
+     capability_version: str = LEGACY_CAPABILITY_VERSION
++    clo_entries: tuple[ReportRelationshipEntry, ...] = ()
++    topic_entries: tuple[ReportRelationshipEntry, ...] = ()
++    exam_summary: ReportExamSummary | None = None
+ 
+     @property
+     def missing_evidence(self) -> tuple[ReportFindingEntry, ...]:
+         # Not Verified remains visible but is excluded from the denominator.
+         return tuple(f for f in self.findings if f.status is AcademicStatus.NOT_VERIFIED)
+ 
++    @property
++    def strengths(self) -> tuple[ReportFindingEntry, ...]:
++        return tuple(f for f in self.findings if f.status is AcademicStatus.SATISFIED)
++
++    @property
++    def areas_for_improvement(self) -> tuple[ReportFindingEntry, ...]:
++        attention = {AcademicStatus.PARTIALLY_SATISFIED, AcademicStatus.NOT_SATISFIED}
++        return tuple(f for f in self.findings if f.status in attention)
++
+     @property
+     def earned_credit(self) -> Decimal:
+         return Decimal(self.satisfied_count) + (
+@@ -313,6 +362,139 @@ def _document_reference_entry(
+     )
+ 
+ 
++# Best-to-worst is deliberately the reverse of scoring precedence: a single
++# Satisfied relationship is enough to call a CLO/topic covered, matching the
++# same worst-status-wins-only-when-nothing-better-exists rollup already used
++# by the frontend Alignment & Coverage page's coverageStatus().
++_COVERAGE_STATUS_BEST_FIRST = (
++    AcademicStatus.SATISFIED,
++    AcademicStatus.PARTIALLY_SATISFIED,
++    AcademicStatus.NOT_VERIFIED,
++    AcademicStatus.NOT_APPLICABLE,
++)
++_MARKS_CONTRIBUTING_STATUSES = {AcademicStatus.SATISFIED, AcademicStatus.PARTIALLY_SATISFIED}
++
++
++def _coverage_status(statuses: Sequence[AcademicStatus]) -> AcademicStatus:
++    for candidate in _COVERAGE_STATUS_BEST_FIRST:
++        if candidate in statuses:
++            return candidate
++    return AcademicStatus.NOT_SATISFIED
++
++
++def _relationship_entries(
++    records: Sequence[tuple[str, str, bool]],
++    questions: Sequence[Question],
++    findings: Sequence[Finding],
++    *,
++    rule_id: str,
++    target_evidence_type: str,
++) -> tuple[ReportRelationshipEntry, ...]:
++    marks_by_label = {q.number_label: (q.marks or 0.0) for q in scorable_leaves(questions)}
++    sequence_by_label = {q.number_label: q.sequence for q in questions}
++    matches: dict[str, list[tuple[str, AcademicStatus]]] = defaultdict(list)
++
++    for finding in findings:
++        if finding.rule_id != rule_id or finding.evaluation_details is None:
++            continue
++        details = FindingEvaluationDetails.model_validate(finding.evaluation_details, strict=False)
++        evidence_by_id = {link.evidence.id: link.evidence for link in finding.evidence_links}
++        for judgment in details.item_judgments:
++            source = evidence_by_id.get(judgment.source_evidence_id)
++            if source is None or source.evidence_type != "question_text":
++                continue
++            for target_id in judgment.target_evidence_ids:
++                target = evidence_by_id.get(target_id)
++                if target is None or target.evidence_type != target_evidence_type:
++                    continue
++                matches[target.item_reference].append((source.item_reference, judgment.status))
++
++    entries: list[ReportRelationshipEntry] = []
++    for identifier, text, identifier_is_source_text in records:
++        pairs = matches.get(identifier, [])
++        linked_labels = sorted(
++            dict.fromkeys(label for label, _ in pairs),
++            key=lambda label: sequence_by_label.get(label, len(sequence_by_label)),
++        )
++        supported_labels = {
++            label for label, status in pairs if status in _MARKS_CONTRIBUTING_STATUSES
++        }
++        total_marks = sum(marks_by_label.get(label, 0.0) for label in supported_labels)
++        coverage_status = (
++            _coverage_status([status for _, status in pairs])
++            if pairs
++            else AcademicStatus.NOT_SATISFIED
++        )
++        entries.append(
++            ReportRelationshipEntry(
++                identifier=identifier,
++                text=text,
++                linked_question_labels=tuple(linked_labels),
++                total_marks=total_marks,
++                coverage_status=coverage_status,
++                identifier_is_source_text=identifier_is_source_text,
++            )
++        )
++    return tuple(entries)
++
++
++def _marks_totals_from_findings(
++    findings: Sequence[Finding],
++    questions: Sequence[Question],
++) -> tuple[float | None, float | None]:
++    """Declared total is parsed from the RULE018 finding's own linked
++    declared-total evidence text; calculated total is the sum of scorable
++    leaf marks. This mirrors RULE018's own arithmetic exactly (see
++    app.services.rules.marks_total.evaluate_marks_and_total) so the Exam
++    Summary always agrees with the Marks & Structure narrative for the same
++    finding, instead of independently recomputing or misreading evidence
++    fields.
++    """
++    marks_finding = next((f for f in findings if f.rule_id == "RULE018"), None)
++    if marks_finding is None:
++        return None, None
++    declared_total_evidence = next(
++        (
++            link.evidence
++            for link in marks_finding.evidence_links
++            if link.evidence.evidence_type == "declared_total"
++        ),
++        None,
++    )
++    declared = (
++        None
++        if declared_total_evidence is None
++        else parse_declared_total(declared_total_evidence.extracted_text)
++    )
++    leaves = scorable_leaves(questions)
++    calculated = (
++        None
++        if not leaves or any(leaf.marks is None for leaf in leaves)
++        else float(sum((Decimal(str(leaf.marks)) for leaf in leaves), start=Decimal("0")))
++    )
++    return declared, calculated
++
++
++def _build_exam_summary(
++    questions: Sequence[Question],
++    findings: Sequence[Finding],
++    supporting_materials: Sequence[SupportingMaterial],
++    document_references: Sequence[ReportDocumentReferenceEntry],
++) -> ReportExamSummary:
++    declared, calculated = _marks_totals_from_findings(findings, questions)
++    return ReportExamSummary(
++        scorable_question_count=len(scorable_leaves(questions)),
++        declared_total_marks=declared,
++        calculated_total_marks=calculated,
++        supporting_material_count=len(supporting_materials),
++        missing_or_ambiguous_reference_count=sum(
++            1
++            for reference in document_references
++            if reference.resolution_status in {"ambiguous", "unresolved"}
++        ),
++    )
++
++
+ def assemble_report_content(
+     analysis: Analysis,
+     findings: Sequence[Finding],
+@@ -325,11 +507,35 @@ def assemble_report_content(
+     supporting_annotations: Sequence[SupportingMaterialAnnotation] = (),
+     supporting_annotation_texts: Mapping[uuid.UUID, str] | None = None,
+     document_references: Sequence[DocumentReference] = (),
++    questions: Sequence[Question] = (),
++    clos: Sequence[Clo] = (),
++    topics: Sequence[Topic] = (),
+ ) -> ReportContent:
+     statuses = [f.status for f in findings]
+     score_result = calculate_overall_score(statuses)
+     counts = count_statuses(statuses)
+     entries = tuple(_build_finding_entry(f, kb_source_dir) for f in findings)
++    document_reference_entries = tuple(
++        _document_reference_entry(item, analysis.confirmed_review_id)
++        for item in document_references
++    )
++    clo_entries = _relationship_entries(
++        [(clo.code, clo.text, False) for clo in clos],
++        questions,
++        findings,
++        rule_id="RULE001",
++        target_evidence_type="clo",
++    )
++    topic_entries = _relationship_entries(
++        [(topic.code or topic.text, topic.text, topic.code is None) for topic in topics],
++        questions,
++        findings,
++        rule_id="RULE007",
++        target_evidence_type="topic",
++    )
++    exam_summary = _build_exam_summary(
++        questions, findings, supporting_materials, document_reference_entries
++    )
+ 
+     return ReportContent(
+         analysis_id=analysis.id,
+@@ -360,9 +566,9 @@ def assemble_report_content(
+             )
+             for item in supporting_annotations
+         ),
+-        document_references=tuple(
+-            _document_reference_entry(item, analysis.confirmed_review_id)
+-            for item in document_references
+-        ),
++        document_references=document_reference_entries,
+         capability_version=effective_capability_version(analysis),
++        clo_entries=clo_entries,
++        topic_entries=topic_entries,
++        exam_summary=exam_summary,
+     )
+diff --git a/backend/app/services/reporting/pdf.py b/backend/app/services/reporting/pdf.py
+index 0c0d73a..f71c6b9 100644
+--- a/backend/app/services/reporting/pdf.py
++++ b/backend/app/services/reporting/pdf.py
+@@ -3,6 +3,15 @@
+ Localization is applied only while rendering. Governed wording and reasoning
+ remain unchanged in storage and are retained as clearly labelled original
+ source wording in Arabic reports.
++
++The primary report body (sections 1-13) stays faculty-readable and concise:
++no provider/model/prompt/knowledge-base identifiers, no raw evidence-ID
++lists, no numeric confidence. That technical provenance is preserved - never
++deleted - in the separated Technical Traceability Appendix (section 14) as a
++short summary (a findings-level provenance table plus judgment counts), not
++a full evidence-linked judgment inventory. The complete per-judgment source
++and target evidence citations remain in the stored findings records and are
++available through the platform's findings data for detailed audit.
+ """
+ 
+ from __future__ import annotations
+@@ -13,14 +22,15 @@ import re
+ from pathlib import Path
+ 
+ from fpdf import FPDF, XPos, YPos
++from fpdf.enums import Align
+ from fpdf.errors import FPDFException
++from fpdf.fonts import FontFace
+ 
+ from app.core.domain import AcademicStatus, ReportLanguage
+ from app.services.reporting.content import (
+-    EvidenceCitation,
+     ReportContent,
+     ReportFindingEntry,
+-    ReportItemJudgment,
++    ReportRelationshipEntry,
+ )
+ from app.services.reporting.presentation import (
+     finding_explanation,
+@@ -28,12 +38,25 @@ from app.services.reporting.presentation import (
+     recommendation_text,
+     requirement_name,
+ )
++from app.services.rules.versioning import (
++    BATCH4_CAPABILITY_VERSION,
++    LEGACY_CAPABILITY_VERSION,
++    PILOT_CORRECTNESS_CAPABILITY_VERSION,
++)
+ 
+ logger = logging.getLogger(__name__)
+ 
+ _REPORT_FONT_FAMILY = "ReportUnicode"
+ _ARABIC_CHARACTER = re.compile(r"[\u0600-\u06ff]")
+ 
++_RECOGNIZED_CAPABILITY_VERSIONS = frozenset(
++    {
++        LEGACY_CAPABILITY_VERSION,
++        BATCH4_CAPABILITY_VERSION,
++        PILOT_CORRECTNESS_CAPABILITY_VERSION,
++    }
++)
++
+ _REPORT_FONT_CANDIDATES: dict[str, tuple[Path, ...]] = {
+     "": (
+         Path(os.getenv("REPORT_FONT_REGULAR_PATH", "")),
+@@ -59,140 +82,196 @@ _REPORT_FONT_CANDIDATES: dict[str, tuple[Path, ...]] = {
+ _EN = {
+     "title": "Exam Quality Analyzer - Analysis Report",
+     "exam": "exam",
+-    "analysis_id": "Analysis ID",
++    "report_id": "Report ID",
+     "generated": "Generated",
+-    "kb_version": "KB version",
+-    "capability_version": "Capability version",
+-    "scope": "Scope",
++    "language_label": "Report language",
++    "scope": "Scope Disclaimer",
+     "scope_text": (
+-        "This report is limited to the uploaded examination and its populated TP-153 Course "
+-        "Specification. It does not evaluate student answers or grades, estimate difficulty, "
+-        "classify Bloom's Taxonomy levels, or issue an accreditation, approval, or rejection "
+-        "decision. Recommendations are academic support for human review, not institutional "
+-        "decisions."
++        "This report applies only to the uploaded examination and the corresponding Course "
++        "Specification. The platform does not issue accreditation decisions, does not evaluate "
++        "the complete academic program, and does not replace academic judgment. The faculty "
++        "member remains responsible for the final examination decision."
++    ),
++    "s1_header": "1. Report Header",
++    "s2_summary": "2. Executive Summary",
++    "s3_score": "3. Overall Exam Quality Score",
++    "s4_distribution": "4. Status Distribution",
++    "s5_exam_summary": "5. Exam Summary",
++    "s6_clo": "6. CLO Analysis",
++    "s7_topic": "7. Topic Analysis",
++    "s8_marks": "8. Marks & Structure",
++    "s9_materials": "9. Materials & References",
++    "s10_findings": "10. Key Findings",
++    "s11_missing": "11. Missing or Unverified Evidence",
++    "s12_recommendations": "12. Recommendations",
++    "s13_scope": "13. Scope Disclaimer",
++    "s14_appendix": "14. Technical Traceability Appendix",
++    "summary_text": (
++        "This report analyzes the uploaded exam against the Course Specification, covering "
++        "question clarity, CLO and topic alignment and coverage, marks and structure, and "
++        "supporting materials."
++    ),
++    "overall_result_scored": (
++        "Overall result: {score}% based on {count} verified applicable checks."
++    ),
++    "overall_result_label": "Overall result: {label}.",
++    "strongest_areas": "Strongest verified areas: {areas}.",
++    "weakest_areas": "Main areas requiring improvement: {areas}.",
++    "missing_summary": (
++        "{count} result(s) could not be verified due to missing or unreliable evidence."
+     ),
+-    "overall_score": "Overall Exam Quality Score",
+     "based_on": "based on {count} verified applicable {rules}",
+     "rule": "rule",
+     "rules": "rules",
+     "insufficient": "Insufficient Evidence",
+-    "score_note": (
+-        "Not Verified and Not Applicable are visible but excluded from the denominator. "
+-        "Semantic confidence never changes scoring weight."
++    "distribution_note": (
++        "Not Verified and Not Applicable results remain visible but are excluded from the "
++        "score denominator."
+     ),
+-    "missing_evidence": "Missing Evidence",
+-    "missing_note": (
+-        "Excluded from the score because required evidence was missing, unreadable, or "
+-        "insufficient - not because the exam failed the requirement."
+-    ),
+-    "findings": "Findings",
+-    "structured_evidence": "Supporting materials and cross-references",
+-    "materials": "Supporting materials",
+-    "annotations": "Labels and captions",
+-    "references": "Explicit references",
+-    "material_type": "Material type",
+-    "extraction_method": "Extraction method",
+-    "confidence": "Extraction confidence",
+-    "resolution": "Resolution",
+-    "candidates": "Candidates",
++    "col_status": "Status",
++    "col_count": "Count",
++    "exam_summary_question_count": "Independently scorable questions",
++    "exam_summary_declared": "Declared total marks",
++    "exam_summary_calculated": "Calculated total marks",
++    "exam_summary_materials": "Supporting materials",
++    "exam_summary_missing_refs": "Missing or ambiguous references",
++    "col_clo": "CLO",
++    "col_clo_text": "CLO text",
++    "col_topic": "Course Topic",
++    "col_linked_questions": "Linked questions",
++    "col_total_marks": "Total marks",
++    "col_coverage_status": "Coverage status",
++    "text_unavailable": "Not available in this report language.",
++    "none": "None",
+     "no_findings": "No findings are available for this analysis.",
+-    "semantic_confidence": "Semantic confidence",
+-    "confidence_note": "categorical only; not a score, severity, priority, probability, or weight",
+-    "decision_reasoning": "Governed decision reasoning",
+-    "confidence_basis": "Confidence basis",
+-    "item_judgments": "Evidence-linked item judgments",
+-    "derived_relationship": "Derived advisory relationship",
+-    "governed_judgment": "Governed item judgment",
+-    "derived_note": (
+-        "This relationship is an analysis output, not an official TP-153 mapping, and does "
+-        "not overwrite source evidence."
++    "col_check": "Check",
++    "col_reason": "Reason",
++    "col_referenced_item": "Referenced item",
++    "col_relationship_result": "Relationship result",
++    "col_page": "Page",
++    "no_materials": "No question-to-material references were identified.",
++    "strengths": "Strengths",
++    "areas_for_improvement": "Areas for Improvement",
++    "recommendation": "Recommendation",
++    "no_recommendations": "None",
++    "col_requirement": "Requirement",
++    "col_rule": "Rule",
++    "col_confidence": "Confidence",
++    "col_evaluator": "Evaluation method",
++    "col_provenance": "Technical provenance",
++    "appendix_note": (
++        "This appendix preserves technical audit detail - evidence identifiers, provider/model "
++        "provenance, and confidence basis - separated from the primary faculty report."
+     ),
+-    "source": "Source",
+-    "source_unavailable": "Source evidence reference unavailable",
+-    "related_evidence": "Related evidence",
+-    "related_unresolved": (
+-        "Related evidence references were retained but could not be resolved "
+-        "in this report snapshot."
++    "appendix_judgments": "Evidence-linked item judgments",
++    "appendix_judgments_summary": (
++        "{count} evidence-linked item judgments were evaluated for this analysis. Full source "
++        "and target evidence citations remain preserved in the stored findings records and are "
++        "available through the platform's findings data for detailed audit."
+     ),
+-    "no_target": "No target relationship was asserted.",
+-    "reasoning": "Concise reasoning",
+-    "linked_evidence": "Linked evidence",
+-    "no_evidence": "No evidence was linked to this finding.",
+-    "kb_references": "Controlled KB references",
+-    "ai_provenance": "Technical audit details",
+-    "original_wording": "Original source wording",
+-    "provider": "Provider",
+-    "model": "Model",
+-    "prompt": "Prompt",
+-    "recommendation": "Recommendation",
++    "capability_legacy": "Not applicable (legacy analysis)",
++    "col_source": "Source evidence",
++    "col_target": "Target evidence",
+     "page": "page",
+     "exam_document": "Exam",
++    "resolved": "Linked",
++    "ambiguous": "Ambiguous reference",
++    "unresolved": "Missing or unresolved reference",
+ }
+ 
+ _AR = {
+     "title": "┘à╪¡┘ä┘ä ╪¼┘ê╪»╪⌐ ╪º┘ä╪º╪«╪¬╪¿╪º╪▒╪º╪¬ - ╪¬┘é╪▒┘è╪▒ ╪º┘ä╪¬╪¡┘ä┘è┘ä",
+     "exam": "╪º╪«╪¬╪¿╪º╪▒",
+-    "analysis_id": "┘à╪╣╪▒┘æ┘ü ╪º┘ä╪¬╪¡┘ä┘è┘ä",
++    "report_id": "┘à╪╣╪▒┘æ┘ü ╪º┘ä╪¬┘é╪▒┘è╪▒",
+     "generated": "╪¬╪º╪▒┘è╪« ╪º┘ä╪Ñ┘å╪┤╪º╪í",
+-    "kb_version": "╪Ñ╪╡╪»╪º╪▒ ┘é╪º╪╣╪»╪⌐ ╪º┘ä┘à╪╣╪▒┘ü╪⌐",
+-    "capability_version": "╪Ñ╪╡╪»╪º╪▒ ╪º┘ä┘é╪»╪▒╪º╪¬",
+-    "scope": "┘å╪╖╪º┘é ╪º┘ä╪¬┘é╪▒┘è╪▒",
++    "language_label": "┘ä╪║╪⌐ ╪º┘ä╪¬┘é╪▒┘è╪▒",
++    "scope": "╪Ñ╪«┘ä╪º╪í ┘à╪│╪ñ┘ê┘ä┘è╪⌐ ╪º┘ä┘å╪╖╪º┘é",
+     "scope_text": (
+-        "┘è┘é╪¬╪╡╪▒ ┘ç╪░╪º ╪º┘ä╪¬┘é╪▒┘è╪▒ ╪╣┘ä┘ë ╪º┘ä╪º╪«╪¬╪¿╪º╪▒ ╪º┘ä┘à╪▒┘ü┘ê╪╣ ┘ê╪¬┘ê╪╡┘è┘ü ╪º┘ä┘à┘é╪▒╪▒ TP-153 ╪º┘ä┘à╪╣╪¿╪ú. ┘ê┘ä╪º ┘è┘é┘è┘æ┘à "
+-        "╪Ñ╪¼╪º╪¿╪º╪¬ ╪º┘ä╪╖┘ä╪¿╪⌐ ╪ú┘ê ╪»╪▒╪¼╪º╪¬┘ç┘à╪î ┘ê┘ä╪º ┘è┘é╪»┘æ╪▒ ╪╡╪╣┘ê╪¿╪⌐ ╪º┘ä╪º╪«╪¬╪¿╪º╪▒╪î ┘ê┘ä╪º ┘è╪╡┘å┘ü ┘à╪│╪¬┘ê┘è╪º╪¬ ╪¿┘ä┘ê┘à╪î ┘ê┘ä╪º "
+-        "┘è╪╡╪»╪▒ ┘é╪▒╪º╪▒ ╪º╪╣╪¬┘à╪º╪» ╪ú┘ê ┘é╪¿┘ê┘ä ╪ú┘ê ╪▒┘ü╪╢. ╪º┘ä╪¬┘ê╪╡┘è╪º╪¬ ╪»╪╣┘à ╪ú┘â╪º╪»┘è┘à┘è ┘ä┘ä┘à╪▒╪º╪¼╪╣╪⌐ ╪º┘ä╪¿╪┤╪▒┘è╪⌐ ┘ê┘ä┘è╪│╪¬ "
+-        "┘é╪▒╪º╪▒╪º╪¬ ┘à╪ñ╪│╪│┘è╪⌐."
++        "┘è┘é╪¬╪╡╪▒ ┘ç╪░╪º ╪º┘ä╪¬┘é╪▒┘è╪▒ ╪╣┘ä┘ë ╪º┘ä╪º╪«╪¬╪¿╪º╪▒ ╪º┘ä┘à╪▒┘ü┘ê╪╣ ┘ê╪¬┘ê╪╡┘è┘ü ╪º┘ä┘à┘é╪▒╪▒ ╪º┘ä┘à╪╖╪º╪¿┘é ┘ä┘ç. ┘ä╪º ╪¬╪╡╪»╪▒ ╪º┘ä┘à┘å╪╡╪⌐ ┘é╪▒╪º╪▒╪º╪¬ "
++        "╪º╪╣╪¬┘à╪º╪»╪î ┘ê┘ä╪º ╪¬┘é┘è┘æ┘à ╪º┘ä╪¿╪▒┘å╪º┘à╪¼ ╪º┘ä╪ú┘â╪º╪»┘è┘à┘è ┘â╪º┘à┘ä┘ï╪º╪î ┘ê┘ä╪º ╪¬╪¡┘ä ┘à╪¡┘ä ╪º┘ä╪¬┘é╪»┘è╪▒ ╪º┘ä╪ú┘â╪º╪»┘è┘à┘è. ┘è╪╕┘ä ╪╣╪╢┘ê ┘ç┘è╪ª╪⌐ "
++        "╪º┘ä╪¬╪»╪▒┘è╪│ ┘à╪│╪ñ┘ê┘ä┘ï╪º ╪╣┘å ╪º┘ä┘é╪▒╪º╪▒ ╪º┘ä┘å┘ç╪º╪ª┘è ╪¿╪┤╪ú┘å ╪º┘ä╪º╪«╪¬╪¿╪º╪▒."
++    ),
++    "s1_header": "┘í. ╪¬╪▒┘ê┘è╪│╪⌐ ╪º┘ä╪¬┘é╪▒┘è╪▒",
++    "s2_summary": "┘ó. ╪º┘ä┘à┘ä╪«╪╡ ╪º┘ä╪¬┘å┘ü┘è╪░┘è",
++    "s3_score": "┘ú. ╪º┘ä╪»╪▒╪¼╪⌐ ╪º┘ä╪Ñ╪¼┘à╪º┘ä┘è╪⌐ ┘ä╪¼┘ê╪»╪⌐ ╪º┘ä╪º╪«╪¬╪¿╪º╪▒",
++    "s4_distribution": "┘ñ. ╪¬┘ê╪▓┘è╪╣ ╪º┘ä╪¡╪º┘ä╪º╪¬",
++    "s5_exam_summary": "┘Ñ. ┘à┘ä╪«╪╡ ╪º┘ä╪º╪«╪¬╪¿╪º╪▒",
++    "s6_clo": "┘ª. ╪¬╪¡┘ä┘è┘ä ┘å┘ê╪º╪¬╪¼ ╪º┘ä╪¬╪╣┘ä┘à",
++    "s7_topic": "┘º. ╪¬╪¡┘ä┘è┘ä ┘à┘ê╪╢┘ê╪╣╪º╪¬ ╪º┘ä┘à┘é╪▒╪▒",
++    "s8_marks": "┘¿. ╪º┘ä╪»╪▒╪¼╪º╪¬ ┘ê╪º┘ä╪¿┘å┘è╪⌐",
++    "s9_materials": "┘⌐. ╪º┘ä┘à┘ê╪º╪» ╪º┘ä┘à╪│╪º┘å╪»╪⌐ ┘ê╪º┘ä╪Ñ╪¡╪º┘ä╪º╪¬",
++    "s10_findings": "┘í┘á. ╪ú╪¿╪▒╪▓ ╪º┘ä┘å╪¬╪º╪ª╪¼",
++    "s11_missing": "┘í┘í. ╪º┘ä╪ú╪»┘ä╪⌐ ╪º┘ä┘à┘ü┘é┘ê╪»╪⌐ ╪ú┘ê ╪║┘è╪▒ ╪º┘ä┘à╪¬╪¡┘é┘é ┘à┘å┘ç╪º",
++    "s12_recommendations": "┘í┘ó. ╪º┘ä╪¬┘ê╪╡┘è╪º╪¬",
++    "s13_scope": "┘í┘ú. ╪Ñ╪«┘ä╪º╪í ┘à╪│╪ñ┘ê┘ä┘è╪⌐ ╪º┘ä┘å╪╖╪º┘é",
++    "s14_appendix": "┘í┘ñ. ┘à┘ä╪¡┘é ╪º┘ä╪¬╪¬╪¿╪╣ ╪º┘ä╪¬┘é┘å┘è",
++    "summary_text": (
++        "┘è╪¡┘ä┘ä ┘ç╪░╪º ╪º┘ä╪¬┘é╪▒┘è╪▒ ╪º┘ä╪º╪«╪¬╪¿╪º╪▒ ╪º┘ä┘à╪▒┘ü┘ê╪╣ ┘à┘é╪º╪▒┘å╪⌐┘ï ╪¿╪¬┘ê╪╡┘è┘ü ╪º┘ä┘à┘é╪▒╪▒╪î ┘ê┘è╪║╪╖┘è ┘ê╪╢┘ê╪¡ ╪º┘ä╪ú╪│╪ª┘ä╪⌐╪î ┘ê┘à┘ê╪º╪í┘à╪⌐ "
++        "┘ê╪¬╪║╪╖┘è╪⌐ ┘å┘ê╪º╪¬╪¼ ╪º┘ä╪¬╪╣┘ä┘à ┘ê╪º┘ä┘à┘ê╪╢┘ê╪╣╪º╪¬╪î ┘ê╪º┘ä╪»╪▒╪¼╪º╪¬ ┘ê╪º┘ä╪¿┘å┘è╪⌐╪î ┘ê╪º┘ä┘à┘ê╪º╪» ╪º┘ä┘à╪│╪º┘å╪»╪⌐."
+     ),
+-    "overall_score": "╪º┘ä╪»╪▒╪¼╪⌐ ╪º┘ä╪Ñ╪¼┘à╪º┘ä┘è╪⌐ ┘ä╪¼┘ê╪»╪⌐ ╪º┘ä╪º╪«╪¬╪¿╪º╪▒",
++    "overall_result_scored": (
++        "╪º┘ä┘å╪¬┘è╪¼╪⌐ ╪º┘ä╪Ñ╪¼┘à╪º┘ä┘è╪⌐: {score}% ╪º╪│╪¬┘å╪º╪»┘ï╪º ╪Ñ┘ä┘ë {count} ┘ü╪¡╪╡┘ï╪º ┘à┘å╪╖╪¿┘é┘ï╪º ╪¬┘à ╪º┘ä╪¬╪¡┘é┘é ┘à┘å┘ç."
++    ),
++    "overall_result_label": "╪º┘ä┘å╪¬┘è╪¼╪⌐ ╪º┘ä╪Ñ╪¼┘à╪º┘ä┘è╪⌐: {label}.",
++    "strongest_areas": "╪ú┘é┘ê┘ë ╪º┘ä╪¼┘ê╪º┘å╪¿ ╪º┘ä╪¬┘è ╪¬┘à ╪º┘ä╪¬╪¡┘é┘é ┘à┘å┘ç╪º: {areas}.",
++    "weakest_areas": "╪ú╪¿╪▒╪▓ ╪º┘ä╪¼┘ê╪º┘å╪¿ ╪º┘ä╪¬┘è ╪¬╪¡╪¬╪º╪¼ ╪Ñ┘ä┘ë ╪¬╪¡╪│┘è┘å: {areas}.",
++    "missing_summary": "╪¬╪╣╪░╪▒ ╪º┘ä╪¬╪¡┘é┘é ┘à┘å {count} ┘å╪¬┘è╪¼╪⌐ ╪¿╪│╪¿╪¿ ╪ú╪»┘ä╪⌐ ┘à┘ü┘é┘ê╪»╪⌐ ╪ú┘ê ╪║┘è╪▒ ┘à┘ê╪½┘ê┘é╪⌐.",
+     "based_on": "╪º╪│╪¬┘å╪º╪»┘ï╪º ╪Ñ┘ä┘ë {count} ┘é╪º╪╣╪»╪⌐ ┘à┘å╪╖╪¿┘é╪⌐ ╪¬┘à ╪º┘ä╪¬╪¡┘é┘é ┘à┘å┘ç╪º",
+     "rule": "┘é╪º╪╣╪»╪⌐",
+     "rules": "┘é┘ê╪º╪╣╪»",
+     "insufficient": "╪ú╪»┘ä╪⌐ ╪║┘è╪▒ ┘â╪º┘ü┘è╪⌐",
+-    "score_note": (
+-        "╪¬╪╕┘ç╪▒ ╪¡╪º┘ä╪¬╪º ╪║┘è╪▒ ┘à╪¬╪¡┘é┘é ┘ê╪║┘è╪▒ ┘à┘å╪╖╪¿┘é ┘ü┘è ╪º┘ä╪¬┘é╪▒┘è╪▒╪î ┘ä┘â┘å┘ç┘à╪º ┘à╪│╪¬╪¿╪╣╪»╪¬╪º┘å ┘à┘å ┘à┘é╪º┘à ╪º┘ä╪»╪▒╪¼╪⌐. "
+-        "┘ê┘ä╪º ┘è╪║┘è┘æ╪▒ ┘à╪│╪¬┘ê┘ë ╪º┘ä╪½┘é╪⌐ ╪º┘ä╪»┘ä╪º┘ä┘è╪⌐ ┘ê╪▓┘å ╪º╪¡╪¬╪│╪º╪¿ ╪º┘ä╪»╪▒╪¼╪⌐."
+-    ),
+-    "missing_evidence": "╪º┘ä╪ú╪»┘ä╪⌐ ╪º┘ä┘à┘ü┘é┘ê╪»╪⌐",
+-    "missing_note": (
+-        "╪º╪│╪¬┘Å╪¿╪╣╪»╪¬ ┘à┘å ╪º┘ä╪»╪▒╪¼╪⌐ ┘ä╪ú┘å ╪º┘ä╪ú╪»┘ä╪⌐ ╪º┘ä┘à╪╖┘ä┘ê╪¿╪⌐ ┘â╪º┘å╪¬ ┘à┘ü┘é┘ê╪»╪⌐ ╪ú┘ê ╪║┘è╪▒ ┘à┘é╪▒┘ê╪í╪⌐ ╪ú┘ê ╪║┘è╪▒ ┘â╪º┘ü┘è╪⌐╪î "
+-        "┘ê┘ä┘è╪│ ┘ä╪ú┘å ╪º┘ä╪º╪«╪¬╪¿╪º╪▒ ╪ú╪«┘ü┘é ┘ü┘è ╪º┘ä┘à╪¬╪╖┘ä╪¿."
++    "distribution_note": (
++        "╪¬╪╕┘ä ┘å╪¬╪º╪ª╪¼ ┬½╪║┘è╪▒ ┘à╪¬╪¡┘é┘é┬╗ ┘ê┬½╪║┘è╪▒ ┘à┘å╪╖╪¿┘é┬╗ ╪╕╪º┘ç╪▒╪⌐╪î ┘ä┘â┘å┘ç╪º ┘à╪│╪¬╪¿╪╣╪»╪⌐ ┘à┘å ┘à┘é╪º┘à ╪º┘ä╪»╪▒╪¼╪⌐."
+     ),
+-    "findings": "┘å╪¬╪º╪ª╪¼ ╪º┘ä╪¬┘é┘è┘è┘à",
+-    "structured_evidence": "╪º┘ä┘à┘ê╪º╪» ╪º┘ä┘à╪│╪º┘å╪»╪⌐ ┘ê╪º┘ä╪Ñ╪¡╪º┘ä╪º╪¬ ╪º┘ä┘à╪▒╪¼╪╣┘è╪⌐",
+-    "materials": "╪º┘ä┘à┘ê╪º╪» ╪º┘ä┘à╪│╪º┘å╪»╪⌐",
+-    "annotations": "╪º┘ä╪¬╪│┘à┘è╪º╪¬ ┘ê╪º┘ä╪╣┘å╪º┘ê┘è┘å ╪º┘ä╪¬┘ê╪╢┘è╪¡┘è╪⌐",
+-    "references": "╪º┘ä╪Ñ╪¡╪º┘ä╪º╪¬ ╪º┘ä╪╡╪▒┘è╪¡╪⌐",
+-    "material_type": "┘å┘ê╪╣ ╪º┘ä┘à╪º╪»╪⌐",
+-    "extraction_method": "╪╖╪▒┘è┘é╪⌐ ╪º┘ä╪º╪│╪¬╪«╪▒╪º╪¼",
+-    "confidence": "╪½┘é╪⌐ ╪º┘ä╪º╪│╪¬╪«╪▒╪º╪¼",
+-    "resolution": "╪¡╪º┘ä╪⌐ ╪º┘ä╪¬╪¡╪»┘è╪»",
+-    "candidates": "╪º┘ä┘à╪▒╪┤╪¡┘ê┘å",
++    "col_status": "╪º┘ä╪¡╪º┘ä╪⌐",
++    "col_count": "╪º┘ä╪╣╪»╪»",
++    "exam_summary_question_count": "╪º┘ä╪ú╪│╪ª┘ä╪⌐ ╪º┘ä┘é╪º╪¿┘ä╪⌐ ┘ä┘ä╪¬┘é┘è┘è┘à ╪º┘ä┘à╪│╪¬┘é┘ä",
++    "exam_summary_declared": "╪Ñ╪¼┘à╪º┘ä┘è ╪º┘ä╪»╪▒╪¼╪º╪¬ ╪º┘ä┘à╪╣┘ä┘å",
++    "exam_summary_calculated": "╪Ñ╪¼┘à╪º┘ä┘è ╪º┘ä╪»╪▒╪¼╪º╪¬ ╪º┘ä┘à╪¡╪│┘ê╪¿",
++    "exam_summary_materials": "╪º┘ä┘à┘ê╪º╪» ╪º┘ä┘à╪│╪º┘å╪»╪⌐",
++    "exam_summary_missing_refs": "╪º┘ä╪Ñ╪¡╪º┘ä╪º╪¬ ╪º┘ä┘à┘ü┘é┘ê╪»╪⌐ ╪ú┘ê ╪º┘ä┘à┘ä╪¬╪¿╪│╪⌐",
++    "col_clo": "┘å╪º╪¬╪¼ ╪º┘ä╪¬╪╣┘ä┘à",
++    "col_clo_text": "┘å╪╡ ┘å╪º╪¬╪¼ ╪º┘ä╪¬╪╣┘ä┘à",
++    "col_topic": "┘à┘ê╪╢┘ê╪╣ ╪º┘ä┘à┘é╪▒╪▒",
++    "col_linked_questions": "╪º┘ä╪ú╪│╪ª┘ä╪⌐ ╪º┘ä┘à╪▒╪¬╪¿╪╖╪⌐",
++    "col_total_marks": "╪Ñ╪¼┘à╪º┘ä┘è ╪º┘ä╪»╪▒╪¼╪º╪¬",
++    "col_coverage_status": "╪¡╪º┘ä╪⌐ ╪º┘ä╪¬╪║╪╖┘è╪⌐",
++    "text_unavailable": "╪║┘è╪▒ ┘à╪¬╪º╪¡ ╪¿┘ä╪║╪⌐ ┘ç╪░╪º ╪º┘ä╪¬┘é╪▒┘è╪▒.",
++    "none": "┘ä╪º ┘è┘ê╪¼╪»",
+     "no_findings": "┘ä╪º ╪¬┘ê╪¼╪» ┘å╪¬╪º╪ª╪¼ ╪¬┘é┘è┘è┘à ┘à╪¬╪º╪¡╪⌐ ┘ä┘ç╪░╪º ╪º┘ä╪¬╪¡┘ä┘è┘ä.",
+-    "semantic_confidence": "╪º┘ä╪½┘é╪⌐ ╪º┘ä╪»┘ä╪º┘ä┘è╪⌐",
+-    "confidence_note": "╪¬╪╡┘å┘è┘ü ┘ê╪╡┘ü┘è ┘ü┘é╪╖╪î ┘ê┘ä┘è╪│╪¬ ╪»╪▒╪¼╪⌐ ╪ú┘ê ╪┤╪»╪⌐ ╪ú┘ê ╪ú┘ê┘ä┘ê┘è╪⌐ ╪ú┘ê ╪º╪¡╪¬┘à╪º┘ä┘ï╪º ╪ú┘ê ┘ê╪▓┘å┘ï╪º",
+-    "decision_reasoning": "┘à╪¿╪▒╪▒╪º╪¬ ╪º┘ä┘é╪▒╪º╪▒ ╪º┘ä┘à╪¡┘â┘ê┘à",
+-    "confidence_basis": "╪ú╪│╪º╪│ ╪º┘ä╪½┘é╪⌐",
+-    "item_judgments": "╪ú╪¡┘â╪º┘à ╪º┘ä╪╣┘å╪º╪╡╪▒ ╪º┘ä┘à╪▒╪¬╪¿╪╖╪⌐ ╪¿╪º┘ä╪ú╪»┘ä╪⌐",
+-    "derived_relationship": "╪╣┘ä╪º┘é╪⌐ ╪º╪│╪¬╪▒╪┤╪º╪»┘è╪⌐ ┘à╪│╪¬┘å╪¬╪¼╪⌐",
+-    "governed_judgment": "╪¡┘â┘à ╪╣┘å╪╡╪▒ ┘à╪¡┘â┘ê┘à",
+-    "derived_note": ("┘ç╪░┘ç ╪º┘ä╪╣┘ä╪º┘é╪⌐ ┘å╪º╪¬╪¼ ╪¬╪¡┘ä┘è┘ä┘è ┘ê┘ä┘è╪│╪¬ ╪▒╪¿╪╖┘ï╪º ╪▒╪│┘à┘è┘ï╪º ┘ü┘è TP-153╪î ┘ê┘ä╪º ╪¬╪│╪¬╪¿╪»┘ä ╪ú╪»┘ä╪⌐ ╪º┘ä┘à╪╡╪»╪▒."),
+-    "source": "╪º┘ä┘à╪╡╪»╪▒",
+-    "source_unavailable": "┘à╪▒╪¼╪╣ ╪»┘ä┘è┘ä ╪º┘ä┘à╪╡╪»╪▒ ╪║┘è╪▒ ┘à╪¬╪º╪¡",
+-    "related_evidence": "╪º┘ä╪»┘ä┘è┘ä ╪º┘ä┘à╪▒╪¬╪¿╪╖",
+-    "related_unresolved": "╪¡┘Å┘ü╪╕╪¬ ┘à╪▒╪º╪¼╪╣ ╪º┘ä╪ú╪»┘ä╪⌐ ╪º┘ä┘à╪▒╪¬╪¿╪╖╪⌐╪î ┘ä┘â┘å ╪¬╪╣╪░╪▒ ╪¡┘ä┘ç╪º ┘ü┘è ┘ä┘é╪╖╪⌐ ╪º┘ä╪¬┘é╪▒┘è╪▒.",
+-    "no_target": "┘ä┘à ╪¬┘Å╪½╪¿╪¬ ╪╣┘ä╪º┘é╪⌐ ┘à╪╣ ┘ç╪»┘ü.",
+-    "reasoning": "╪º┘ä╪¬╪╣┘ä┘è┘ä ╪º┘ä┘à╪«╪¬╪╡╪▒",
+-    "linked_evidence": "╪º┘ä╪ú╪»┘ä╪⌐ ╪º┘ä┘à╪▒╪¬╪¿╪╖╪⌐",
+-    "no_evidence": "┘ä┘à ┘è┘Å╪▒╪¿╪╖ ╪ú┘è ╪»┘ä┘è┘ä ╪¿┘ç╪░┘ç ╪º┘ä┘å╪¬┘è╪¼╪⌐.",
+-    "kb_references": "┘à╪▒╪º╪¼╪╣ ┘é╪º╪╣╪»╪⌐ ╪º┘ä┘à╪╣╪▒┘ü╪⌐ ╪º┘ä┘à╪¡┘â┘ê┘à╪⌐",
+-    "ai_provenance": "╪¬┘ü╪º╪╡┘è┘ä ╪º┘ä╪¬╪»┘é┘è┘é ╪º┘ä╪¬┘é┘å┘è",
+-    "original_wording": "╪º┘ä┘å╪╡ ╪º┘ä┘à╪╡╪»╪▒┘è ╪º┘ä╪ú╪╡┘ä┘è",
+-    "provider": "╪º┘ä┘à╪▓┘ê┘æ╪»",
+-    "model": "╪º┘ä┘å┘à┘ê╪░╪¼",
+-    "prompt": "┘é╪º┘ä╪¿ ╪º┘ä╪¬╪╣┘ä┘è┘à╪º╪¬",
++    "col_check": "╪º┘ä┘ü╪¡╪╡",
++    "col_reason": "╪º┘ä╪│╪¿╪¿",
++    "col_referenced_item": "╪º┘ä╪╣┘å╪╡╪▒ ╪º┘ä┘à╪┤╪º╪▒ ╪Ñ┘ä┘è┘ç",
++    "col_relationship_result": "┘å╪¬┘è╪¼╪⌐ ╪º┘ä╪º╪▒╪¬╪¿╪º╪╖",
++    "col_page": "╪º┘ä╪╡┘ü╪¡╪⌐",
++    "no_materials": "┘ä┘à ┘è┘Å╪¡╪»┘Ä┘æ╪» ╪ú┘è ╪º╪▒╪¬╪¿╪º╪╖ ╪¿┘è┘å ╪º┘ä╪ú╪│╪ª┘ä╪⌐ ┘ê╪º┘ä┘à┘ê╪º╪».",
++    "strengths": "┘å┘é╪º╪╖ ╪º┘ä┘é┘ê╪⌐",
++    "areas_for_improvement": "╪¼┘ê╪º┘å╪¿ ╪¬╪¡╪¬╪º╪¼ ╪Ñ┘ä┘ë ╪¬╪¡╪│┘è┘å",
+     "recommendation": "╪º┘ä╪¬┘ê╪╡┘è╪⌐",
++    "no_recommendations": "┘ä╪º ┘è┘ê╪¼╪»",
++    "col_requirement": "╪º┘ä┘à╪¬╪╖┘ä╪¿",
++    "col_rule": "╪º┘ä┘é╪º╪╣╪»╪⌐",
++    "col_confidence": "╪º┘ä╪½┘é╪⌐",
++    "col_evaluator": "╪╖╪▒┘è┘é╪⌐ ╪º┘ä╪¬┘é┘è┘è┘à",
++    "col_provenance": "╪º┘ä┘à╪╡╪»╪▒ ╪º┘ä╪¬┘é┘å┘è",
++    "appendix_note": (
++        "┘è╪¡┘ü╪╕ ┘ç╪░╪º ╪º┘ä┘à┘ä╪¡┘é ╪¬┘ü╪º╪╡┘è┘ä ╪º┘ä╪¬╪»┘é┘è┘é ╪º┘ä╪¬┘é┘å┘è - ┘à╪╣╪▒┘æ┘ü╪º╪¬ ╪º┘ä╪ú╪»┘ä╪⌐╪î ┘ê┘à╪╡╪»╪▒ ╪º┘ä┘à╪▓┘ê┘æ╪» ┘ê╪º┘ä┘å┘à┘ê╪░╪¼╪î ┘ê╪ú╪│╪º╪│ "
++        "╪º┘ä╪½┘é╪⌐ - ╪¿┘à╪╣╪▓┘ä ╪╣┘å ╪º┘ä╪¬┘é╪▒┘è╪▒ ╪º┘ä╪ú╪│╪º╪│┘è ╪º┘ä┘à┘ê╪¼┘ç ┘ä╪╣╪╢┘ê ┘ç┘è╪ª╪⌐ ╪º┘ä╪¬╪»╪▒┘è╪│."
++    ),
++    "appendix_judgments": "╪ú╪¡┘â╪º┘à ╪º┘ä╪╣┘å╪º╪╡╪▒ ╪º┘ä┘à╪▒╪¬╪¿╪╖╪⌐ ╪¿╪º┘ä╪ú╪»┘ä╪⌐",
++    "appendix_judgments_summary": (
++        "╪¼╪▒┘ë ╪¬┘é┘è┘è┘à {count} ┘à┘å ╪ú╪¡┘â╪º┘à ╪º┘ä╪╣┘å╪º╪╡╪▒ ╪º┘ä┘à╪▒╪¬╪¿╪╖╪⌐ ╪¿╪º┘ä╪ú╪»┘ä╪⌐ ┘ä┘ç╪░╪º ╪º┘ä╪¬╪¡┘ä┘è┘ä. ╪¬╪¿┘é┘ë ╪Ñ╪¡╪º┘ä╪º╪¬ ╪º┘ä╪ú╪»┘ä╪⌐ "
++        "╪º┘ä┘à╪╡╪»╪▒┘è╪⌐ ┘ê╪º┘ä┘à╪│╪¬┘ç╪»┘ü╪⌐ ┘â╪º┘à┘ä╪⌐ ┘à╪¡┘ü┘ê╪╕╪⌐ ┘ü┘è ╪│╪¼┘ä╪º╪¬ ┘å╪¬╪º╪ª╪¼ ╪º┘ä╪¬┘é┘è┘è┘à ╪º┘ä┘à╪«╪▓┘å╪⌐╪î ┘ê┘ç┘è ┘à╪¬╪º╪¡╪⌐ ╪╣╪¿╪▒ ╪¿┘è╪º┘å╪º╪¬ "
++        "╪º┘ä┘à┘å╪╡╪⌐ ┘ä┘ä╪¬╪»┘é┘è┘é ╪º┘ä╪¬┘ü╪╡┘è┘ä┘è."
++    ),
++    "capability_legacy": "╪║┘è╪▒ ┘à┘å╪╖╪¿┘é (╪¬╪¡┘ä┘è┘ä ╪│╪º╪¿┘é)",
++    "col_source": "╪º┘ä╪»┘ä┘è┘ä ╪º┘ä┘à╪╡╪»╪▒",
++    "col_target": "╪º┘ä╪»┘ä┘è┘ä ╪º┘ä┘ç╪»┘ü",
+     "page": "╪╡┘ü╪¡╪⌐",
+     "exam_document": "╪º┘ä╪º╪«╪¬╪¿╪º╪▒",
++    "resolved": "┘à╪▒╪¬╪¿╪╖",
++    "ambiguous": "╪Ñ╪¡╪º┘ä╪⌐ ┘à┘ä╪¬╪¿╪│╪⌐",
++    "unresolved": "╪Ñ╪¡╪º┘ä╪⌐ ┘à┘ü┘é┘ê╪»╪⌐ ╪ú┘ê ╪║┘è╪▒ ┘à╪¡┘ä┘ê┘ä╪⌐",
+ }
+ 
+ _STATUS_AR: dict[AcademicStatus, str] = {
+@@ -203,6 +282,17 @@ _STATUS_AR: dict[AcademicStatus, str] = {
+     AcademicStatus.NOT_APPLICABLE: "╪║┘è╪▒ ┘à┘å╪╖╪¿┘é",
+ }
+ 
++_STATUS_DISTRIBUTION_ORDER: tuple[AcademicStatus, ...] = (
++    AcademicStatus.SATISFIED,
++    AcademicStatus.PARTIALLY_SATISFIED,
++    AcademicStatus.NOT_SATISFIED,
++    AcademicStatus.NOT_VERIFIED,
++    AcademicStatus.NOT_APPLICABLE,
++)
++
++_MARKS_STRUCTURE_DIMENSIONS = {"Marks and Totals", "Numbering and Structure"}
++_ATTENTION_STATUSES = {AcademicStatus.PARTIALLY_SATISFIED, AcademicStatus.NOT_SATISFIED}
++
+ 
+ def _strings(language: ReportLanguage) -> dict[str, str]:
+     return _AR if language is ReportLanguage.ARABIC else _EN
+@@ -218,21 +308,16 @@ def _confidence(value: str, language: ReportLanguage) -> str:
+     return {"High": "┘à╪▒╪¬┘ü╪╣", "Medium": "┘à╪¬┘ê╪│╪╖", "Low": "┘à┘å╪«┘ü╪╢"}.get(value, value)
+ 
+ 
+-def _structured_label(value: str, language: ReportLanguage) -> str:
+-    if language is not ReportLanguage.ARABIC:
+-        return value.replace("_", " ").title()
+-    return {
+-        "figure": "╪┤┘â┘ä",
+-        "table": "╪¼╪»┘ê┘ä",
+-        "code_block": "┘à┘é╪╖╪╣ ╪┤┘ü╪▒╪⌐",
+-        "label": "╪¬╪│┘à┘è╪⌐",
+-        "caption": "╪╣┘å┘ê╪º┘å ╪¬┘ê╪╢┘è╪¡┘è",
+-        "resolved": "┘à╪¡╪»╪» ╪¿╪╡┘ê╪▒╪⌐ ┘ü╪▒┘è╪»╪⌐",
+-        "ambiguous": "┘à┘ä╪¬╪¿╪│",
+-        "unresolved": "╪║┘è╪▒ ┘à╪¡╪»╪»",
+-        "direct_text": "┘å╪╡ ┘à╪¿╪º╪┤╪▒",
+-        "ocr": "╪¬╪╣╪▒┘æ┘ü ╪╢┘ê╪ª┘è",
+-    }.get(value, value)
++def _align(language: ReportLanguage) -> Align:
++    return Align.R if language is ReportLanguage.ARABIC else Align.L
++
++
++def _display_capability_version(value: str, strings: dict[str, str]) -> str:
++    """Only surface a currently-recognized capability version. A value from
++    a removed-feature era (e.g. a defunct milestone tag) is replaced with a
++    generic label instead of leaking stale capability text into new report
++    output; the stored analysis record itself is never modified."""
++    return value if value in _RECOGNIZED_CAPABILITY_VERSIONS else strings["capability_legacy"]
+ 
+ 
+ def _first_existing_font(candidates: tuple[Path, ...]) -> Path:
+@@ -284,8 +369,13 @@ def _paragraph(pdf: FPDF, text: str, *, style: str = "", size: int = 11) -> None
+     )
+ 
+ 
+-def _heading(pdf: FPDF, text: str) -> None:
+-    _paragraph(pdf, text, style="B", size=13)
++def _section_heading(pdf: FPDF, text: str, language: ReportLanguage) -> None:
++    pdf.ln(1)
++    _set_font(pdf, style="B", size=13)
++    pdf.multi_cell(0, 7, text, align=_align(language), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
++    pdf.set_draw_color(200, 200, 200)
++    pdf.line(pdf.get_x(), pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
++    pdf.ln(3)
+ 
+ 
+ def _subheading(pdf: FPDF, text: str) -> None:
+@@ -308,281 +398,455 @@ def _score_line(content: ReportContent, language: ReportLanguage) -> str:
+     return f"{content.score}% ({basis})"
+ 
+ 
+-def _citation_line(item: EvidenceCitation, language: ReportLanguage) -> str:
+-    strings = _strings(language)
+-    document = strings["exam_document"] if item.source_document.value == "exam" else "TP-153"
+-    evidence_type = item.evidence_type
+-    if language is ReportLanguage.ARABIC:
+-        evidence_type = {
+-            "question_text": "┘å╪╡ ╪º┘ä╪│╪ñ╪º┘ä",
+-            "marks": "╪º┘ä╪»╪▒╪¼╪º╪¬",
+-            "declared_total": "╪º┘ä┘à╪¼┘à┘ê╪╣ ╪º┘ä┘à╪╣┘ä┘å",
+-            "instructions": "╪º┘ä╪¬╪╣┘ä┘è┘à╪º╪¬",
+-            "clo": "┘à╪▒╪¼╪╣ ┘å╪º╪¬╪¼ ╪º┘ä╪¬╪╣┘ä┘à",
+-            "topic": "┘à╪▒╪¼╪╣ ┘à┘ê╪╢┘ê╪╣ ╪º┘ä┘à┘é╪▒╪▒",
+-            "assessment_record": "╪│╪¼┘ä ╪º┘ä╪¬┘é┘è┘è┘à",
+-            "missing_section": "┘é╪│┘à ┘à┘ü┘é┘ê╪»",
+-            "exam_metadata": "╪¿┘è╪º┘å╪º╪¬ ╪º┘ä╪º╪«╪¬╪¿╪º╪▒",
+-        }.get(item.evidence_type, "╪»┘ä┘è┘ä ┘à╪▒╪¬╪¿╪╖")
+-    return (
+-        f"{item.item_reference} | {document} {strings['page']} {item.page_number} | {evidence_type}"
+-    )
++def _table_headings_style() -> FontFace:
++    return FontFace(emphasis="BOLD", fill_color=(235, 238, 242))
+ 
+ 
+-def _render_item_judgment(
++def _simple_table(
+     pdf: FPDF,
+-    entry: ReportFindingEntry,
+-    judgment: ReportItemJudgment,
++    headers: list[str],
++    rows: list[list[str]],
++    *,
+     language: ReportLanguage,
++    col_widths: list[float] | None = None,
+ ) -> None:
++    if not rows:
++        return
++    align = "R" if language is ReportLanguage.ARABIC else "L"
++    with pdf.table(
++        headings_style=_table_headings_style(),
++        text_align=align,
++        col_widths=col_widths,
++        line_height=5.2,
++        padding=1.4,
++    ) as table:
++        header_row = table.row()
++        for header in headers:
++            header_row.cell(header)
++        for data_row in rows:
++            row = table.row()
++            for value in data_row:
++                row.cell(value)
++
++
++def _executive_summary(pdf: FPDF, content: ReportContent, language: ReportLanguage) -> None:
+     strings = _strings(language)
+-    relationship = entry.rule_id in {"RULE001", "RULE007"} and judgment.is_derived_relationship
+-    label = strings["derived_relationship"] if relationship else strings["governed_judgment"]
+-    _paragraph(pdf, f"{label} - {_status(judgment.status, language)}", style="B", size=9)
+-    if relationship:
+-        _paragraph(pdf, strings["derived_note"], style="I", size=8)
+-
+-    if judgment.source_evidence is not None:
++    _paragraph(pdf, strings["summary_text"], style="I")
++    if content.score is not None:
+         _paragraph(
+             pdf,
+-            f"{strings['source']}: {_citation_line(judgment.source_evidence, language)}",
+-            size=9,
++            strings["overall_result_scored"].format(score=content.score, count=content.denominator),
+         )
+     else:
+         _paragraph(
+             pdf,
+-            f"{strings['source_unavailable']}: {judgment.source_evidence_id}",
+-            style="I",
+-            size=9,
++            strings["overall_result_label"].format(
++                label=content.score_label or strings["insufficient"]
++            ),
+         )
++    strengths = content.strengths
++    areas = content.areas_for_improvement
++    missing = content.missing_evidence
++    if strengths:
++        dimensions = list(dict.fromkeys(governed_label(f.dimension, language) for f in strengths))
++        _paragraph(pdf, strings["strongest_areas"].format(areas=", ".join(dimensions[:3])))
++    if areas:
++        dimensions = list(dict.fromkeys(governed_label(f.dimension, language) for f in areas))
++        _paragraph(pdf, strings["weakest_areas"].format(areas=", ".join(dimensions[:3])))
++    if missing:
++        _paragraph(pdf, strings["missing_summary"].format(count=len(missing)))
+ 
+-    if judgment.target_evidence:
+-        for target in judgment.target_evidence:
+-            _paragraph(
+-                pdf,
+-                f"{strings['related_evidence']}: {_citation_line(target, language)}",
+-                size=9,
+-            )
+-    elif judgment.target_evidence_ids:
+-        _paragraph(pdf, strings["related_unresolved"], style="I", size=9)
+-    else:
+-        _paragraph(pdf, strings["no_target"], style="I", size=9)
+ 
+-    if language is ReportLanguage.ARABIC:
+-        _paragraph(
+-            pdf,
+-            f"{strings['reasoning']}: ╪¬╪»╪╣┘à ╪º┘ä╪ú╪»┘ä╪⌐ ╪º┘ä┘à╪▒╪¬╪¿╪╖╪⌐ ╪º┘ä╪¡┘â┘à ╪º┘ä╪¬┘ü╪╡┘è┘ä┘è ╪º┘ä┘à╪╣╪▒┘ê╪╢ ╪ú╪╣┘ä╪º┘ç.",
+-            size=9,
+-        )
+-        _paragraph(
+-            pdf,
+-            f"{strings['original_wording']}: {judgment.reasoning}",
+-            style="I",
+-            size=8,
+-        )
+-    else:
+-        _paragraph(pdf, f"{strings['reasoning']}: {judgment.reasoning}", size=9)
++def _status_distribution_table(pdf: FPDF, content: ReportContent, language: ReportLanguage) -> None:
++    strings = _strings(language)
++    counts = {
++        AcademicStatus.SATISFIED: content.satisfied_count,
++        AcademicStatus.PARTIALLY_SATISFIED: content.partially_satisfied_count,
++        AcademicStatus.NOT_SATISFIED: content.not_satisfied_count,
++        AcademicStatus.NOT_VERIFIED: content.not_verified_count,
++        AcademicStatus.NOT_APPLICABLE: content.not_applicable_count,
++    }
++    rows = [
++        [_status(status, language), str(counts[status])] for status in _STATUS_DISTRIBUTION_ORDER
++    ]
++    _simple_table(
++        pdf,
++        [strings["col_status"], strings["col_count"]],
++        rows,
++        language=language,
++        col_widths=[130, 40],
++    )
++    _paragraph(pdf, strings["distribution_note"], style="I", size=9)
++
++
++def _exam_summary_section(pdf: FPDF, content: ReportContent, language: ReportLanguage) -> None:
++    strings = _strings(language)
++    summary = content.exam_summary
++    if summary is None:
++        return
++    rows = [
++        [strings["exam_summary_question_count"], str(summary.scorable_question_count)],
++        [
++            strings["exam_summary_declared"],
++            "ΓÇö" if summary.declared_total_marks is None else str(summary.declared_total_marks),
++        ],
++        [
++            strings["exam_summary_calculated"],
++            "ΓÇö" if summary.calculated_total_marks is None else str(summary.calculated_total_marks),
++        ],
++        [strings["exam_summary_materials"], str(summary.supporting_material_count)],
++        [
++            strings["exam_summary_missing_refs"],
++            str(summary.missing_or_ambiguous_reference_count),
++        ],
++    ]
++    _simple_table(pdf, ["", ""], rows, language=language, col_widths=[110, 60])
+ 
+ 
+-def _render_finding(
++def _localized_source_text(text: str, language: ReportLanguage, fallback: str) -> str:
++    """Show source-extracted text only when its script matches the report
++    language; otherwise show a safe fallback instead of foreign-language text."""
++    if not text.strip():
++        return fallback
++    is_arabic_text = _is_predominantly_arabic(text)
++    wants_arabic = language is ReportLanguage.ARABIC
++    return text if is_arabic_text == wants_arabic else fallback
++
++
++def _relationship_table(
+     pdf: FPDF,
+-    entry: ReportFindingEntry,
++    entries: tuple[ReportRelationshipEntry, ...],
+     language: ReportLanguage,
++    *,
++    identifier_header: str,
++    include_text_column: bool,
+ ) -> None:
+     strings = _strings(language)
+-    _paragraph(
+-        pdf,
+-        f"{requirement_name(entry.requirement_id, entry.requirement_name, language)} - "
+-        f"{_status(entry.status, language)}",
+-        style="B",
+-        size=11,
+-    )
+-    _paragraph(
++    if not entries:
++        _paragraph(pdf, strings["none"], style="I")
++        return
++    fallback = strings["text_unavailable"]
++    if include_text_column:
++        headers = [
++            identifier_header,
++            strings["col_clo_text"],
++            strings["col_linked_questions"],
++            strings["col_total_marks"],
++            strings["col_coverage_status"],
++        ]
++        col_widths: list[float] = [22, 68, 40, 25, 35]
++        rows = [
++            [
++                # A CLO's identifier is always a short language-neutral code
++                # (e.g. "CLO1"), never source prose, so it is shown as-is.
++                entry.identifier,
++                _localized_source_text(entry.text, language, fallback),
++                ", ".join(entry.linked_question_labels) or strings["none"],
++                str(entry.total_marks),
++                _status(entry.coverage_status, language),
++            ]
++            for entry in entries
++        ]
++    else:
++        headers = [
++            identifier_header,
++            strings["col_linked_questions"],
++            strings["col_total_marks"],
++            strings["col_coverage_status"],
++        ]
++        col_widths = [75, 40, 35, 40]
++        rows = [
++            [
++                (
++                    _localized_source_text(entry.identifier, language, fallback)
++                    if entry.identifier_is_source_text
++                    # A genuine short code (e.g. a topic code) is
++                    # language-neutral and always shown as-is.
++                    else entry.identifier
++                ),
++                ", ".join(entry.linked_question_labels) or strings["none"],
++                str(entry.total_marks),
++                _status(entry.coverage_status, language),
++            ]
++            for entry in entries
++        ]
++    _simple_table(pdf, headers, rows, language=language, col_widths=col_widths)
++
++
++def _marks_structure_section(pdf: FPDF, content: ReportContent, language: ReportLanguage) -> None:
++    strings = _strings(language)
++    checks = [f for f in content.findings if f.dimension in _MARKS_STRUCTURE_DIMENSIONS]
++    if not checks:
++        _paragraph(pdf, strings["none"], style="I")
++        return
++    for entry in checks:
++        _subheading(pdf, requirement_name(entry.requirement_id, entry.requirement_name, language))
++        _paragraph(pdf, f"{_status(entry.status, language)}", style="B", size=9)
++        _paragraph(pdf, finding_explanation(entry.status, entry.explanation, language), size=10)
++        pdf.ln(1)
++
++
++def _materials_references_section(
++    pdf: FPDF, content: ReportContent, language: ReportLanguage
++) -> None:
++    strings = _strings(language)
++    references = content.document_references
++    if not references:
++        _paragraph(pdf, strings["no_materials"], style="I")
++        return
++    rows = [
++        [
++            reference.original_text,
++            _structured_label(reference.target_type, language),
++            strings.get(reference.resolution_status, reference.resolution_status),
++            str(reference.page_number),
++        ]
++        for reference in references
++    ]
++    _simple_table(
+         pdf,
+-        f"{governed_label(entry.dimension, language)} | "
+-        f"{governed_label(entry.source_type, language)} "
+-        f"({governed_label(entry.officiality, language)}) | "
+-        f"{entry.requirement_id} / {entry.rule_id}",
+-        style="I",
+-        size=9,
++        [
++            strings["col_referenced_item"],
++            strings["col_status"],
++            strings["col_relationship_result"],
++            strings["col_page"],
++        ],
++        rows,
++        language=language,
++        col_widths=[70, 30, 60, 25],
+     )
+-    _paragraph(pdf, finding_explanation(entry.status, entry.explanation, language))
+-    if language is ReportLanguage.ARABIC:
+-        _paragraph(
+-            pdf,
+-            f"{strings['original_wording']}: {entry.explanation}",
+-            style="I",
+-            size=8,
+-        )
+ 
+-    if entry.confidence_level is not None:
+-        _paragraph(
+-            pdf,
+-            f"{strings['semantic_confidence']}: "
+-            f"{_confidence(entry.confidence_level.value, language)} "
+-            f"({strings['confidence_note']})",
+-            style="B",
+-            size=9,
+-        )
+-    if entry.evaluation_reasoning:
+-        _paragraph(
+-            pdf,
+-            f"{strings['decision_reasoning']}: "
+-            + (
+-                "┘è╪│╪¬┘å╪» ╪º┘ä┘é╪▒╪º╪▒ ╪Ñ┘ä┘ë ╪º┘ä┘à╪¬╪╖┘ä╪¿ ╪º┘ä┘à╪¡┘â┘ê┘à ┘ê╪º┘ä╪ú╪»┘ä╪⌐ ╪º┘ä┘à╪▒╪¬╪¿╪╖╪⌐."
+-                if language is ReportLanguage.ARABIC
+-                else entry.evaluation_reasoning
+-            ),
+-            size=9,
+-        )
+-        if language is ReportLanguage.ARABIC:
+-            _paragraph(
+-                pdf,
+-                f"{strings['original_wording']}: {entry.evaluation_reasoning}",
+-                style="I",
+-                size=8,
+-            )
+-    for basis in entry.confidence_basis:
+-        presented_basis = (
+-            "┘è╪╣┘â╪│ ┘à╪│╪¬┘ê┘ë ╪º┘ä╪½┘é╪⌐ ╪¼┘ê╪»╪⌐ ╪º┘ä╪ú╪»┘ä╪⌐ ╪º┘ä┘à╪▒╪¬╪¿╪╖╪⌐ ┘ê╪º┘â╪¬┘à╪º┘ä┘ç╪º."
+-            if language is ReportLanguage.ARABIC
+-            else basis
+-        )
+-        _paragraph(pdf, f"{strings['confidence_basis']}: {presented_basis}", size=9)
+-        if language is ReportLanguage.ARABIC:
+-            _paragraph(pdf, f"{strings['original_wording']}: {basis}", style="I", size=8)
+ 
+-    if entry.item_judgments:
+-        _paragraph(
+-            pdf,
+-            f"{strings['item_judgments']} ({len(entry.item_judgments)}):",
+-            style="B",
+-            size=9,
+-        )
+-        for judgment in entry.item_judgments:
+-            _render_item_judgment(pdf, entry, judgment, language)
++def _structured_label(value: str, language: ReportLanguage) -> str:
++    if language is not ReportLanguage.ARABIC:
++        return value.replace("_", " ").title()
++    return {
++        "figure": "╪┤┘â┘ä",
++        "table": "╪¼╪»┘ê┘ä",
++        "code_block": "┘à┘é╪╖╪╣ ╪┤┘ü╪▒╪⌐",
++        "question": "╪│╪ñ╪º┘ä",
++    }.get(value, value)
+ 
+-    if entry.evidence:
+-        _paragraph(
+-            pdf,
+-            f"{strings['linked_evidence']} ({len(entry.evidence)}):",
+-            style="B",
+-            size=9,
+-        )
+-        for item in entry.evidence:
+-            _paragraph(pdf, f"- {_citation_line(item, language)}", size=9)
+-    else:
+-        _paragraph(pdf, strings["no_evidence"], style="I", size=9)
+ 
+-    if entry.retrieved_knowledge_ids:
+-        _paragraph(
+-            pdf,
+-            f"{strings['kb_references']}: " + ", ".join(entry.retrieved_knowledge_ids),
+-            size=9,
+-        )
++def _key_findings_section(pdf: FPDF, content: ReportContent, language: ReportLanguage) -> None:
++    strings = _strings(language)
++    for label_key, group in (
++        ("strengths", content.strengths),
++        ("areas_for_improvement", content.areas_for_improvement),
++    ):
++        _subheading(pdf, strings[label_key])
++        if not group:
++            _paragraph(pdf, strings["none"], style="I", size=10)
++            continue
++        for entry in group:
++            _render_concise_finding(pdf, entry, language)
++        pdf.ln(1)
+ 
+-    provenance = [
+-        value
+-        for value in (
+-            f"{strings['provider']}: {entry.ai_provider}" if entry.ai_provider else None,
+-            f"{strings['model']}: {entry.ai_model}" if entry.ai_model else None,
+-            f"{strings['prompt']}: {entry.prompt_template_version}"
+-            if entry.prompt_template_version
+-            else None,
+-            f"KB: {entry.finding_kb_version}" if entry.finding_kb_version else None,
+-        )
+-        if value is not None
+-    ]
+-    if provenance:
+-        _paragraph(pdf, f"{strings['ai_provenance']}: " + " | ".join(provenance), style="I", size=8)
+ 
+-    for recommendation in entry.recommendations:
++def _render_concise_finding(pdf: FPDF, entry: ReportFindingEntry, language: ReportLanguage) -> None:
++    strings = _strings(language)
++    _paragraph(
++        pdf,
++        f"{requirement_name(entry.requirement_id, entry.requirement_name, language)} - "
++        f"{_status(entry.status, language)}",
++        style="B",
++        size=10,
++    )
++    _paragraph(pdf, finding_explanation(entry.status, entry.explanation, language), size=10)
++    if entry.recommendations:
++        recommendation = entry.recommendations[0]
+         title, text = recommendation_text(
+             recommendation.recommendation_id,
+             recommendation.title,
+             recommendation.text,
+             language,
+         )
+-        _paragraph(pdf, f"{strings['recommendation']}: {title}", style="B", size=9)
+-        _paragraph(pdf, text, size=9)
+-        if language is ReportLanguage.ARABIC:
+-            _paragraph(
+-                pdf,
+-                f"{strings['original_wording']}: {recommendation.title}. {recommendation.text}",
+-                style="I",
+-                size=8,
+-            )
++        _paragraph(pdf, f"{strings['recommendation']}: {title} - {text}", size=9, style="I")
++    pdf.ln(1)
+ 
+-    pdf.ln(3)
+ 
++def _missing_evidence_section(pdf: FPDF, content: ReportContent, language: ReportLanguage) -> None:
++    strings = _strings(language)
++    missing = content.missing_evidence
++    if not missing:
++        _paragraph(pdf, strings["none"], style="I")
++        return
++    for entry in missing:
++        _render_concise_finding(pdf, entry, language)
+ 
+-def _render_structured_evidence(
+-    pdf: FPDF,
+-    content: ReportContent,
+-    language: ReportLanguage,
+-) -> None:
++
++_RECOMMENDATION_SECTION_DIMENSIONS: tuple[tuple[str, set[str]], ...] = (
++    ("Questions", {"Question Clarity", "Question Completeness"}),
++    (
++        "Alignment & Coverage",
++        {"CLO Alignment", "CLO Coverage", "Topic Alignment", "Topic Coverage"},
++    ),
++    ("Marks & Structure", {"Marks and Totals", "Numbering and Structure"}),
++)
++_RECOMMENDATION_SECTION_RULES: dict[str, set[str]] = {
++    "Materials & References": {"RULE014", "RULE016", "RULE022"},
++}
++
++
++def _recommendation_section_label(entry: ReportFindingEntry) -> str | None:
++    for label, dimensions in _RECOMMENDATION_SECTION_DIMENSIONS:
++        if entry.dimension in dimensions:
++            return label
++    for label, rule_ids in _RECOMMENDATION_SECTION_RULES.items():
++        if entry.rule_id in rule_ids:
++            return label
++    return None
++
++
++def _recommendations_section(pdf: FPDF, content: ReportContent, language: ReportLanguage) -> None:
+     strings = _strings(language)
+-    if not (
+-        content.supporting_materials
+-        or content.supporting_annotations
+-        or content.document_references
+-    ):
++    grouped: dict[str, list[ReportFindingEntry]] = {}
++    seen: set[tuple[str, str]] = set()
++    for entry in content.findings:
++        if entry.status not in _ATTENTION_STATUSES or not entry.recommendations:
++            continue
++        label = _recommendation_section_label(entry)
++        if label is None:
++            continue
++        key = (label, entry.requirement_id)
++        if key in seen:
++            continue
++        seen.add(key)
++        grouped.setdefault(label, []).append(entry)
++
++    if not grouped:
++        _paragraph(pdf, strings["no_recommendations"], style="I")
+         return
+-    _heading(pdf, strings["structured_evidence"])
+-    if content.supporting_materials:
+-        _subheading(pdf, f"{strings['materials']} ({len(content.supporting_materials)})")
+-        for material_entry in content.supporting_materials:
+-            _paragraph(
+-                pdf,
+-                f"{_structured_label(material_entry.material_type, language)} | "
+-                f"{strings['page']} {material_entry.page_number} | "
+-                f"{strings['confidence']}: {material_entry.confidence:.2f} | "
+-                f"{strings['extraction_method']}: "
+-                f"{_structured_label(material_entry.extraction_method, language)}",
+-                size=9,
++
++    for label, entries in grouped.items():
++        _subheading(pdf, label)
++        for entry in entries:
++            recommendation = entry.recommendations[0]
++            title, text = recommendation_text(
++                recommendation.recommendation_id,
++                recommendation.title,
++                recommendation.text,
++                language,
+             )
+-            if material_entry.source_text:
+-                _paragraph(
+-                    pdf,
+-                    f"{strings['original_wording']}: {material_entry.source_text}",
+-                    style="I",
+-                    size=8,
+-                )
++            _paragraph(pdf, f"{title}: {text}", size=10)
++        pdf.ln(1)
++
++
++def _supporting_evidence_appendix(
++    pdf: FPDF, content: ReportContent, language: ReportLanguage
++) -> None:
++    strings = _strings(language)
++    if content.supporting_materials:
++        _subheading(pdf, strings["exam_summary_materials"])
++        rows = [
++            [
++                _structured_label(material.material_type, language),
++                str(material.page_number),
++                material.source_text or "ΓÇö",
++            ]
++            for material in content.supporting_materials
++        ]
++        _simple_table(
++            pdf,
++            [strings["col_check"], strings["col_page"], strings["col_reason"]],
++            rows,
++            language=language,
++            col_widths=[30, 20, 130],
++        )
++        pdf.ln(1)
+     if content.supporting_annotations:
+-        _subheading(pdf, f"{strings['annotations']} ({len(content.supporting_annotations)})")
+-        for annotation_entry in content.supporting_annotations:
+-            _paragraph(
+-                pdf,
+-                f"{_structured_label(annotation_entry.annotation_type, language)} | "
+-                f"{strings['page']} {annotation_entry.page_number} | "
+-                f"{strings['confidence']}: {annotation_entry.confidence:.2f}",
+-                size=9,
+-            )
+-            _paragraph(
+-                pdf,
+-                f"{strings['original_wording']}: {annotation_entry.original_text}",
+-                style="I",
+-                size=8,
+-            )
+-    if content.document_references:
+-        _subheading(pdf, f"{strings['references']} ({len(content.document_references)})")
+-        for reference_entry in content.document_references:
+-            _paragraph(
+-                pdf,
+-                f"{_structured_label(reference_entry.target_type, language)} | "
+-                f"{strings['page']} {reference_entry.page_number} | "
+-                f"{strings['resolution']}: "
+-                f"{_structured_label(reference_entry.resolution_status, language)} | "
+-                f"{strings['candidates']}: {reference_entry.candidate_count}",
+-                size=9,
+-            )
+-            _paragraph(
+-                pdf,
+-                f"{strings['original_wording']}: {reference_entry.original_text}",
+-                style="I",
+-                size=8,
++        rows = [
++            [
++                _structured_label(annotation.annotation_type, language),
++                str(annotation.page_number),
++                annotation.original_text,
++            ]
++            for annotation in content.supporting_annotations
++        ]
++        _simple_table(
++            pdf,
++            [strings["col_check"], strings["col_page"], strings["col_reason"]],
++            rows,
++            language=language,
++            col_widths=[30, 20, 130],
++        )
++        pdf.ln(1)
++
++
++def _appendix(pdf: FPDF, content: ReportContent, language: ReportLanguage) -> None:
++    strings = _strings(language)
++    _section_heading(pdf, strings["s14_appendix"], language)
++    _paragraph(pdf, strings["appendix_note"], style="I", size=9)
++    _paragraph(
++        pdf,
++        f"{strings['report_id']}: {content.analysis_id} | KB: {content.kb_version} | "
++        f"Capability: {_display_capability_version(content.capability_version, strings)}",
++        size=8,
++        style="I",
++    )
++    pdf.ln(1)
++
++    _supporting_evidence_appendix(pdf, content, language)
++
++    if not content.findings:
++        _paragraph(pdf, strings["no_findings"], style="I")
++        return
++
++    rows = []
++    for entry in content.findings:
++        provenance = " | ".join(
++            value
++            for value in (
++                entry.ai_provider,
++                entry.ai_model,
++                entry.prompt_template_version,
++                entry.finding_kb_version,
+             )
+-    pdf.ln(2)
++            if value
++        )
++        rows.append(
++            [
++                entry.requirement_id,
++                entry.rule_id,
++                _status(entry.status, language),
++                _confidence(entry.confidence_level.value, language)
++                if entry.confidence_level
++                else "ΓÇö",
++                governed_label(entry.evaluator_type, language),
++                provenance or "ΓÇö",
++            ]
++        )
++    _simple_table(
++        pdf,
++        [
++            strings["col_requirement"],
++            strings["col_rule"],
++            strings["col_status"],
++            strings["col_confidence"],
++            strings["col_evaluator"],
++            strings["col_provenance"],
++        ],
++        rows,
++        language=language,
++        col_widths=[20, 20, 25, 20, 35, 60],
++    )
++
++    # A short count summary, not the complete evidence-linked judgment
++    # inventory - the full per-judgment source/target evidence citations
++    # stay in the stored findings records for audit, rather than being
++    # printed repeatedly in the faculty-facing PDF.
++    judgment_count = sum(len(entry.item_judgments) for entry in content.findings)
++    if judgment_count:
++        pdf.ln(2)
++        _subheading(pdf, strings["appendix_judgments"])
++        # Regular (non-italic) style: on some platforms the italic font
++        # variant lacks Arabic glyph coverage even though the regular and
++        # bold variants render Arabic correctly.
++        _paragraph(
++            pdf,
++            strings["appendix_judgments_summary"].format(count=judgment_count),
++            size=9,
++        )
+ 
+ 
+ def render_report_pdf(
+@@ -599,6 +863,10 @@ def render_report_pdf(
+     _configure_report_fonts(pdf)
+     pdf.add_page()
+ 
++    # Section 1 - Report Header. Deliberately excludes the full analysis
++    # UUID, storage identifiers, and capability/provider details from the
++    # primary body - see the Technical Traceability Appendix for those.
++    _section_heading(pdf, strings["s1_header"], language)
+     _paragraph(pdf, strings["title"], style="B", size=16)
+     _paragraph(pdf, f"{content.course_code} - {content.course_name}")
+     exam_type = (
+@@ -609,55 +877,63 @@ def render_report_pdf(
+     _paragraph(pdf, f"{exam_type} {strings['exam']}╪î {content.term}")
+     _paragraph(
+         pdf,
+-        f"{strings['analysis_id']}: {content.analysis_id} | {strings['generated']}: "
+-        f"{content.generated_at.isoformat(timespec='seconds')} | {strings['kb_version']}: "
+-        f"{content.kb_version} | {strings['capability_version']}: "
+-        f"{content.capability_version}",
++        f"{strings['report_id']}: {content.analysis_id} | {strings['generated']}: "
++        f"{content.generated_at.isoformat(timespec='seconds')} | "
++        f"{strings['language_label']}: "
++        f"{('Arabic' if language is ReportLanguage.ARABIC else 'English')}",
+         size=9,
+     )
+-    pdf.ln(2)
+ 
+-    _heading(pdf, strings["scope"])
+-    _paragraph(pdf, strings["scope_text"], style="I")
+-    pdf.ln(2)
+-
+-    _heading(pdf, strings["overall_score"])
+-    _paragraph(pdf, _score_line(content, language))
+-    counts = (
+-        f"{_status(AcademicStatus.SATISFIED, language)}: {content.satisfied_count} | "
+-        f"{_status(AcademicStatus.PARTIALLY_SATISFIED, language)}: "
+-        f"{content.partially_satisfied_count} | "
+-        f"{_status(AcademicStatus.NOT_SATISFIED, language)}: {content.not_satisfied_count} | "
+-        f"{_status(AcademicStatus.NOT_VERIFIED, language)}: {content.not_verified_count} | "
+-        f"{_status(AcademicStatus.NOT_APPLICABLE, language)}: {content.not_applicable_count}"
++    _section_heading(pdf, strings["s2_summary"], language)
++    _executive_summary(pdf, content, language)
++
++    _section_heading(pdf, strings["s3_score"], language)
++    _paragraph(pdf, _score_line(content, language), style="B", size=13)
++
++    _section_heading(pdf, strings["s4_distribution"], language)
++    _status_distribution_table(pdf, content, language)
++
++    _section_heading(pdf, strings["s5_exam_summary"], language)
++    _exam_summary_section(pdf, content, language)
++
++    _section_heading(pdf, strings["s6_clo"], language)
++    _relationship_table(
++        pdf,
++        content.clo_entries,
++        language,
++        identifier_header=strings["col_clo"],
++        include_text_column=True,
+     )
+-    _paragraph(pdf, counts, size=10)
+-    _paragraph(pdf, strings["score_note"], style="I", size=9)
+-    pdf.ln(2)
+ 
+-    missing = content.missing_evidence
+-    if missing:
+-        _heading(pdf, f"{strings['missing_evidence']} ({len(missing)})")
+-        _paragraph(pdf, strings["missing_note"], style="I")
+-        for entry in missing:
+-            _subheading(
+-                pdf,
+-                requirement_name(entry.requirement_id, entry.requirement_name, language),
+-            )
+-            _paragraph(
+-                pdf,
+-                finding_explanation(entry.status, entry.explanation, language),
+-                size=10,
+-            )
+-        pdf.ln(2)
++    _section_heading(pdf, strings["s7_topic"], language)
++    _relationship_table(
++        pdf,
++        content.topic_entries,
++        language,
++        identifier_header=strings["col_topic"],
++        include_text_column=False,
++    )
+ 
+-    _render_structured_evidence(pdf, content, language)
++    _section_heading(pdf, strings["s8_marks"], language)
++    _marks_structure_section(pdf, content, language)
+ 
+-    _heading(pdf, f"{strings['findings']} ({len(content.findings)})")
+-    if not content.findings:
+-        _paragraph(pdf, strings["no_findings"], style="I")
+-    for entry in content.findings:
+-        _render_finding(pdf, entry, language)
++    _section_heading(pdf, strings["s9_materials"], language)
++    _materials_references_section(pdf, content, language)
++
++    _section_heading(pdf, strings["s10_findings"], language)
++    _key_findings_section(pdf, content, language)
++
++    _section_heading(pdf, strings["s11_missing"], language)
++    _missing_evidence_section(pdf, content, language)
++
++    _section_heading(pdf, strings["s12_recommendations"], language)
++    _recommendations_section(pdf, content, language)
++
++    _section_heading(pdf, strings["s13_scope"], language)
++    _paragraph(pdf, strings["scope_text"], style="I")
++
++    pdf.add_page()
++    _appendix(pdf, content, language)
+ 
+     output = pdf.output()
+     return bytes(output)
+diff --git a/backend/tests/test_report_content.py b/backend/tests/test_report_content.py
+index 3241790..c0a585c 100644
+--- a/backend/tests/test_report_content.py
++++ b/backend/tests/test_report_content.py
+@@ -237,6 +237,336 @@ def test_report_content_preserves_semantic_confidence_and_derived_relationships(
+     assert entry.retrieved_knowledge_ids == ("REQ001", "RULE001")
+ 
+ 
++def test_relationship_entries_compute_linked_questions_marks_and_coverage_status() -> None:
++    from app.models.clo import Clo
++    from app.models.question import Question
++    from app.models.topic import Topic
++
++    analysis = _analysis()
++    q1 = Question(
++        id=uuid.uuid4(),
++        analysis_id=analysis.id,
++        parent_question_id=None,
++        number_label="Q1",
++        question_text="Explain testing.",
++        page_number=1,
++        marks=5,
++        sequence=1,
++        confidence=1.0,
++    )
++    q2 = Question(
++        id=uuid.uuid4(),
++        analysis_id=analysis.id,
++        parent_question_id=None,
++        number_label="Q2",
++        question_text="Design a schema.",
++        page_number=2,
++        marks=10,
++        sequence=2,
++        confidence=1.0,
++    )
++    clo = Clo(
++        id=uuid.uuid4(),
++        analysis_id=analysis.id,
++        code="CLO1",
++        text="Explain software quality concepts.",
++        page_number=3,
++        confidence=1.0,
++    )
++    topic = Topic(
++        id=uuid.uuid4(),
++        analysis_id=analysis.id,
++        code="T1",
++        text="Software testing",
++        page_number=4,
++        confidence=1.0,
++    )
++
++    q1_evidence = Evidence(
++        id=uuid.uuid4(),
++        analysis_id=analysis.id,
++        source_document=UploadedFileType.EXAM,
++        evidence_type="question_text",
++        page_number=1,
++        item_reference="Q1",
++        extracted_text="Explain testing.",
++        confidence=1.0,
++    )
++    q2_evidence = Evidence(
++        id=uuid.uuid4(),
++        analysis_id=analysis.id,
++        source_document=UploadedFileType.EXAM,
++        evidence_type="question_text",
++        page_number=2,
++        item_reference="Q2",
++        extracted_text="Design a schema.",
++        confidence=1.0,
++    )
++    clo_evidence = Evidence(
++        id=uuid.uuid4(),
++        analysis_id=analysis.id,
++        source_document=UploadedFileType.TP153,
++        evidence_type="clo",
++        page_number=3,
++        item_reference="CLO1",
++        extracted_text=clo.text,
++        confidence=1.0,
++    )
++    topic_evidence = Evidence(
++        id=uuid.uuid4(),
++        analysis_id=analysis.id,
++        source_document=UploadedFileType.TP153,
++        evidence_type="topic",
++        page_number=4,
++        item_reference="T1",
++        extracted_text=topic.text,
++        confidence=1.0,
++    )
++
++    clo_finding = _finding(
++        analysis.id,
++        "REQ001",
++        "RULE001",
++        AcademicStatus.PARTIALLY_SATISFIED,
++        evidence=[q1_evidence, q2_evidence, clo_evidence],
++    )
++    clo_finding.evaluation_details = {
++        "schema_version": 1,
++        "decision": "Partially Satisfied",
++        "evidence_used": [str(q1_evidence.id), str(q2_evidence.id), str(clo_evidence.id)],
++        "reasoning": "Mixed support.",
++        "recommendation": None,
++        "confidence_basis": [],
++        "item_judgments": [
++            {
++                "source_evidence_id": str(q1_evidence.id),
++                "target_evidence_ids": [str(clo_evidence.id)],
++                "status": "Satisfied",
++                "reasoning": "Q1 fully supports CLO1.",
++            },
++            {
++                "source_evidence_id": str(q2_evidence.id),
++                "target_evidence_ids": [str(clo_evidence.id)],
++                "status": "Not Satisfied",
++                "reasoning": "Q2 does not support CLO1.",
++            },
++        ],
++        "retrieved_knowledge_ids": [],
++    }
++
++    topic_finding = _finding(
++        analysis.id,
++        "REQ007",
++        "RULE007",
++        AcademicStatus.SATISFIED,
++        evidence=[q1_evidence, topic_evidence],
++    )
++    topic_finding.evaluation_details = {
++        "schema_version": 1,
++        "decision": "Satisfied",
++        "evidence_used": [str(q1_evidence.id), str(topic_evidence.id)],
++        "reasoning": "Direct match.",
++        "recommendation": None,
++        "confidence_basis": [],
++        "item_judgments": [
++            {
++                "source_evidence_id": str(q1_evidence.id),
++                "target_evidence_ids": [str(topic_evidence.id)],
++                "status": "Satisfied",
++                "reasoning": "Q1 directly assesses this topic.",
++            },
++        ],
++        "retrieved_knowledge_ids": [],
++    }
++
++    content = assemble_report_content(
++        analysis,
++        [clo_finding, topic_finding],
++        KB_SOURCE,
++        GENERATED_AT,
++        questions=[q1, q2],
++        clos=[clo],
++        topics=[topic],
++    )
++
++    assert len(content.clo_entries) == 1
++    clo_entry = content.clo_entries[0]
++    assert clo_entry.identifier == "CLO1"
++    # Both Q1 (Satisfied) and Q2 (Not Satisfied) judged CLO1 - both are "linked"
++    # for display, but only Q1's marks count toward total_marks.
++    assert clo_entry.linked_question_labels == ("Q1", "Q2")
++    assert clo_entry.total_marks == 5
++    assert clo_entry.coverage_status is AcademicStatus.SATISFIED
++
++    assert len(content.topic_entries) == 1
++    topic_entry = content.topic_entries[0]
++    assert topic_entry.identifier == "T1"
++    assert topic_entry.linked_question_labels == ("Q1",)
++    assert topic_entry.total_marks == 5
++    assert topic_entry.coverage_status is AcademicStatus.SATISFIED
++    # Both records here have real codes, so neither identifier fell back to
++    # source text.
++    assert clo_entry.identifier_is_source_text is False
++    assert topic_entry.identifier_is_source_text is False
++
++
++def test_topic_entry_identifier_falls_back_to_source_text_only_without_a_code() -> None:
++    """An uncoded topic's identifier is its full extracted text, flagged so
++    the report renderer knows to apply the report-language display rule to
++    it - unlike a genuine short code, which is always shown as-is."""
++    from app.models.topic import Topic
++
++    analysis = _analysis()
++    coded_topic = Topic(
++        id=uuid.uuid4(),
++        analysis_id=analysis.id,
++        code="T1",
++        text="Software testing",
++        page_number=1,
++        confidence=1.0,
++    )
++    uncoded_topic = Topic(
++        id=uuid.uuid4(),
++        analysis_id=analysis.id,
++        code=None,
++        text="Database normalization",
++        page_number=2,
++        confidence=1.0,
++    )
++
++    content = assemble_report_content(
++        analysis,
++        [],
++        KB_SOURCE,
++        GENERATED_AT,
++        topics=[coded_topic, uncoded_topic],
++    )
++
++    entries_by_identifier = {entry.identifier: entry for entry in content.topic_entries}
++    assert entries_by_identifier["T1"].identifier_is_source_text is False
++    assert entries_by_identifier["Database normalization"].identifier_is_source_text is True
++
++
++def test_relationship_entries_default_to_not_satisfied_when_no_judgment_cites_the_record() -> None:
++    from app.models.clo import Clo
++
++    analysis = _analysis()
++    clo = Clo(
++        id=uuid.uuid4(),
++        analysis_id=analysis.id,
++        code="CLO9",
++        text="Uncited outcome.",
++        page_number=1,
++        confidence=1.0,
++    )
++
++    content = assemble_report_content(
++        analysis,
++        [],
++        KB_SOURCE,
++        GENERATED_AT,
++        clos=[clo],
++    )
++
++    assert len(content.clo_entries) == 1
++    assert content.clo_entries[0].coverage_status is AcademicStatus.NOT_SATISFIED
++    assert content.clo_entries[0].linked_question_labels == ()
++    assert content.clo_entries[0].total_marks == 0
++
++
++def test_exam_summary_matches_marks_and_structure_totals() -> None:
++    """Regression test: the Exam Summary's declared/calculated totals must
++    equal what RULE018's own Marks & Structure finding reports for the same
++    exam - it must never show "missing" while Marks & Structure shows 40/40.
++
++    Reproduces the real extraction pipeline shape: the persisted
++    declared_total evidence carries item_reference="total" (a constant
++    marker, not the number) and the number embedded in extracted_text
++    (e.g. "Total Marks: 40"); no "calculated_total" evidence is ever
++    persisted (app.services.rules.marks_total never creates one), so the
++    calculated total must be derived from scorable leaf marks instead.
++    """
++    from app.models.question import Question
++
++    analysis = _analysis()
++    parent = Question(
++        id=uuid.uuid4(),
++        analysis_id=analysis.id,
++        parent_question_id=None,
++        number_label="Q1",
++        question_text="Answer both parts.",
++        page_number=1,
++        marks=40,
++        sequence=1,
++        confidence=1.0,
++    )
++    child = Question(
++        id=uuid.uuid4(),
++        analysis_id=analysis.id,
++        parent_question_id=parent.id,
++        number_label="Q1(a)",
++        question_text="Explain normalization.",
++        page_number=1,
++        marks=40,
++        sequence=2,
++        confidence=1.0,
++    )
++    declared_evidence = Evidence(
++        id=uuid.uuid4(),
++        analysis_id=analysis.id,
++        source_document=UploadedFileType.EXAM,
++        evidence_type="declared_total",
++        page_number=1,
++        item_reference="total",
++        extracted_text="Total Marks: 40",
++        confidence=1.0,
++    )
++    marks_finding = _finding(
++        analysis.id,
++        "REQ018",
++        "RULE018",
++        AcademicStatus.SATISFIED,
++        evidence=[declared_evidence],
++    )
++
++    content = assemble_report_content(
++        analysis,
++        [marks_finding],
++        KB_SOURCE,
++        GENERATED_AT,
++        questions=[parent, child],
++    )
++
++    assert content.exam_summary is not None
++    assert content.exam_summary.scorable_question_count == 1
++    assert content.exam_summary.declared_total_marks == 40
++    assert content.exam_summary.calculated_total_marks == 40
++
++
++def test_exam_summary_leaves_marks_totals_null_without_a_marks_finding() -> None:
++    content = assemble_report_content(_analysis(), [], KB_SOURCE, GENERATED_AT)
++
++    assert content.exam_summary is not None
++    assert content.exam_summary.declared_total_marks is None
++    assert content.exam_summary.calculated_total_marks is None
++    assert content.exam_summary.scorable_question_count == 0
++
++
++def test_strengths_and_areas_for_improvement_properties() -> None:
++    analysis = _analysis()
++    findings = [
++        _finding(analysis.id, "REQ001", "RULE001", AcademicStatus.SATISFIED),
++        _finding(analysis.id, "REQ005", "RULE005", AcademicStatus.PARTIALLY_SATISFIED),
++        _finding(analysis.id, "REQ007", "RULE007", AcademicStatus.NOT_SATISFIED),
++        _finding(analysis.id, "REQ009", "RULE009", AcademicStatus.NOT_VERIFIED),
++    ]
++
++    content = assemble_report_content(analysis, findings, KB_SOURCE, GENERATED_AT)
++
++    assert [f.requirement_id for f in content.strengths] == ["REQ001"]
++    assert [f.requirement_id for f in content.areas_for_improvement] == ["REQ005", "REQ007"]
++
++
+ def test_report_content_includes_assessment_records_and_runtime_coverage() -> None:
+     from app.models.assessment_record import AssessmentRecord
+     from app.services.rules.coverage_audit import build_rule_coverage_audit
+diff --git a/backend/tests/test_report_pdf.py b/backend/tests/test_report_pdf.py
+index 6031656..53694ed 100644
+--- a/backend/tests/test_report_pdf.py
++++ b/backend/tests/test_report_pdf.py
+@@ -276,6 +276,74 @@ def test_render_report_pdf_keeps_internal_assessments_and_coverage_out_of_user_r
+     assert "TP-153 Assessment Source Records" not in text
+     assert "Rule Execution Coverage" not in text
+     assert "Earned credit:" not in text
++    # The appendix shows a short count summary, not the complete per-judgment
++    # evidence-linked inventory (full source/target evidence citation lines).
++    assert "1 evidence-linked item judgments were evaluated" in text
++    assert "Q1 | Exam" not in text
++    assert "CLO1 | TP-153" not in text
++
++
++def test_render_report_pdf_appendix_omits_full_judgment_inventory_with_many_judgments() -> None:
++    """Regression test: even with many item judgments, the appendix must stay
++    a short summary - never a full evidence-linked judgment table repeated
++    row by row - so the faculty PDF stays concise."""
++    from dataclasses import replace
++
++    from app.services.reporting.content import ReportItemJudgment
++
++    source = EvidenceCitation(
++        id=uuid.uuid4(),
++        source_document=UploadedFileType.EXAM,
++        evidence_type="question_text",
++        page_number=1,
++        item_reference="Q1",
++    )
++    target = EvidenceCitation(
++        id=uuid.uuid4(),
++        source_document=UploadedFileType.TP153,
++        evidence_type="clo",
++        page_number=3,
++        item_reference="CLO1",
++    )
++    judgments = tuple(
++        ReportItemJudgment(
++            source_evidence_id=source.id,  # type: ignore[arg-type]
++            source_evidence=source,
++            target_evidence_ids=(target.id,),  # type: ignore[arg-type]
++            target_evidence=(target,),
++            unresolved_target_evidence_ids=(),
++            status=AcademicStatus.SATISFIED,
++            reasoning=f"Judgment {i}.",
++        )
++        for i in range(12)
++    )
++    entry = replace(_finding_entry(), item_judgments=judgments, evidence=(source, target))
++
++    pdf_bytes = render_report_pdf(_content(findings=(entry,)))
++    text = _pdf_text(pdf_bytes)
++
++    assert "12 evidence-linked item judgments were evaluated" in text
++    assert "Q1 | Exam" not in text
++    assert "Source evidence" not in text
++    assert "Target evidence" not in text
++
++
++def test_render_report_pdf_replaces_unrecognized_capability_version_with_a_generic_label() -> None:
++    """Regression test: a stale capability-version string from a removed
++    feature era (e.g. a defunct Question-Types milestone tag) must never be
++    printed verbatim into a newly generated report."""
++    pdf_bytes = render_report_pdf(_content(capability_version="v2-b6-question-types"))
++    text = _pdf_text(pdf_bytes)
++
++    assert "v2-b6-question-types" not in text
++    assert "Not applicable (legacy analysis)" in text
++
++
++def test_render_report_pdf_shows_a_recognized_capability_version_verbatim() -> None:
++    pdf_bytes = render_report_pdf(_content(capability_version="v2-pilot-correctness"))
++    text = _pdf_text(pdf_bytes)
++
++    assert "Capability: v2-pilot-correctness" in text
+ 
+ 
+ def test_render_report_pdf_supports_arabic_and_mixed_unicode_evidence() -> None:
+@@ -314,6 +382,179 @@ def test_render_report_pdf_supports_arabic_and_mixed_unicode_evidence() -> None:
+     assert len(pdf_bytes) > 0
+ 
+ 
++def test_render_report_pdf_uses_numbered_sections_matching_the_web_report() -> None:
++    pdf_bytes = render_report_pdf(_content())
++    text = _pdf_text(pdf_bytes)
++
++    for heading in (
++        "1. Report Header",
++        "2. Executive Summary",
++        "3. Overall Exam Quality Score",
++        "4. Status Distribution",
++        "5. Exam Summary",
++        "6. CLO Analysis",
++        "7. Topic Analysis",
++        "8. Marks & Structure",
++        "9. Materials & References",
++        "10. Key Findings",
++        "11. Missing or Unverified Evidence",
++        "12. Recommendations",
++        "13. Scope Disclaimer",
++        "14. Technical Traceability Appendix",
++    ):
++        assert heading in text, f"missing section heading: {heading}"
++
++
++def test_render_report_pdf_keeps_provider_model_out_of_the_primary_body() -> None:
++    entry = _finding_entry(
++        requirement_id="REQ001",
++        rule_id="RULE001",
++        status=AcademicStatus.SATISFIED,
++    )
++    from dataclasses import replace
++
++    entry = replace(
++        entry,
++        ai_provider="anthropic",
++        ai_model="claude-governed-v1",
++        prompt_template_version="semantic-rule-v3",
++    )
++    pdf_bytes = render_report_pdf(_content(findings=(entry,)))
++    text = _pdf_text(pdf_bytes)
++
++    appendix_start = text.index("14. Technical Traceability Appendix")
++    primary_body = text[:appendix_start]
++    appendix = text[appendix_start:]
++
++    assert "anthropic" not in primary_body
++    assert "claude-governed-v1" not in primary_body
++    assert "semantic-rule-v3" not in primary_body
++    assert "anthropic" in appendix
++    assert "claude-governed-v1" in appendix
++
++
++def test_render_report_pdf_shows_clo_and_topic_analysis_tables() -> None:
++    from app.services.reporting.content import ReportRelationshipEntry
++
++    content = _content(
++        clo_entries=(
++            ReportRelationshipEntry(
++                identifier="CLO1",
++                text="Explain fundamental computing concepts.",
++                linked_question_labels=("Q1", "Q2"),
++                total_marks=10,
++                coverage_status=AcademicStatus.SATISFIED,
++            ),
++        ),
++        topic_entries=(
++            ReportRelationshipEntry(
++                identifier="T1",
++                text="Software testing",
++                linked_question_labels=(),
++                total_marks=0,
++                coverage_status=AcademicStatus.NOT_SATISFIED,
++            ),
++        ),
++    )
++    pdf_bytes = render_report_pdf(content)
++    # A wrapped table cell's second line is extracted by pdfplumber on its
++    # own text band below the row's single-line cells, so the visually
++    # correct wrapped sentence is not always one contiguous plaintext
++    # substring - check both halves rather than the full phrase.
++    text = " ".join(_pdf_text(pdf_bytes).split())
++
++    assert "CLO1" in text
++    assert "Explain fundamental" in text
++    assert "computing concepts." in text
++    assert "T1" in text
++
++
++def test_render_report_pdf_topic_table_has_no_duplicate_clo_text_column() -> None:
++    """Regression test: the Topic Analysis table must use exactly
++    Topic | Linked Questions | Total Marks | Coverage Status - no separate
++    text/description column duplicated (and mislabelled "CLO text") from the
++    CLO table."""
++    from app.services.reporting.content import ReportRelationshipEntry
++
++    content = _content(
++        topic_entries=(
++            ReportRelationshipEntry(
++                identifier="T1",
++                text="Software testing and quality assurance practices.",
++                linked_question_labels=("Q1",),
++                total_marks=5,
++                coverage_status=AcademicStatus.SATISFIED,
++            ),
++        ),
++    )
++    pdf_bytes = render_report_pdf(content)
++    text = " ".join(_pdf_text(pdf_bytes).split())
++    topic_section = text[text.index("7. Topic Analysis") : text.index("8. Marks")]
++
++    # Header cells can wrap onto two lines, which pdfplumber extracts as
++    # separate text bands interleaved with other cells - check word
++    # fragments rather than full contiguous phrases.
++    assert "T1" in topic_section
++    assert "Linked" in topic_section
++    assert "questions" in topic_section
++    assert "Total marks" in topic_section
++    assert "Coverage status" in topic_section
++    assert "CLO text" not in topic_section
++    assert "Software testing" not in topic_section
++
++
++def test_render_report_pdf_hides_uncoded_topic_text_in_the_wrong_report_language() -> None:
++    """An uncoded topic's identifier falls back to its full source text; that
++    text must only render when it matches the report language, with a safe
++    fallback otherwise - never raw foreign-language prose."""
++    from app.services.reporting.content import ReportRelationshipEntry
++
++    content = _content(
++        topic_entries=(
++            ReportRelationshipEntry(
++                identifier="╪«┘ê╪º╪▒╪▓┘à┘è╪º╪¬ ╪º┘ä┘ü╪▒╪▓",
++                text="╪«┘ê╪º╪▒╪▓┘à┘è╪º╪¬ ╪º┘ä┘ü╪▒╪▓",
++                linked_question_labels=(),
++                total_marks=0,
++                coverage_status=AcademicStatus.NOT_SATISFIED,
++                identifier_is_source_text=True,
++            ),
++        ),
++    )
++    pdf_bytes = render_report_pdf(content)
++    text = " ".join(_pdf_text(pdf_bytes).split())
++
++    assert "╪«┘ê╪º╪▒╪▓┘à┘è╪º╪¬ ╪º┘ä┘ü╪▒╪▓" not in text
++    # The fallback sentence can wrap onto two lines, interleaved by
++    # pdfplumber with other cells' single-line text - check both halves.
++    assert "Not available in this report" in text
++    assert "language." in text
++
++
++def test_render_report_pdf_never_contains_question_type_content() -> None:
++    pdf_bytes = render_report_pdf(_content(findings=(_finding_entry(),)))
++    text = _pdf_text(pdf_bytes)
++
++    assert "Question Type" not in text
++    assert "question-type" not in text.lower()
++
++
++def test_render_report_pdf_arabic_keeps_provider_details_out_of_the_primary_body() -> None:
++    # pdfplumber does not reliably round-trip HarfBuzz-shaped Arabic glyph
++    # order back to logical text, so - matching the existing Arabic PDF
++    # tests in this file - this checks PDF validity plus the always-Latin
++    # provider/model strings rather than asserting extracted Arabic text.
++    from dataclasses import replace
++
++    entry = replace(_finding_entry(), ai_provider="anthropic", ai_model="claude")
++    pdf_bytes = render_report_pdf(_content(findings=(entry,)), language=ReportLanguage.ARABIC)
++
++    assert pdf_bytes.startswith(b"%PDF")
++    text = _pdf_text(pdf_bytes)
++    assert "anthropic" in text
++    assert "claude" in text
++
++
+ def test_report_renderer_enables_harfbuzz_and_detects_arabic_paragraphs(monkeypatch) -> None:
+     from fpdf import FPDF
+ 
+diff --git a/frontend/src/components/ui/StatusBadge.tsx b/frontend/src/components/ui/StatusBadge.tsx
+index 97183d5..b7f2fb4 100644
+--- a/frontend/src/components/ui/StatusBadge.tsx
++++ b/frontend/src/components/ui/StatusBadge.tsx
+@@ -1,17 +1,18 @@
+ import { useI18n } from '../../i18n/I18nProvider'
+ import type { AcademicStatus } from '../../types/api'
++import { Icon, type IconName } from './Icon'
+ 
+ interface StatusPresentation {
+   className: string
+-  icon: string
++  icon: IconName
+ }
+ 
+ const STATUS_PRESENTATION: Record<AcademicStatus, StatusPresentation> = {
+-  Satisfied: { className: 'ui-status-badge--satisfied', icon: 'Γ£ô' },
+-  'Partially Satisfied': { className: 'ui-status-badge--partial', icon: '!' },
+-  'Not Satisfied': { className: 'ui-status-badge--not-satisfied', icon: '├ù' },
+-  'Not Verified': { className: 'ui-status-badge--not-verified', icon: '?' },
+-  'Not Applicable': { className: 'ui-status-badge--not-applicable', icon: 'ΓÇô' },
++  Satisfied: { className: 'ui-status-badge--satisfied', icon: 'check-circle' },
++  'Partially Satisfied': { className: 'ui-status-badge--partial', icon: 'alert-circle' },
++  'Not Satisfied': { className: 'ui-status-badge--not-satisfied', icon: 'x-circle' },
++  'Not Verified': { className: 'ui-status-badge--not-verified', icon: 'question-circle' },
++  'Not Applicable': { className: 'ui-status-badge--not-applicable', icon: 'minus-circle' },
+ }
+ 
+ export function StatusBadge({ status }: { status: AcademicStatus }) {
+@@ -23,7 +24,7 @@ export function StatusBadge({ status }: { status: AcademicStatus }) {
+       className={`ui-status-badge ${presentation.className}`}
+       data-academic-status={status}
+     >
+-      <span aria-hidden="true">{presentation.icon}</span>
++      <Icon name={presentation.icon} className="ui-icon--sm" />
+       <span>{t(status)}</span>
+     </span>
+   )
+diff --git a/frontend/src/features/analysis-history/AnalysisSummaryCards.test.tsx b/frontend/src/features/analysis-history/AnalysisSummaryCards.test.tsx
+index 74c8e88..6001ca7 100644
+--- a/frontend/src/features/analysis-history/AnalysisSummaryCards.test.tsx
++++ b/frontend/src/features/analysis-history/AnalysisSummaryCards.test.tsx
+@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react'
+ import { describe, expect, it } from 'vitest'
+ import type { AnalysisResponse } from '../../types/api'
+ import { AnalysisSummaryCards } from './AnalysisSummaryCards'
++import type { ReportsAvailableState } from './useReportsAvailableCount'
+ 
+ const ANALYSES = [
+   {
+@@ -12,28 +13,55 @@ const ANALYSES = [
+     state: 'completed',
+     predecessor_analysis_id: null,
+   },
++  {
++    state: 'failed',
++    predecessor_analysis_id: null,
++  },
+   {
+     state: 'queued',
+     predecessor_analysis_id: null,
+   },
+ ] as AnalysisResponse[]
+ 
++const READY_REPORTS: ReportsAvailableState = { status: 'ready', count: 7 }
++
+ describe('AnalysisSummaryCards', () => {
+   it('renders the approved metrics with no score or academic-status labels', () => {
+-    render(<AnalysisSummaryCards analyses={ANALYSES} />)
++    render(<AnalysisSummaryCards analyses={ANALYSES} reportsAvailable={READY_REPORTS} />)
+     const summary = screen.getByRole('region', { name: 'Analysis summary' })
+ 
+-    expect(within(summary).getByRole('heading', { name: 'Total analyses' }))
+-      .toBeInTheDocument()
+-    expect(within(summary).getByRole('heading', { name: 'Completed analyses' }))
+-      .toBeInTheDocument()
+-    expect(within(summary).getAllByText('3')).toHaveLength(1)
+-    expect(within(summary).getAllByText('2')).toHaveLength(1)
++    const totalCard = within(summary)
++      .getByRole('heading', { name: 'Total analyses' })
++      .closest('article')
++    const completedCard = within(summary)
++      .getByRole('heading', { name: 'Completed analyses' })
++      .closest('article')
++    const attentionCard = within(summary)
++      .getByRole('heading', { name: 'Analyses needing attention' })
++      .closest('article')
++    const reportsCard = within(summary)
++      .getByRole('heading', { name: 'Reports available' })
++      .closest('article')
++
++    expect(totalCard && within(totalCard).getByText('4')).toBeInTheDocument()
++    expect(completedCard && within(completedCard).getByText('2')).toBeInTheDocument()
++    expect(attentionCard && within(attentionCard).getByText('1')).toBeInTheDocument()
++    expect(reportsCard && within(reportsCard).getByText('7')).toBeInTheDocument()
++
+     const cards = summary.querySelectorAll('.analysis-summary-card')
+-    expect(cards).toHaveLength(2)
+-    expect(cards[0].firstElementChild).toHaveTextContent('3')
+-    expect(cards[0].lastElementChild).toHaveTextContent('Total analyses')
++    expect(cards).toHaveLength(4)
+     expect(within(summary).queryByText(/score/i)).not.toBeInTheDocument()
+     expect(within(summary).queryByText(/satisfied/i)).not.toBeInTheDocument()
+   })
++
++  it('shows a loading placeholder for the reports-available count while it loads', () => {
++    render(
++      <AnalysisSummaryCards analyses={ANALYSES} reportsAvailable={{ status: 'loading' }} />,
++    )
++    const reportsCard = screen
++      .getByRole('heading', { name: 'Reports available' })
++      .closest('article')
++
++    expect(reportsCard && within(reportsCard).getByText('ΓÇö')).toBeInTheDocument()
++  })
+ })
+diff --git a/frontend/src/features/analysis-history/AnalysisSummaryCards.tsx b/frontend/src/features/analysis-history/AnalysisSummaryCards.tsx
+index e8cfc81..f98df1d 100644
+--- a/frontend/src/features/analysis-history/AnalysisSummaryCards.tsx
++++ b/frontend/src/features/analysis-history/AnalysisSummaryCards.tsx
+@@ -1,21 +1,59 @@
+ import { Card } from '../../components/ui/Card'
++import { Icon, type IconName } from '../../components/ui/Icon'
+ import { useI18n } from '../../i18n/I18nProvider'
+ import type { AnalysisResponse } from '../../types/api'
+ import { calculateAnalysisMetrics } from './analysisMetrics'
++import type { ReportsAvailableState } from './useReportsAvailableCount'
+ 
+-export function AnalysisSummaryCards({ analyses }: { analyses: AnalysisResponse[] }) {
++interface SummaryCardProps {
++  icon: IconName
++  value: number | string
++  label: string
++  isBusy?: boolean
++}
++
++function SummaryCard({ icon, value, label, isBusy = false }: SummaryCardProps) {
++  return (
++    <Card as="article" className="analysis-summary-card">
++      <span className="analysis-summary-card-icon" aria-hidden="true">
++        <Icon name={icon} />
++      </span>
++      <strong aria-busy={isBusy || undefined}>{value}</strong>
++      <h2>{label}</h2>
++    </Card>
++  )
++}
++
++interface AnalysisSummaryCardsProps {
++  analyses: AnalysisResponse[]
++  reportsAvailable: ReportsAvailableState
++}
++
++export function AnalysisSummaryCards({ analyses, reportsAvailable }: AnalysisSummaryCardsProps) {
+   const { t } = useI18n()
+   const metrics = calculateAnalysisMetrics(analyses)
++  const reportsValue =
++    reportsAvailable.status === 'ready' ? reportsAvailable.count : 'ΓÇö'
++
+   return (
+     <section className="analysis-summary-grid" aria-label={t('Analysis summary')}>
+-      <Card as="article" className="analysis-summary-card">
+-        <strong>{metrics.total}</strong>
+-        <h2>{t('Total analyses')}</h2>
+-      </Card>
+-      <Card as="article" className="analysis-summary-card">
+-        <strong>{metrics.completed}</strong>
+-        <h2>{t('Completed analyses')}</h2>
+-      </Card>
++      <SummaryCard icon="grid" value={metrics.total} label={t('Total analyses')} />
++      <SummaryCard
++        icon="check-circle"
++        value={metrics.completed}
++        label={t('Completed analyses')}
++      />
++      <SummaryCard
++        icon="alert-circle"
++        value={metrics.needsAttention}
++        label={t('Analyses needing attention')}
++      />
++      <SummaryCard
++        icon="download"
++        value={reportsValue}
++        label={t('Reports available')}
++        isBusy={reportsAvailable.status === 'loading'}
++      />
+     </section>
+   )
+ }
+diff --git a/frontend/src/features/analysis-history/analysisMetrics.test.ts b/frontend/src/features/analysis-history/analysisMetrics.test.ts
+index cb560e4..63f2d54 100644
+--- a/frontend/src/features/analysis-history/analysisMetrics.test.ts
++++ b/frontend/src/features/analysis-history/analysisMetrics.test.ts
+@@ -27,7 +27,7 @@ function analysis(id: string, state: ProcessingStage): AnalysisResponse {
+ }
+ 
+ describe('calculateAnalysisMetrics', () => {
+-  it('calculates only the two approved dashboard metrics', () => {
++  it('calculates the approved dashboard metrics', () => {
+     const metrics = calculateAnalysisMetrics([
+       analysis('1', 'completed'),
+       analysis('2', 'failed'),
+@@ -37,6 +37,7 @@ describe('calculateAnalysisMetrics', () => {
+ 
+     expect(metrics.total).toBe(4)
+     expect(metrics.completed).toBe(2)
++    expect(metrics.needsAttention).toBe(1)
+   })
+ 
+   it('uses the first five backend-ordered records as recent analyses', () => {
+diff --git a/frontend/src/features/analysis-history/analysisMetrics.ts b/frontend/src/features/analysis-history/analysisMetrics.ts
+index 5d817af..715b1d6 100644
+--- a/frontend/src/features/analysis-history/analysisMetrics.ts
++++ b/frontend/src/features/analysis-history/analysisMetrics.ts
+@@ -5,6 +5,7 @@ export const RECENT_ANALYSES_LIMIT = 5
+ export interface AnalysisMetrics {
+   total: number
+   completed: number
++  needsAttention: number
+   recent: AnalysisResponse[]
+ }
+ 
+@@ -12,6 +13,7 @@ export function calculateAnalysisMetrics(analyses: AnalysisResponse[]): Analysis
+   return {
+     total: analyses.length,
+     completed: analyses.filter((analysis) => analysis.state === 'completed').length,
++    needsAttention: analyses.filter((analysis) => analysis.state === 'failed').length,
+     recent: analyses.slice(0, RECENT_ANALYSES_LIMIT),
+   }
+ }
+diff --git a/frontend/src/features/analysis-results/AlignmentCoverageSection.test.tsx b/frontend/src/features/analysis-results/AlignmentCoverageSection.test.tsx
+index f7218ec..6fdd875 100644
+--- a/frontend/src/features/analysis-results/AlignmentCoverageSection.test.tsx
++++ b/frontend/src/features/analysis-results/AlignmentCoverageSection.test.tsx
+@@ -1,4 +1,4 @@
+-import { fireEvent, render, screen, within } from '@testing-library/react'
++import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+ import { MemoryRouter } from 'react-router-dom'
+ import { beforeEach, describe, expect, it, vi } from 'vitest'
+ import { I18nProvider } from '../../i18n/I18nProvider'
+@@ -246,7 +246,7 @@ beforeEach(() => {
+ })
+ 
+ describe('AlignmentCoverageSection', () => {
+-  it('renders two summary panels, one main table, and collapsed coverage details', () => {
++  it('renders two summary panels and three primary tables, with no collapsed coverage details', () => {
+     const { container } = renderSection()
+ 
+     expect(screen.getAllByRole('table')).toHaveLength(3)
+@@ -255,12 +255,8 @@ describe('AlignmentCoverageSection', () => {
+         name: 'Question-to-CLO-and-Topic relationships',
+       }),
+     ).toBeInTheDocument()
+-    expect(
+-      screen.queryByRole('table', { name: 'Question-to-CLO relationships' }),
+-    ).not.toBeInTheDocument()
+-    expect(
+-      screen.queryByRole('table', { name: 'Question-to-topic relationships' }),
+-    ).not.toBeInTheDocument()
++    expect(screen.getByRole('table', { name: 'CLO Analysis' })).toBeInTheDocument()
++    expect(screen.getByRole('table', { name: 'Topic Analysis' })).toBeInTheDocument()
+     expect(container.querySelectorAll('.alignment-compact-summary > li'))
+       .toHaveLength(2)
+     expect(screen.getByRole('heading', { name: 'Question Relationships' }))
+@@ -269,26 +265,40 @@ describe('AlignmentCoverageSection', () => {
+     expect(screen.getByText('Questions linked to a course topic'))
+       .toBeInTheDocument()
+     expect(screen.getByRole('heading', { name: 'Coverage' })).toBeInTheDocument()
+-    expect(container.querySelector('#clo-coverage')).not.toHaveAttribute('open')
+-    expect(container.querySelector('#topic-coverage')).not.toHaveAttribute('open')
+-    expect(container.querySelector('#clo-coverage summary')).toHaveTextContent(
+-      'CLO Coverage (2)Supported: 0 ┬╖ Partially supported: 1 ┬╖ Unsupported: 1',
+-    )
+-    expect(container.querySelector('#topic-coverage summary')).toHaveTextContent(
+-      'Topic Coverage (2)Supported: 1 ┬╖ Partially supported: 0 ┬╖ Unsupported: 1',
+-    )
++    expect(container.querySelector('#clo-coverage')).not.toBeNull()
++    expect(container.querySelector('#clo-coverage details')).not.toBeInTheDocument()
++    expect(container.querySelector('#topic-coverage details')).not.toBeInTheDocument()
++    expect(
++      screen.getByRole('heading', { name: 'CLO Analysis (2)' }),
++    ).toBeInTheDocument()
++    expect(
++      screen.getByRole('heading', { name: 'Topic Analysis (2)' }),
++    ).toBeInTheDocument()
+     expect(screen.queryByText('Assessment Method Consistency'))
+       .not.toBeInTheDocument()
+     expect(screen.queryByRole('columnheader', { name: 'Action' }))
+       .not.toBeInTheDocument()
+-    expect(screen.getByRole('columnheader', { name: 'Details' }))
+-      .toBeInTheDocument()
++    expect(screen.getAllByRole('columnheader', { name: 'Details' }).length).toBeGreaterThan(0)
++    expect(screen.getAllByRole('columnheader', { name: 'Total marks' })).toHaveLength(2)
++    expect(
++      screen.getByText(
++        'A Midterm or Final exam may legitimately cover a subset of course topics. Topic coverage is informational and does not by itself indicate a quality problem.',
++      ),
++    ).toBeInTheDocument()
++  })
++
++  it('uses only the five approved academic statuses everywhere, never unofficial renamed labels', () => {
++    renderSection()
++
++    expect(screen.queryByText('Supported')).not.toBeInTheDocument()
++    expect(screen.queryByText('Partially supported')).not.toBeInTheDocument()
++    expect(screen.queryByText('Not supported')).not.toBeInTheDocument()
++    expect(screen.getAllByText('Satisfied').length).toBeGreaterThan(0)
++    expect(screen.getAllByText('Partially Satisfied').length).toBeGreaterThan(0)
+   })
+ 
+   it('uses natural question order, preserves official CLO/topic order, and aligns related lists', () => {
+-    const { container } = renderSection()
+-    fireEvent.click(container.querySelector('#clo-coverage summary')!)
+-    fireEvent.click(container.querySelector('#topic-coverage summary')!)
++    renderSection()
+ 
+     const relationshipTable = screen.getByRole('table', {
+       name: 'Question-to-CLO-and-Topic relationships',
+@@ -299,7 +309,7 @@ describe('AlignmentCoverageSection', () => {
+         .map((header) => header.textContent),
+     ).toEqual(['Q1', 'Q2', 'Q10'])
+ 
+-    const cloTable = screen.getByRole('table', { name: 'CLO Coverage' })
++    const cloTable = screen.getByRole('table', { name: 'CLO Analysis' })
+     expect(
+       within(cloTable).getAllByRole('rowheader').map((header) => header.textContent),
+     ).toEqual(['CLO2', 'CLO10'])
+@@ -307,7 +317,7 @@ describe('AlignmentCoverageSection', () => {
+       'Q2, Q10',
+     )
+ 
+-    const topicTable = screen.getByRole('table', { name: 'Topic Coverage' })
++    const topicTable = screen.getByRole('table', { name: 'Topic Analysis' })
+     expect(
+       within(topicTable)
+         .getAllByRole('rowheader')
+@@ -318,6 +328,50 @@ describe('AlignmentCoverageSection', () => {
+     )
+   })
+ 
++  it('shows total marks per CLO/topic from questions with a supported relationship only', () => {
++    renderSection()
++
++    const cloTable = screen.getByRole('table', { name: 'CLO Analysis' })
++    const clo2Row = within(cloTable).getByRole('rowheader', { name: 'CLO2' }).closest('tr')!
++    expect(clo2Row.querySelector('[data-label="Total marks"]')).toHaveTextContent('10')
++
++    const topicTable = screen.getByRole('table', { name: 'Topic Analysis' })
++    const databaseRow = within(topicTable)
++      .getByRole('rowheader', { name: 'Database design' })
++      .closest('tr')!
++    expect(databaseRow.querySelector('[data-label="Total marks"]')).toHaveTextContent('10')
++  })
++
++  it('opens a CLO mapping-details drawer showing linked questions and returns focus on close', async () => {
++    renderSection()
++    const cloTable = screen.getByRole('table', { name: 'CLO Analysis' })
++    const clo2Row = within(cloTable).getByRole('rowheader', { name: 'CLO2' }).closest('tr')!
++    const trigger = within(clo2Row).getByRole('button', { name: 'View mapping details' })
++
++    fireEvent.click(trigger)
++
++    const dialog = await screen.findByRole('dialog')
++    expect(within(dialog).getByText('Design relational database solutions.')).toBeInTheDocument()
++    expect(within(dialog).getAllByText('Q2').length).toBeGreaterThan(0)
++
++    fireEvent.keyDown(document, { key: 'Escape' })
++    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
++    await waitFor(() => expect(trigger).toHaveFocus())
++  })
++
++  it('omits the mapping-details action for a topic with no linked questions', () => {
++    renderSection()
++    const topicTable = screen.getByRole('table', { name: 'Topic Analysis' })
++    const networksRow = within(topicTable)
++      .getByRole('rowheader', { name: 'Computer networks' })
++      .closest('tr')!
++
++    expect(
++      within(networksRow).queryByRole('button', { name: 'View mapping details' }),
++    ).not.toBeInTheDocument()
++    expect(networksRow.querySelector('[data-label="Details"]')).toHaveTextContent('ΓÇö')
++  })
++
+   it('keeps differing CLO/topic judgments separate and opens a compact selected-question comparison', () => {
+     const { container } = renderSection()
+     const relationshipTable = screen.getByRole('table', {
+@@ -331,9 +385,9 @@ describe('AlignmentCoverageSection', () => {
+       '.relationship-status-list',
+     )!
+     expect(within(states).getByText('CLO:', { exact: false }).parentElement)
+-      .toHaveTextContent('CLO: Partially supported')
++      .toHaveTextContent('CLO: Partially Satisfied')
+     expect(within(states).getByText('Course Topic:', { exact: false }).parentElement)
+-      .toHaveTextContent('Course Topic: Supported')
++      .toHaveTextContent('Course Topic: Satisfied')
+     expect(
+       within(q2Row).getByText(
+         'The question shares a relevant concept with the suggested item, but the relationship is limited.',
+@@ -363,7 +417,7 @@ describe('AlignmentCoverageSection', () => {
+     expect(comparison).not.toHaveTextContent('Original document excerpt')
+     expect(comparison).not.toHaveTextContent('EVIDENCE TYPE')
+     expect(screen.queryByText(/View comparison/i)).not.toBeInTheDocument()
+-    const badges = q2Row.querySelectorAll('.relationship-status-badge')
++    const badges = q2Row.querySelectorAll('.ui-status-badge')
+     expect(badges).toHaveLength(2)
+     expect(badges[0]).toHaveAttribute(
+       'data-academic-status',
+@@ -374,11 +428,11 @@ describe('AlignmentCoverageSection', () => {
+       .getByRole('rowheader', { name: 'Q10' })
+       .closest('tr')!
+     expect(
+-      within(q10Row).getAllByText('Not supported'),
++      within(q10Row).getAllByText('Not Satisfied'),
+     ).toHaveLength(2)
+     expect(
+       q10Row.querySelectorAll(
+-        '.relationship-status-badge[data-academic-status="Not Satisfied"]',
++        '.ui-status-badge[data-academic-status="Not Satisfied"]',
+       ),
+     ).toHaveLength(2)
+   })
+diff --git a/frontend/src/features/analysis-results/AlignmentCoverageSection.tsx b/frontend/src/features/analysis-results/AlignmentCoverageSection.tsx
+index dc0af3d..16a1ca5 100644
+--- a/frontend/src/features/analysis-results/AlignmentCoverageSection.tsx
++++ b/frontend/src/features/analysis-results/AlignmentCoverageSection.tsx
+@@ -18,7 +18,9 @@ import {
+   sortQuestionsForFaculty,
+ } from './facultyOrdering'
+ import { MethodologyLink } from './MethodologyLink'
++import { RelationshipMappingDrawer } from './RelationshipMappingDrawer'
+ import { ResultResourceState } from './ResultResourceState'
++import { StatusBadge } from './StatusBadge'
+ import type { ResultResource, ResultsResourceKey } from './useAnalysisResultsData'
+ 
+ interface AlignmentCoverageSectionProps {
+@@ -29,9 +31,9 @@ interface AlignmentCoverageSectionProps {
+   onRetry: (resource: ResultsResourceKey) => void
+ }
+ 
+-type RelationshipKind = 'clo' | 'topic'
++export type RelationshipKind = 'clo' | 'topic'
+ 
+-interface RelationshipJudgment {
++export interface RelationshipJudgment {
+   key: string
+   kind: RelationshipKind
+   status: AcademicStatus
+@@ -39,7 +41,7 @@ interface RelationshipJudgment {
+   targets: FindingEvidenceRef[]
+ }
+ 
+-interface QuestionRelationshipRow {
++export interface QuestionRelationshipRow {
+   questionReference: string
+   question: QuestionResponse | undefined
+   sourceEvidence: FindingEvidenceRef | undefined
+@@ -47,6 +49,10 @@ interface QuestionRelationshipRow {
+   topicJudgments: RelationshipJudgment[]
+ }
+ 
++export type MappingTarget =
++  | { kind: 'clo'; record: CloResponse }
++  | { kind: 'topic'; record: TopicResponse }
++
+ interface SummaryArea {
+   key: string
+   title: string
+@@ -56,12 +62,7 @@ interface SummaryArea {
+   }>
+ }
+ 
+-interface CountMetric {
+-  label: string
+-  count: number
+-}
+-
+-function facultyReason(
++export function facultyReason(
+   status: AcademicStatus,
+   sourceReason: string,
+   locale: 'ar' | 'en',
+@@ -95,22 +96,7 @@ function facultyReason(
+   }
+ }
+ 
+-function supportedState(status: AcademicStatus): string {
+-  switch (status) {
+-    case 'Satisfied':
+-      return 'Supported'
+-    case 'Partially Satisfied':
+-      return 'Partially supported'
+-    case 'Not Satisfied':
+-      return 'Not supported'
+-    case 'Not Verified':
+-      return 'Not Verified'
+-    case 'Not Applicable':
+-      return 'Not Applicable'
+-  }
+-}
+-
+-function coverageStatus(judgments: RelationshipJudgment[]): AcademicStatus {
++export function coverageStatus(judgments: RelationshipJudgment[]): AcademicStatus {
+   if (judgments.some((judgment) => judgment.status === 'Satisfied')) {
+     return 'Satisfied'
+   }
+@@ -128,7 +114,7 @@ function coverageStatus(judgments: RelationshipJudgment[]): AcademicStatus {
+   return 'Not Satisfied'
+ }
+ 
+-function questionRows(
++export function questionRows(
+   cloFindings: FindingResponse[],
+   topicFindings: FindingResponse[],
+   questions: QuestionResponse[],
+@@ -201,7 +187,7 @@ function questionRows(
+   return orderedReferences.map((reference) => rows.get(reference)!)
+ }
+ 
+-function uniqueTargets(judgments: RelationshipJudgment[]): FindingEvidenceRef[] {
++export function uniqueTargets(judgments: RelationshipJudgment[]): FindingEvidenceRef[] {
+   const targets = new Map<string, FindingEvidenceRef>()
+   for (const judgment of judgments) {
+     for (const target of judgment.targets) targets.set(target.id, target)
+@@ -221,7 +207,7 @@ function recordMatchesTarget(
+   )
+ }
+ 
+-function relatedRows(
++export function relatedRows(
+   rows: QuestionRelationshipRow[],
+   record: CloResponse | TopicResponse,
+   kind: RelationshipKind,
+@@ -233,7 +219,7 @@ function relatedRows(
+   )
+ }
+ 
+-function matchingJudgments(
++export function matchingJudgments(
+   row: QuestionRelationshipRow,
+   record: CloResponse | TopicResponse,
+   kind: RelationshipKind,
+@@ -243,6 +229,20 @@ function matchingJudgments(
+   )
+ }
+ 
++export function totalMarksForRecord(
++  rows: QuestionRelationshipRow[],
++  record: CloResponse | TopicResponse,
++  kind: RelationshipKind,
++): number {
++  return relatedRows(rows, record, kind)
++    .filter((row) =>
++      matchingJudgments(row, record, kind).some(
++        (judgment) => judgment.status === 'Satisfied' || judgment.status === 'Partially Satisfied',
++      ),
++    )
++    .reduce((total, row) => total + (row.question?.marks ?? 0), 0)
++}
++
+ function linkedQuestionCount(
+   rows: QuestionRelationshipRow[],
+   kind: RelationshipKind,
+@@ -274,45 +274,6 @@ function coveredRecordCount(
+   }).length
+ }
+ 
+-function coverageMetrics(
+-  records: Array<CloResponse | TopicResponse>,
+-  rows: QuestionRelationshipRow[],
+-  kind: RelationshipKind,
+-): CountMetric[] {
+-  const statuses = records.map((record) =>
+-    coverageStatus(
+-      relatedRows(rows, record, kind).flatMap((row) =>
+-        matchingJudgments(row, record, kind),
+-      ),
+-    ),
+-  )
+-  const metrics: CountMetric[] = [
+-    {
+-      label: 'Supported',
+-      count: statuses.filter((status) => status === 'Satisfied').length,
+-    },
+-    {
+-      label: 'Partially supported',
+-      count: statuses.filter((status) => status === 'Partially Satisfied').length,
+-    },
+-    {
+-      label: 'Unsupported',
+-      count: statuses.filter((status) => status === 'Not Satisfied').length,
+-    },
+-  ]
+-  const notVerified = statuses.filter((status) => status === 'Not Verified').length
+-  if (notVerified > 0) {
+-    metrics.push({ label: 'Could not be verified', count: notVerified })
+-  }
+-  const notApplicable = statuses.filter(
+-    (status) => status === 'Not Applicable',
+-  ).length
+-  if (notApplicable > 0) {
+-    metrics.push({ label: 'Not Applicable', count: notApplicable })
+-  }
+-  return metrics
+-}
+-
+ function ResourceIssue({
+   resource,
+   label,
+@@ -374,13 +335,7 @@ function RelationshipStates({
+     ['Course Topic', row.topicJudgments],
+   ]
+   const badge = (status: AcademicStatus, key: string) => (
+-    <span
+-      key={key}
+-      className="relationship-status-badge"
+-      data-academic-status={status}
+-    >
+-      {t(supportedState(status))}
+-    </span>
++    <StatusBadge key={key} status={status} />
+   )
+   return (
+     <ul className="relationship-status-list">
+@@ -571,6 +526,9 @@ export function AlignmentCoverageSection({
+   const [selectedRow, setSelectedRow] =
+     useState<QuestionRelationshipRow | null>(null)
+   const comparisonRef = useRef<HTMLDetailsElement>(null)
++  const [mappingTarget, setMappingTarget] = useState<MappingTarget | null>(null)
++  const mappingTriggerRefs = useRef(new Map<string, HTMLButtonElement>())
++  const activeMappingTriggerRef = useRef<HTMLButtonElement | null>(null)
+   const loadedQuestions =
+     questions.status === 'ready'
+       ? sortQuestionsForFaculty(independentlyScorableQuestions(questions.data))
+@@ -583,6 +541,11 @@ export function AlignmentCoverageSection({
+     window.setTimeout(() => comparisonRef.current?.focus(), 0)
+   }
+ 
++  function openMapping(target: MappingTarget, triggerKey: string): void {
++    activeMappingTriggerRef.current = mappingTriggerRefs.current.get(triggerKey) ?? null
++    setMappingTarget(target)
++  }
++
+   return (
+     <div className="alignment-coverage-section results-section-stack">
+       <div className="results-section-heading">
+@@ -758,30 +721,22 @@ export function AlignmentCoverageSection({
+                 </details>
+               )}
+ 
+-              <details
+-                className="academic-table-section coverage-table-disclosure"
+-                id="clo-coverage"
+-              >
+-                <summary>
+-                  <span>
+-                    {t('CLO Coverage')} ({loadedClos.length})
+-                  </span>
+-                  <small>
+-                    {coverageMetrics(loadedClos, rows, 'clo')
+-                      .map((metric) => `${t(metric.label)}: ${metric.count}`)
+-                      .join(' ┬╖ ')}
+-                  </small>
+-                </summary>
++              <section className="academic-table-section" id="clo-coverage">
++                <h3>
++                  {t('CLO Analysis')} ({loadedClos.length})
++                </h3>
+                 <ResponsiveTable
+-                  caption={t('CLO Coverage')}
++                  caption={t('CLO Analysis')}
+                   className="academic-summary-table"
+                 >
+                   <thead>
+                     <tr>
+                       <th scope="col">{t('CLO')}</th>
+                       <th scope="col">{t('CLO text')}</th>
++                      <th scope="col">{t('Linked questions')}</th>
+                       <th scope="col">{t('Coverage status')}</th>
+-                      <th scope="col">{t('Related questions')}</th>
++                      <th scope="col">{t('Total marks')}</th>
++                      <th scope="col">{t('Details')}</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+@@ -794,6 +749,7 @@ export function AlignmentCoverageSection({
+                         matches.map((row) => row.questionReference),
+                         loadedQuestions,
+                       )
++                      const triggerKey = `clo-${clo.id}`
+                       return (
+                         <tr key={clo.id}>
+                           <th scope="row" data-label={t('CLO')}>
+@@ -802,15 +758,7 @@ export function AlignmentCoverageSection({
+                           <td data-label={t('CLO text')}>
+                             <span dir="auto">{clo.text}</span>
+                           </td>
+-                          <td data-label={t('Coverage status')}>
+-                            <span
+-                              className="relationship-status-badge"
+-                              data-academic-status={coverageStatus(judgments)}
+-                            >
+-                              {t(supportedState(coverageStatus(judgments)))}
+-                            </span>
+-                          </td>
+-                          <td data-label={t('Related questions')}>
++                          <td data-label={t('Linked questions')}>
+                             {orderedReferences.length === 0
+                               ? t('None')
+                               : orderedReferences.map((reference, index) => (
+@@ -820,36 +768,54 @@ export function AlignmentCoverageSection({
+                                   </span>
+                                 ))}
+                           </td>
++                          <td data-label={t('Coverage status')}>
++                            <StatusBadge status={coverageStatus(judgments)} />
++                          </td>
++                          <td data-label={t('Total marks')}>
++                            {totalMarksForRecord(rows, clo, 'clo')}
++                          </td>
++                          <td data-label={t('Details')}>
++                            <button
++                              ref={(element) => {
++                                if (element) mappingTriggerRefs.current.set(triggerKey, element)
++                                else mappingTriggerRefs.current.delete(triggerKey)
++                              }}
++                              type="button"
++                              className="inline-evidence-action"
++                              onClick={() =>
++                                openMapping({ kind: 'clo', record: clo }, triggerKey)
++                              }
++                            >
++                              {t('View mapping details')}
++                            </button>
++                          </td>
+                         </tr>
+                       )
+                     })}
+                   </tbody>
+                 </ResponsiveTable>
+-              </details>
++              </section>
+ 
+-              <details
+-                className="academic-table-section coverage-table-disclosure"
+-                id="topic-coverage"
+-              >
+-                <summary>
+-                  <span>
+-                    {t('Topic Coverage')} ({loadedTopics.length})
+-                  </span>
+-                  <small>
+-                    {coverageMetrics(loadedTopics, rows, 'topic')
+-                      .map((metric) => `${t(metric.label)}: ${metric.count}`)
+-                      .join(' ┬╖ ')}
+-                  </small>
+-                </summary>
++              <section className="academic-table-section" id="topic-coverage">
++                <h3>
++                  {t('Topic Analysis')} ({loadedTopics.length})
++                </h3>
++                <p className="results-supporting-text">
++                  {t(
++                    'A Midterm or Final exam may legitimately cover a subset of course topics. Topic coverage is informational and does not by itself indicate a quality problem.',
++                  )}
++                </p>
+                 <ResponsiveTable
+-                  caption={t('Topic Coverage')}
++                  caption={t('Topic Analysis')}
+                   className="academic-summary-table"
+                 >
+                   <thead>
+                     <tr>
+                       <th scope="col">{t('Course Topic')}</th>
++                      <th scope="col">{t('Linked questions')}</th>
++                      <th scope="col">{t('Total marks')}</th>
+                       <th scope="col">{t('Coverage status')}</th>
+-                      <th scope="col">{t('Related questions')}</th>
++                      <th scope="col">{t('Details')}</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+@@ -862,20 +828,13 @@ export function AlignmentCoverageSection({
+                         matches.map((row) => row.questionReference),
+                         loadedQuestions,
+                       )
++                      const triggerKey = `topic-${topic.id}`
+                       return (
+                         <tr key={topic.id}>
+                           <th scope="row" data-label={t('Course Topic')}>
+                             <span dir="auto">{topic.text}</span>
+                           </th>
+-                          <td data-label={t('Coverage status')}>
+-                            <span
+-                              className="relationship-status-badge"
+-                              data-academic-status={coverageStatus(judgments)}
+-                            >
+-                              {t(supportedState(coverageStatus(judgments)))}
+-                            </span>
+-                          </td>
+-                          <td data-label={t('Related questions')}>
++                          <td data-label={t('Linked questions')}>
+                             {orderedReferences.length === 0
+                               ? t('None')
+                               : orderedReferences.map((reference, index) => (
+@@ -885,12 +844,45 @@ export function AlignmentCoverageSection({
+                                   </span>
+                                 ))}
+                           </td>
++                          <td data-label={t('Total marks')}>
++                            {totalMarksForRecord(rows, topic, 'topic')}
++                          </td>
++                          <td data-label={t('Coverage status')}>
++                            <StatusBadge status={coverageStatus(judgments)} />
++                          </td>
++                          <td data-label={t('Details')}>
++                            {matches.length === 0 ? (
++                              'ΓÇö'
++                            ) : (
++                              <button
++                                ref={(element) => {
++                                  if (element)
++                                    mappingTriggerRefs.current.set(triggerKey, element)
++                                  else mappingTriggerRefs.current.delete(triggerKey)
++                                }}
++                                type="button"
++                                className="inline-evidence-action"
++                                onClick={() =>
++                                  openMapping({ kind: 'topic', record: topic }, triggerKey)
++                                }
++                              >
++                                {t('View mapping details')}
++                              </button>
++                            )}
++                          </td>
+                         </tr>
+                       )
+                     })}
+                   </tbody>
+                 </ResponsiveTable>
+-              </details>
++              </section>
++
++              <RelationshipMappingDrawer
++                target={mappingTarget}
++                rows={rows}
++                onClose={() => setMappingTarget(null)}
++                returnFocusRef={activeMappingTriggerRef}
++              />
+             </>
+           )
+         }}
+diff --git a/frontend/src/features/analysis-results/AnalysisResults.tsx b/frontend/src/features/analysis-results/AnalysisResults.tsx
+index c5b74d8..d24f552 100644
+--- a/frontend/src/features/analysis-results/AnalysisResults.tsx
++++ b/frontend/src/features/analysis-results/AnalysisResults.tsx
+@@ -128,7 +128,14 @@ export function AnalysisResults({
+             errorTitle={t('Could not load questions')}
+             onRetry={() => retryResource('questions')}
+           >
+-            {(questions) => <QuestionsSection questions={questions} />}
++            {(questions) => (
++              <QuestionsSection
++                questions={questions}
++                findings={resources.findings}
++                clos={resources.clos}
++                topics={resources.topics}
++              />
++            )}
+           </ResultResourceState>
+         )}
+ 
+diff --git a/frontend/src/features/analysis-results/QuestionsSection.test.tsx b/frontend/src/features/analysis-results/QuestionsSection.test.tsx
+index 6b1d0b2..afce16d 100644
+--- a/frontend/src/features/analysis-results/QuestionsSection.test.tsx
++++ b/frontend/src/features/analysis-results/QuestionsSection.test.tsx
+@@ -1,7 +1,7 @@
+-import { render, screen, within } from '@testing-library/react'
++import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+ import { beforeEach, describe, expect, it } from 'vitest'
+ import { I18nProvider } from '../../i18n/I18nProvider'
+-import type { QuestionResponse } from '../../types/api'
++import type { CloResponse, FindingResponse, QuestionResponse, TopicResponse } from '../../types/api'
+ import { QuestionsSection } from './QuestionsSection'
+ 
+ const PARENT: QuestionResponse = {
+@@ -18,31 +18,91 @@ const PARENT: QuestionResponse = {
+   created_at: '2026-07-26T00:00:00Z',
+ }
+ 
+-const CHILDREN: QuestionResponse[] = [
+-  {
+-    ...PARENT,
+-    id: 'child-a',
+-    parent_question_id: PARENT.id,
+-    number_label: 'Q1(a)',
+-    question_text: '╪º┘â╪¬╪¿ ╪»╪º┘ä╪⌐ hash table.',
+-    marks: 4,
+-    sequence: 2,
+-  },
+-  {
+-    ...PARENT,
+-    id: 'child-b',
+-    parent_question_id: PARENT.id,
+-    number_label: 'Q1(b)',
+-    question_text: 'Calculate x = 2 + 3.',
+-    marks: 6,
+-    sequence: 3,
+-  },
+-]
+-
+-function renderSection() {
++const CHILD_A: QuestionResponse = {
++  ...PARENT,
++  id: 'child-a',
++  parent_question_id: PARENT.id,
++  number_label: 'Q1(a)',
++  question_text: '╪º┘â╪¬╪¿ ╪»╪º┘ä╪⌐ hash table.',
++  marks: 4,
++  sequence: 2,
++}
++
++const CHILD_B: QuestionResponse = {
++  ...PARENT,
++  id: 'child-b',
++  parent_question_id: PARENT.id,
++  number_label: 'Q1(b)',
++  question_text: 'Calculate x = 2 + 3.',
++  marks: 6,
++  sequence: 3,
++}
++
++const CLO1: CloResponse = {
++  id: 'clo-1',
++  analysis_id: 'analysis-1',
++  code: 'CLO1',
++  text: 'Explain fundamental computing concepts.',
++  program_outcome_reference: null,
++  page_number: 2,
++  confidence: 0.9,
++  geometry: null,
++  created_at: '2026-07-26T00:00:00Z',
++}
++
++function finding(overrides: Partial<FindingResponse> = {}): FindingResponse {
++  return {
++    id: 'finding-1',
++    analysis_id: 'analysis-1',
++    requirement_id: 'REQ011',
++    rule_id: 'RULE011',
++    recommendation_id: null,
++    status: 'Satisfied',
++    explanation: 'Clear and unambiguous.',
++    confidence: 0.95,
++    confidence_level: null,
++    evaluation_details: null,
++    evaluator_type: 'deterministic_rule',
++    ai_provider: null,
++    ai_model: null,
++    prompt_template_version: null,
++    kb_version: null,
++    created_at: '2026-07-26T00:00:00Z',
++    evidence: [],
++    requirement_name: 'Question Clarity',
++    dimension: 'Question Clarity',
++    source_type: 'Exam',
++    officiality: 'System Rule',
++    ...overrides,
++  }
++}
++
++const CHILD_A_FINDING = finding({
++  id: 'finding-a',
++  status: 'Not Verified',
++  evidence: [
++    {
++      id: 'evidence-a',
++      source_document: 'exam',
++      evidence_type: 'question_text',
++      page_number: 1,
++      item_reference: 'Q1(a)',
++    },
++  ],
++})
++
++function renderSection(
++  props: Partial<Parameters<typeof QuestionsSection>[0]> = {},
++) {
+   return render(
+     <I18nProvider>
+-      <QuestionsSection questions={[PARENT, ...CHILDREN]} />
++      <QuestionsSection
++        questions={[PARENT, CHILD_A, CHILD_B]}
++        findings={{ status: 'ready', data: [CHILD_A_FINDING] }}
++        clos={{ status: 'ready', data: [CLO1] }}
++        topics={{ status: 'ready', data: [] as TopicResponse[] }}
++        {...props}
++      />
+     </I18nProvider>,
+   )
+ }
+@@ -53,13 +113,23 @@ beforeEach(() => {
+ })
+ 
+ describe('QuestionsSection', () => {
+-  it('shows only the core columns and omits the structural parent row', () => {
++  it('shows the full column set and omits the structural parent row', () => {
+     renderSection()
+ 
+     const table = screen.getByRole('table', { name: 'Extracted questions' })
+     expect(
+       within(table).getAllByRole('columnheader').map((header) => header.textContent),
+-    ).toEqual(['Question', 'Page', 'Marks', 'Text'])
++    ).toEqual([
++      'Question',
++      'Page',
++      'Question Text',
++      'Marks',
++      'CLOs',
++      'Topics',
++      'Status',
++      'Findings',
++      'Details',
++    ])
+     expect(within(table).queryByText('Q1')).not.toBeInTheDocument()
+     expect(within(table).getByText('Q1(a)').closest('bdi')).toBeInTheDocument()
+     expect(within(table).getByText('Q1(b)').closest('bdi')).toBeInTheDocument()
+@@ -68,15 +138,157 @@ describe('QuestionsSection', () => {
+     expect(screen.queryByText(/Distribution/i)).not.toBeInTheDocument()
+   })
+ 
++  it('shows a status badge and finding count derived from evidence citing the question', () => {
++    renderSection()
++
++    const row = screen.getByText('Q1(a)').closest('tr')!
++    expect(within(row).getByText('Not Verified')).toBeInTheDocument()
++    expect(row.querySelector('[data-label="Findings"]')).toHaveTextContent('1')
++
++    const unrelatedRow = screen.getByText('Q1(b)').closest('tr')!
++    expect(unrelatedRow.querySelector('[data-label="Findings"]')).toHaveTextContent('0')
++  })
++
++  it('filters by search text matching the question identifier', () => {
++    renderSection()
++    fireEvent.change(screen.getByLabelText('Search questions'), {
++      target: { value: 'Q1(b)' },
++    })
++
++    expect(screen.queryByText('Q1(a)')).not.toBeInTheDocument()
++    expect(screen.getByText('Q1(b)')).toBeInTheDocument()
++    expect(screen.getByText('Showing 1 of 2 questions')).toBeInTheDocument()
++  })
++
++  it('filters by search text matching the question text', () => {
++    renderSection()
++    fireEvent.change(screen.getByLabelText('Search questions'), {
++      target: { value: 'hash table' },
++    })
++
++    expect(screen.getByText('Q1(a)')).toBeInTheDocument()
++    expect(screen.queryByText('Q1(b)')).not.toBeInTheDocument()
++  })
++
++  it('filters by status and CLO, and clears filters', () => {
++    renderSection()
++
++    fireEvent.change(screen.getByLabelText('Status'), {
++      target: { value: 'Not Verified' },
++    })
++    expect(screen.getByText('Q1(a)')).toBeInTheDocument()
++    expect(screen.queryByText('Q1(b)')).not.toBeInTheDocument()
++
++    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
++    expect(screen.getByText('Q1(b)')).toBeInTheDocument()
++  })
++
++  it('shows a distinct empty state with a clear-filters hint when filters match nothing', () => {
++    renderSection()
++    fireEvent.change(screen.getByLabelText('Search questions'), {
++      target: { value: 'nonexistent-question' },
++    })
++
++    expect(screen.getByText('No questions match the filters.')).toBeInTheDocument()
++    expect(
++      screen.getByText('Clear the filters to see every extracted question.'),
++    ).toBeInTheDocument()
++    expect(screen.queryByRole('table')).not.toBeInTheDocument()
++  })
++
++  it('shows the no-extraction empty state when there are no questions at all', () => {
++    renderSection({ questions: [] })
++    expect(
++      screen.getByText('No questions were extracted for this analysis.'),
++    ).toBeInTheDocument()
++  })
++
++  it('opens the question details drawer with linked CLOs and findings, and returns focus on close', async () => {
++    renderSection()
++    const trigger = within(screen.getByText('Q1(a)').closest('tr')!).getByRole('button', {
++      name: /view details/i,
++    })
++    fireEvent.click(trigger)
++
++    const dialog = await screen.findByRole('dialog')
++    expect(within(dialog).getAllByText('╪º┘â╪¬╪¿ ╪»╪º┘ä╪⌐ hash table.').length).toBeGreaterThan(0)
++    expect(within(dialog).getByText('Clear and unambiguous.')).toBeInTheDocument()
++    expect(within(dialog).queryByText(/confidence: 0\.95/i)).not.toBeInTheDocument()
++
++    fireEvent.keyDown(document, { key: 'Escape' })
++    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
++    await waitFor(() => expect(trigger).toHaveFocus())
++  })
++
++  it('caps CLO badges per row and shows a +N more indicator instead of full descriptions', () => {
++    const manyCloAlignment = finding({
++      id: 'finding-alignment',
++      rule_id: 'RULE001',
++      status: 'Satisfied',
++      dimension: 'CLO Alignment',
++      evidence: [
++        {
++          id: 'src-a',
++          source_document: 'exam',
++          evidence_type: 'question_text',
++          page_number: 1,
++          item_reference: 'Q1(a)',
++        },
++        {
++          id: 'tgt-clo1',
++          source_document: 'tp153',
++          evidence_type: 'clo',
++          page_number: 2,
++          item_reference: 'CLO1',
++        },
++        {
++          id: 'tgt-clo2',
++          source_document: 'tp153',
++          evidence_type: 'clo',
++          page_number: 2,
++          item_reference: 'CLO2',
++        },
++        {
++          id: 'tgt-clo3',
++          source_document: 'tp153',
++          evidence_type: 'clo',
++          page_number: 2,
++          item_reference: 'CLO3',
++        },
++      ],
++      evaluation_details: {
++        schema_version: 1,
++        decision: 'Satisfied',
++        evidence_used: ['src-a', 'tgt-clo1', 'tgt-clo2', 'tgt-clo3'],
++        reasoning: 'Matches.',
++        recommendation: null,
++        confidence_basis: [],
++        item_judgments: [
++          {
++            source_evidence_id: 'src-a',
++            target_evidence_ids: ['tgt-clo1', 'tgt-clo2', 'tgt-clo3'],
++            status: 'Satisfied',
++            reasoning: 'Matches.',
++          },
++        ],
++        retrieved_knowledge_ids: [],
++      },
++    })
++
++    renderSection({ findings: { status: 'ready', data: [CHILD_A_FINDING, manyCloAlignment] } })
++
++    const row = screen.getByText('Q1(a)').closest('tr')!
++    expect(within(row).getByText('CLO1')).toBeInTheDocument()
++    expect(within(row).getByText('CLO2')).toBeInTheDocument()
++    expect(within(row).queryByText('CLO3')).not.toBeInTheDocument()
++    expect(within(row).getByText('+1 more')).toBeInTheDocument()
++  })
++
+   it('preserves source text direction and localized RTL headers', () => {
+     window.localStorage.setItem('exam-quality-analyzer-locale', 'ar')
+     renderSection()
+ 
+     expect(document.documentElement).toHaveAttribute('dir', 'rtl')
+-    expect(screen.getByText(CHILDREN[0].question_text)).toHaveAttribute('dir', 'auto')
+-    const table = screen.getByRole('table', { name: '╪º┘ä╪ú╪│╪ª┘ä╪⌐ ╪º┘ä┘à╪│╪¬╪«╪▒╪¼╪⌐' })
+-    expect(
+-      within(table).getAllByRole('columnheader').map((header) => header.textContent),
+-    ).toEqual(['╪º┘ä╪│╪ñ╪º┘ä', '╪º┘ä╪╡┘ü╪¡╪⌐', '╪º┘ä╪»╪▒╪¼╪º╪¬', '╪º┘ä┘å╪╡'])
++    expect(screen.getByText(CHILD_A.question_text)).toHaveAttribute('dir', 'auto')
+   })
+ })
+diff --git a/frontend/src/features/analysis-results/QuestionsSection.tsx b/frontend/src/features/analysis-results/QuestionsSection.tsx
+index d2e145d..0e68539 100644
+--- a/frontend/src/features/analysis-results/QuestionsSection.tsx
++++ b/frontend/src/features/analysis-results/QuestionsSection.tsx
+@@ -1,19 +1,76 @@
++import { useMemo, useRef, useState } from 'react'
++import { Icon } from '../../components/ui/Icon'
+ import { ResponsiveTable } from '../../components/ui/ResponsiveTable'
+ import { useI18n } from '../../i18n/I18nProvider'
+-import type { QuestionResponse } from '../../types/api'
++import type { CloResponse, FindingResponse, QuestionResponse, TopicResponse } from '../../types/api'
++import { independentlyScorableQuestions, sortQuestionsForFaculty } from './facultyOrdering'
++import { buildLookups } from './lookups'
++import { QuestionDetailsDrawer } from './QuestionDetailsDrawer'
++import { QuestionFilters } from './QuestionFilters'
+ import {
+-  independentlyScorableQuestions,
+-  sortQuestionsForFaculty,
+-} from './facultyOrdering'
++  buildQuestionRows,
++  EMPTY_QUESTION_FILTERS,
++  filterQuestionRows,
++  type QuestionFilterValues,
++  type QuestionRow,
++} from './questionPresentation'
++import { StatusBadge } from './StatusBadge'
++import type { ResultResource } from './useAnalysisResultsData'
+ 
+-export function QuestionsSection({ questions }: { questions: QuestionResponse[] }) {
++const MAX_VISIBLE_BADGES = 2
++
++interface QuestionsSectionProps {
++  questions: QuestionResponse[]
++  findings?: ResultResource<FindingResponse[]>
++  clos?: ResultResource<CloResponse[]>
++  topics?: ResultResource<TopicResponse[]>
++}
++
++function readyData<T>(resource: ResultResource<T> | undefined, fallback: T): T {
++  return resource?.status === 'ready' ? resource.data : fallback
++}
++
++export function QuestionsSection({
++  questions,
++  findings: findingsResource,
++  clos: closResource,
++  topics: topicsResource,
++}: QuestionsSectionProps) {
+   const { t } = useI18n()
++  const [filters, setFilters] = useState<QuestionFilterValues>(EMPTY_QUESTION_FILTERS)
++  const [selectedRow, setSelectedRow] = useState<QuestionRow | null>(null)
++  const triggerRefs = useRef(new Map<string, HTMLButtonElement>())
++  const activeTriggerRef = useRef<HTMLButtonElement | null>(null)
++
++  const evaluatedQuestions = useMemo(
++    () => sortQuestionsForFaculty(independentlyScorableQuestions(questions)),
++    [questions],
++  )
++  const findings = readyData(findingsResource, [] as FindingResponse[])
++  const clos = readyData(closResource, [] as CloResponse[])
++  const topics = readyData(topicsResource, [] as TopicResponse[])
++  const lookups = useMemo(
++    () => buildLookups(clos, topics, evaluatedQuestions),
++    [clos, topics, evaluatedQuestions],
++  )
++
++  const rows = useMemo(
++    () => buildQuestionRows(evaluatedQuestions, findings),
++    [evaluatedQuestions, findings],
++  )
++  const filteredRows = useMemo(() => filterQuestionRows(rows, filters), [rows, filters])
++  const hasFilters =
++    filters.search !== '' || filters.status !== '' || filters.clo !== '' || filters.topic !== ''
++
++  function openDetails(row: QuestionRow): void {
++    activeTriggerRef.current = triggerRefs.current.get(row.question.id) ?? null
++    setSelectedRow(row)
++  }
++
+   if (questions.length === 0) {
+     return <p className="notice">{t('No questions were extracted for this analysis.')}</p>
+   }
+-  const evaluatedQuestions = sortQuestionsForFaculty(
+-    independentlyScorableQuestions(questions),
+-  )
++
+   return (
+     <div className="questions-section results-section-stack">
+       <div className="results-section-heading">
+@@ -24,26 +81,139 @@ export function QuestionsSection({ questions }: { questions: QuestionResponse[]
+           </p>
+         </div>
+       </div>
+-      <ResponsiveTable caption={t('Extracted questions')} className="questions-table">
+-        <thead>
+-          <tr>
+-            <th>{t('Question')}</th>
+-            <th>{t('Page')}</th>
+-            <th>{t('Marks')}</th>
+-            <th>{t('Text')}</th>
+-          </tr>
+-        </thead>
+-        <tbody>
+-          {evaluatedQuestions.map((question) => (
+-            <tr key={question.id}>
+-              <td><bdi>{question.number_label}</bdi></td>
+-              <td>{question.page_number}</td>
+-              <td>{question.marks ?? 'ΓÇö'}</td>
+-              <td><span dir="auto">{question.question_text}</span></td>
++
++      <QuestionFilters
++        clos={clos}
++        topics={topics}
++        values={filters}
++        resultCount={filteredRows.length}
++        totalCount={rows.length}
++        onChange={setFilters}
++      />
++
++      {filteredRows.length === 0 ? (
++        <div className="results-empty-state" role="status">
++          <p>{t('No questions match the filters.')}</p>
++        </div>
++      ) : (
++        <ResponsiveTable caption={t('Extracted questions')} className="questions-table">
++          <thead>
++            <tr>
++              <th scope="col">{t('Question')}</th>
++              <th scope="col">{t('Page')}</th>
++              <th scope="col">{t('Question Text')}</th>
++              <th scope="col">{t('Marks')}</th>
++              <th scope="col">{t('CLOs')}</th>
++              <th scope="col">{t('Topics')}</th>
++              <th scope="col">{t('Status')}</th>
++              <th scope="col">{t('Findings')}</th>
++              <th scope="col">{t('Details')}</th>
+             </tr>
+-          ))}
+-        </tbody>
+-      </ResponsiveTable>
++          </thead>
++          <tbody>
++            {filteredRows.map((row) => {
++              const { question } = row
++              return (
++                <tr key={question.id}>
++                  <th scope="row" data-label={t('Question')}>
++                    <bdi>{question.number_label}</bdi>
++                  </th>
++                  <td data-label={t('Page')}>{question.page_number}</td>
++                  <td data-label={t('Question Text')}>
++                    <span
++                      className="question-text-cell"
++                      dir="auto"
++                      title={question.question_text}
++                    >
++                      {question.question_text}
++                    </span>
++                  </td>
++                  <td data-label={t('Marks')}>{question.marks ?? 'ΓÇö'}</td>
++                  <td data-label={t('CLOs')}>
++                    {row.cloReferences.length === 0 ? (
++                      'ΓÇö'
++                    ) : (
++                      <span className="question-badge-list">
++                        {row.cloReferences.slice(0, MAX_VISIBLE_BADGES).map((reference) => (
++                          <span key={reference} className="drawer-badge drawer-badge--clo">
++                            <bdi>{reference}</bdi>
++                          </span>
++                        ))}
++                        {row.cloReferences.length > MAX_VISIBLE_BADGES && (
++                          <span
++                            className="drawer-badge question-badge-overflow"
++                            title={row.cloReferences.slice(MAX_VISIBLE_BADGES).join(', ')}
++                          >
++                            +{row.cloReferences.length - MAX_VISIBLE_BADGES} {t('more')}
++                          </span>
++                        )}
++                      </span>
++                    )}
++                  </td>
++                  <td data-label={t('Topics')}>
++                    {row.topicReferences.length === 0 ? (
++                      'ΓÇö'
++                    ) : (
++                      <span className="question-badge-list">
++                        {row.topicReferences.slice(0, MAX_VISIBLE_BADGES).map((reference) => (
++                          <span
++                            key={reference}
++                            className="drawer-badge drawer-badge--topic"
++                            dir="auto"
++                          >
++                            {reference}
++                          </span>
++                        ))}
++                        {row.topicReferences.length > MAX_VISIBLE_BADGES && (
++                          <span
++                            className="drawer-badge question-badge-overflow"
++                            title={row.topicReferences.slice(MAX_VISIBLE_BADGES).join(', ')}
++                          >
++                            +{row.topicReferences.length - MAX_VISIBLE_BADGES} {t('more')}
++                          </span>
++                        )}
++                      </span>
++                    )}
++                  </td>
++                  <td data-label={t('Status')}>
++                    {row.status ? <StatusBadge status={row.status} /> : 'ΓÇö'}
++                  </td>
++                  <td data-label={t('Findings')}>{row.findings.length}</td>
++                  <td data-label={t('Details')}>
++                    <button
++                      ref={(element) => {
++                        if (element) triggerRefs.current.set(question.id, element)
++                        else triggerRefs.current.delete(question.id)
++                      }}
++                      type="button"
++                      className="question-view-details-button"
++                      onClick={() => openDetails(row)}
++                    >
++                      {t('View details')}
++                      <Icon name="chevron-right" className="ui-icon--sm" />
++                    </button>
++                  </td>
++                </tr>
++              )
++            })}
++          </tbody>
++        </ResponsiveTable>
++      )}
++
++      {hasFilters && filteredRows.length === 0 && (
++        <p className="results-supporting-text">
++          {t('Clear the filters to see every extracted question.')}
++        </p>
++      )}
++
++      <QuestionDetailsDrawer
++        row={selectedRow}
++        clos={clos}
++        topics={topics}
++        lookups={lookups}
++        onClose={() => setSelectedRow(null)}
++        returnFocusRef={activeTriggerRef}
++      />
+     </div>
+   )
+ }
+diff --git a/frontend/src/features/analysis-results/StructuredEvidenceSection.tsx b/frontend/src/features/analysis-results/StructuredEvidenceSection.tsx
+index 02209b4..eea62a7 100644
+--- a/frontend/src/features/analysis-results/StructuredEvidenceSection.tsx
++++ b/frontend/src/features/analysis-results/StructuredEvidenceSection.tsx
+@@ -32,7 +32,7 @@ interface StructuredData {
+   questions: QuestionResponse[]
+ }
+ 
+-const RESULT_LABELS: Record<MaterialRelationshipResult, string> = {
++export const RESULT_LABELS: Record<MaterialRelationshipResult, string> = {
+   linked: 'Linked',
+   missing: 'Missing reference',
+   ambiguous: 'Ambiguous reference',
+diff --git a/frontend/src/i18n/additionalArabicMessages.ts b/frontend/src/i18n/additionalArabicMessages.ts
+index fde8215..0c474f9 100644
+--- a/frontend/src/i18n/additionalArabicMessages.ts
++++ b/frontend/src/i18n/additionalArabicMessages.ts
+@@ -55,6 +55,70 @@ export const ADDITIONAL_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
+   'Analysis summary': '┘à┘ä╪«╪╡ ╪º┘ä╪¬╪¡┘ä┘è┘ä╪º╪¬',
+   'Total analyses': '╪Ñ╪¼┘à╪º┘ä┘è ╪º┘ä╪¬╪¡┘ä┘è┘ä╪º╪¬',
+   'Completed analyses': '╪º┘ä╪¬╪¡┘ä┘è┘ä╪º╪¬ ╪º┘ä┘à┘â╪¬┘à┘ä╪⌐',
++  'Analyses needing attention': '╪¬╪¡┘ä┘è┘ä╪º╪¬ ╪¬╪¡╪¬╪º╪¼ ╪Ñ┘ä┘ë ┘à╪▒╪º╪¼╪╣╪⌐',
++  'Reports available': '╪º┘ä╪¬┘é╪º╪▒┘è╪▒ ╪º┘ä┘à╪¬╪º╪¡╪⌐',
++  Close: '╪Ñ╪║┘ä╪º┘é',
++  Question: '╪º┘ä╪│╪ñ╪º┘ä',
++  Page: '╪º┘ä╪╡┘ü╪¡╪⌐',
++  'Question Text': '┘å╪╡ ╪º┘ä╪│╪ñ╪º┘ä',
++  Marks: '╪º┘ä╪»╪▒╪¼╪º╪¬',
++  Status: '╪º┘ä╪¡╪º┘ä╪⌐',
++  more: '╪º┘ä┘à╪▓┘è╪»',
++  Summary: '┘à┘ä╪«╪╡',
++  Evaluation: '╪º┘ä╪¬┘é┘è┘è┘à',
++  Findings: '╪º┘ä┘å╪¬╪º╪ª╪¼',
++  Evidence: '╪º┘ä╪ú╪»┘ä╪⌐',
++  'All CLOs': '╪¼┘à┘è╪╣ ┘å┘ê╪º╪¬╪¼ ╪º┘ä╪¬╪╣┘ä┘à',
++  'All topics': '╪¼┘à┘è╪╣ ╪º┘ä┘à┘ê╪╢┘ê╪╣╪º╪¬',
++  'Search questions': '╪º┘ä╪¿╪¡╪½ ┘ü┘è ╪º┘ä╪ú╪│╪ª┘ä╪⌐',
++  'Search by question ID or text': '╪º┘ä╪¿╪¡╪½ ╪¿╪▒┘é┘à ╪º┘ä╪│╪ñ╪º┘ä ╪ú┘ê ┘å╪╡┘ç',
++  'Showing {shown} of {total} questions': '╪╣╪▒╪╢ {shown} ┘à┘å ╪ú╪╡┘ä {total} ╪│╪ñ╪º┘ä┘ï╪º',
++  'Clear filters': '┘à╪│╪¡ ╪╣┘ê╪º┘à┘ä ╪º┘ä╪¬╪╡┘ü┘è╪⌐',
++  'Filter questions': '╪¬╪╡┘ü┘è╪⌐ ╪º┘ä╪ú╪│╪ª┘ä╪⌐',
++  'No questions match the filters.': '┘ä╪º ╪¬┘ê╪¼╪» ╪ú╪│╪ª┘ä╪⌐ ┘à╪╖╪º╪¿┘é╪⌐ ┘ä╪╣┘ê╪º┘à┘ä ╪º┘ä╪¬╪╡┘ü┘è╪⌐.',
++  'Clear the filters to see every extracted question.':
++    '╪º┘à╪│╪¡ ╪╣┘ê╪º┘à┘ä ╪º┘ä╪¬╪╡┘ü┘è╪⌐ ┘ä╪╣╪▒╪╢ ╪¼┘à┘è╪╣ ╪º┘ä╪ú╪│╪ª┘ä╪⌐ ╪º┘ä┘à╪│╪¬╪«╪▒╪¼╪⌐.',
++  'Extracted Question Text': '┘å╪╡ ╪º┘ä╪│╪ñ╪º┘ä ╪º┘ä┘à╪│╪¬╪«╪▒╪¼',
++  'Linked CLOs': '┘å┘ê╪º╪¬╪¼ ╪º┘ä╪¬╪╣┘ä┘à ╪º┘ä┘à╪▒╪¬╪¿╪╖╪⌐',
++  'Linked Course Topics': '┘à┘ê╪╢┘ê╪╣╪º╪¬ ╪º┘ä┘à┘é╪▒╪▒ ╪º┘ä┘à╪▒╪¬╪¿╪╖╪⌐',
++  'CLO Analysis': '╪¬╪¡┘ä┘è┘ä ┘å┘ê╪º╪¬╪¼ ╪º┘ä╪¬╪╣┘ä┘à',
++  'Topic Analysis': '╪¬╪¡┘ä┘è┘ä ┘à┘ê╪╢┘ê╪╣╪º╪¬ ╪º┘ä┘à┘é╪▒╪▒',
++  'Linked questions': '╪º┘ä╪ú╪│╪ª┘ä╪⌐ ╪º┘ä┘à╪▒╪¬╪¿╪╖╪⌐',
++  'Total marks': '╪Ñ╪¼┘à╪º┘ä┘è ╪º┘ä╪»╪▒╪¼╪º╪¬',
++  'A Midterm or Final exam may legitimately cover a subset of course topics. Topic coverage is informational and does not by itself indicate a quality problem.':
++    '┘è╪¼┘ê╪▓ ╪ú┘å ┘è╪║╪╖┘è ╪º┘ä╪º╪«╪¬╪¿╪º╪▒ ╪º┘ä┘å╪╡┘ü┘è ╪ú┘ê ╪º┘ä┘å┘ç╪º╪ª┘è ╪¼╪▓╪í┘ï╪º ┘ü┘é╪╖ ┘à┘å ┘à┘ê╪╢┘ê╪╣╪º╪¬ ╪º┘ä┘à┘é╪▒╪▒ ╪¿╪╡┘ê╪▒╪⌐ ┘à╪┤╪▒┘ê╪╣╪⌐. ╪¬╪║╪╖┘è╪⌐ ╪º┘ä┘à┘ê╪╢┘ê╪╣╪º╪¬ ┘à╪╣┘ä┘ê┘à╪º╪¬┘è╪⌐ ┘ê┘ä╪º ╪¬╪┤┘è╪▒ ┘ê╪¡╪»┘ç╪º ╪Ñ┘ä┘ë ┘à╪┤┘â┘ä╪⌐ ┘ü┘è ╪º┘ä╪¼┘ê╪»╪⌐.',
++  'Report Header': '╪¬╪▒┘ê┘è╪│╪⌐ ╪º┘ä╪¬┘é╪▒┘è╪▒',
++  'Executive Summary': '╪º┘ä┘à┘ä╪«╪╡ ╪º┘ä╪¬┘å┘ü┘è╪░┘è',
++  'Status Distribution': '╪¬┘ê╪▓┘è╪╣ ╪º┘ä╪¡╪º┘ä╪º╪¬',
++  'Exam Summary': '┘à┘ä╪«╪╡ ╪º┘ä╪º╪«╪¬╪¿╪º╪▒',
++  'Key Findings': '╪ú╪¿╪▒╪▓ ╪º┘ä┘å╪¬╪º╪ª╪¼',
++  'Missing or Unverified Evidence': '╪º┘ä╪ú╪»┘ä╪⌐ ╪º┘ä┘à┘ü┘é┘ê╪»╪⌐ ╪ú┘ê ╪║┘è╪▒ ╪º┘ä┘à╪¬╪¡┘é┘é ┘à┘å┘ç╪º',
++  'Scope Disclaimer': '╪Ñ╪«┘ä╪º╪í ┘à╪│╪ñ┘ê┘ä┘è╪⌐ ╪º┘ä┘å╪╖╪º┘é',
++  'Technical Traceability Appendix': '┘à┘ä╪¡┘é ╪º┘ä╪¬╪¬╪¿╪╣ ╪º┘ä╪¬┘é┘å┘è',
++  'Report language': '┘ä╪║╪⌐ ╪º┘ä╪¬┘é╪▒┘è╪▒',
++  Strengths: '┘å┘é╪º╪╖ ╪º┘ä┘é┘ê╪⌐',
++  'Areas for Improvement': '╪¼┘ê╪º┘å╪¿ ╪¬╪¡╪¬╪º╪¼ ╪Ñ┘ä┘ë ╪¬╪¡╪│┘è┘å',
++  Print: '╪╖╪¿╪º╪╣╪⌐',
++  'Independently scorable questions': '╪º┘ä╪ú╪│╪ª┘ä╪⌐ ╪º┘ä┘é╪º╪¿┘ä╪⌐ ┘ä┘ä╪¬┘é┘è┘è┘à ╪º┘ä┘à╪│╪¬┘é┘ä',
++  'Missing or ambiguous references': '╪º┘ä╪Ñ╪¡╪º┘ä╪º╪¬ ╪º┘ä┘à┘ü┘é┘ê╪»╪⌐ ╪ú┘ê ╪º┘ä┘à┘ä╪¬╪¿╪│╪⌐',
++  'This report analyzes the uploaded exam against the Course Specification, covering question clarity, CLO and topic alignment and coverage, marks and structure, and supporting materials.':
++    '┘è╪¡┘ä┘ä ┘ç╪░╪º ╪º┘ä╪¬┘é╪▒┘è╪▒ ╪º┘ä╪º╪«╪¬╪¿╪º╪▒ ╪º┘ä┘à╪▒┘ü┘ê╪╣ ┘à┘é╪º╪▒┘å╪⌐┘ï ╪¿╪¬┘ê╪╡┘è┘ü ╪º┘ä┘à┘é╪▒╪▒╪î ┘ê┘è╪║╪╖┘è ┘ê╪╢┘ê╪¡ ╪º┘ä╪ú╪│╪ª┘ä╪⌐╪î ┘ê┘à┘ê╪º╪í┘à╪⌐ ┘ê╪¬╪║╪╖┘è╪⌐ ┘å┘ê╪º╪¬╪¼ ╪º┘ä╪¬╪╣┘ä┘à ┘ê╪º┘ä┘à┘ê╪╢┘ê╪╣╪º╪¬╪î ┘ê╪º┘ä╪»╪▒╪¼╪º╪¬ ┘ê╪º┘ä╪¿┘å┘è╪⌐╪î ┘ê╪º┘ä┘à┘ê╪º╪» ╪º┘ä┘à╪│╪º┘å╪»╪⌐.',
++  'Overall result: {score}% based on {count} verified applicable checks.':
++    '╪º┘ä┘å╪¬┘è╪¼╪⌐ ╪º┘ä╪Ñ╪¼┘à╪º┘ä┘è╪⌐: {score}% ╪º╪│╪¬┘å╪º╪»┘ï╪º ╪Ñ┘ä┘ë {count} ┘ü╪¡╪╡┘ï╪º ┘à┘å╪╖╪¿┘é┘ï╪º ╪¬┘à ╪º┘ä╪¬╪¡┘é┘é ┘à┘å┘ç.',
++  'Overall result: {label}.': '╪º┘ä┘å╪¬┘è╪¼╪⌐ ╪º┘ä╪Ñ╪¼┘à╪º┘ä┘è╪⌐: {label}.',
++  'Strongest verified areas: {areas}.': '╪ú┘é┘ê┘ë ╪º┘ä╪¼┘ê╪º┘å╪¿ ╪º┘ä╪¬┘è ╪¬┘à ╪º┘ä╪¬╪¡┘é┘é ┘à┘å┘ç╪º: {areas}.',
++  'Main areas requiring improvement: {areas}.': '╪ú╪¿╪▒╪▓ ╪º┘ä╪¼┘ê╪º┘å╪¿ ╪º┘ä╪¬┘è ╪¬╪¡╪¬╪º╪¼ ╪Ñ┘ä┘ë ╪¬╪¡╪│┘è┘å: {areas}.',
++  '{count} result(s) could not be verified due to missing or unreliable evidence.':
++    '╪¬╪╣╪░╪▒ ╪º┘ä╪¬╪¡┘é┘é ┘à┘å {count} ┘å╪¬┘è╪¼╪⌐ (┘å╪¬╪º╪ª╪¼) ╪¿╪│╪¿╪¿ ╪ú╪»┘ä╪⌐ ┘à┘ü┘é┘ê╪»╪⌐ ╪ú┘ê ╪║┘è╪▒ ┘à┘ê╪½┘ê┘é╪⌐.',
++  'Not Verified and Not Applicable results remain visible but are excluded from the score denominator.':
++    '╪¬╪╕┘ä ┘å╪¬╪º╪ª╪¼ ┬½╪║┘è╪▒ ┘à╪¬╪¡┘é┘é┬╗ ┘ê┬½╪║┘è╪▒ ┘à┘å╪╖╪¿┘é┬╗ ╪╕╪º┘ç╪▒╪⌐╪î ┘ä┘â┘å┘ç╪º ┘à╪│╪¬╪¿╪╣╪»╪⌐ ┘à┘å ┘à┘é╪º┘à ╪º┘ä╪»╪▒╪¼╪⌐.',
++  'This report applies only to the uploaded examination and the corresponding Course Specification. The platform does not issue accreditation decisions, does not evaluate the complete academic program, and does not replace academic judgment. The faculty member remains responsible for the final examination decision.':
++    '┘è┘é╪¬╪╡╪▒ ┘ç╪░╪º ╪º┘ä╪¬┘é╪▒┘è╪▒ ╪╣┘ä┘ë ╪º┘ä╪º╪«╪¬╪¿╪º╪▒ ╪º┘ä┘à╪▒┘ü┘ê╪╣ ┘ê╪¬┘ê╪╡┘è┘ü ╪º┘ä┘à┘é╪▒╪▒ ╪º┘ä┘à╪╖╪º╪¿┘é ┘ä┘ç. ┘ä╪º ╪¬╪╡╪»╪▒ ╪º┘ä┘à┘å╪╡╪⌐ ┘é╪▒╪º╪▒╪º╪¬ ╪º╪╣╪¬┘à╪º╪»╪î ┘ê┘ä╪º ╪¬┘é┘è┘æ┘à ╪º┘ä╪¿╪▒┘å╪º┘à╪¼ ╪º┘ä╪ú┘â╪º╪»┘è┘à┘è ┘â╪º┘à┘ä┘ï╪º╪î ┘ê┘ä╪º ╪¬╪¡┘ä ┘à╪¡┘ä ╪º┘ä╪¬┘é╪»┘è╪▒ ╪º┘ä╪ú┘â╪º╪»┘è┘à┘è. ┘è╪╕┘ä ╪╣╪╢┘ê ┘ç┘è╪ª╪⌐ ╪º┘ä╪¬╪»╪▒┘è╪│ ┘à╪│╪ñ┘ê┘ä┘ï╪º ╪╣┘å ╪º┘ä┘é╪▒╪º╪▒ ╪º┘ä┘å┘ç╪º╪ª┘è ╪¿╪┤╪ú┘å ╪º┘ä╪º╪«╪¬╪¿╪º╪▒.',
++  'Review the exam quality report before downloading it.': '╪▒╪º╪¼╪╣ ╪¬┘é╪▒┘è╪▒ ╪¼┘ê╪»╪⌐ ╪º┘ä╪º╪«╪¬╪¿╪º╪▒ ┘é╪¿┘ä ╪¬┘å╪▓┘è┘ä┘ç.',
++  'Retrieving the governed analysis resultsΓÇª': '╪¼╪º╪▒┘ì ╪º╪│╪¬╪▒╪¼╪º╪╣ ┘å╪¬╪º╪ª╪¼ ╪º┘ä╪¬╪¡┘ä┘è┘ä ╪º┘ä┘à╪¡┘â┘ê┘à╪⌐ΓÇª',
++  'Could not load the analysis.': '╪¬╪╣╪░╪▒ ╪¬╪¡┘à┘è┘ä ╪º┘ä╪¬╪¡┘ä┘è┘ä.',
++  'One or more governed results could not be loaded for this report.':
++    '╪¬╪╣╪░╪▒ ╪¬╪¡┘à┘è┘ä ┘ê╪º╪¡╪»╪⌐ ╪ú┘ê ╪ú┘â╪½╪▒ ┘à┘å ╪º┘ä┘å╪¬╪º╪ª╪¼ ╪º┘ä┘à╪¡┘â┘ê┘à╪⌐ ┘ä┘ç╪░╪º ╪º┘ä╪¬┘é╪▒┘è╪▒.',
+   'Existing governed findings and source-faithful entities extracted from the TP-153.':
+     '┘å╪¬╪º╪ª╪¼ ╪º┘ä╪¬┘é┘è┘è┘à ╪º┘ä┘à╪¡┘â┘ê┘à╪⌐ ┘ê╪º┘ä╪╣┘å╪º╪╡╪▒ ╪º┘ä┘à╪│╪¬╪«╪▒╪¼╪⌐ ╪¿╪ú┘à╪º┘å╪⌐ ┘à┘å ╪¬┘ê╪╡┘è┘ü ╪º┘ä┘à┘é╪▒╪▒ TP-153.',
+   'Alignment and coverage findings': '┘å╪¬╪º╪ª╪¼ ╪º┘ä┘à┘ê╪º╪í┘à╪⌐ ┘ê╪º┘ä╪¬╪║╪╖┘è╪⌐',
+diff --git a/frontend/src/router/AppRoutes.test.tsx b/frontend/src/router/AppRoutes.test.tsx
+index b6ea61f..7ec2338 100644
+--- a/frontend/src/router/AppRoutes.test.tsx
++++ b/frontend/src/router/AppRoutes.test.tsx
+@@ -204,12 +204,19 @@ describe('AppRoutes', () => {
+     expect(screen.getByLabelText('Current route')).toHaveTextContent('/dashboard')
+   })
+ 
+-  it('builds dashboard metrics from one history request without score or detail calls', async () => {
++  it('builds dashboard metrics from one history request and one lightweight reports count, without score or detail calls', async () => {
+     vi.mocked(analysesApi.listAnalyses).mockResolvedValue([
+       COMPLETED_ANALYSIS,
+       { ...QUEUED_ANALYSIS, id: 'analysis-2', state: 'validating' },
+-      { ...QUEUED_ANALYSIS, id: 'analysis-3' },
++      { ...QUEUED_ANALYSIS, id: 'analysis-3', state: 'failed' },
+     ])
++    vi.mocked(reportsApi.listReportLibrary).mockResolvedValue({
++      items: [],
++      total: 5,
++      page: 1,
++      page_size: 1,
++      total_pages: 5,
++    })
+ 
+     renderAt('/dashboard')
+ 
+@@ -219,10 +226,25 @@ describe('AppRoutes', () => {
+     const completedCard = screen
+       .getByRole('heading', { name: 'Completed analyses' })
+       .closest('article')
++    const attentionCard = screen
++      .getByRole('heading', { name: 'Analyses needing attention' })
++      .closest('article')
++    const reportsCard = screen
++      .getByRole('heading', { name: 'Reports available' })
++      .closest('article')
+ 
+     expect(totalCard && within(totalCard).getByText('3')).toBeInTheDocument()
+     expect(completedCard && within(completedCard).getByText('1')).toBeInTheDocument()
++    expect(attentionCard && within(attentionCard).getByText('1')).toBeInTheDocument()
++    await waitFor(() =>
++      expect(reportsCard && within(reportsCard).getByText('5')).toBeInTheDocument(),
++    )
+     expect(analysesApi.listAnalyses).toHaveBeenCalledTimes(1)
++    expect(reportsApi.listReportLibrary).toHaveBeenCalledWith({
++      status: 'available',
++      page: 1,
++      page_size: 1,
++    })
+     expect(analysesApi.getAnalysis).not.toHaveBeenCalled()
+     expect(analysesApi.getAnalysisScore).not.toHaveBeenCalled()
+   })
+diff --git a/frontend/src/routes/DashboardRoute.tsx b/frontend/src/routes/DashboardRoute.tsx
+index e4d3c42..315d8ee 100644
+--- a/frontend/src/routes/DashboardRoute.tsx
++++ b/frontend/src/routes/DashboardRoute.tsx
+@@ -1,16 +1,19 @@
+ import { Link } from 'react-router-dom'
+ import { Button } from '../components/ui/Button'
++import { Icon } from '../components/ui/Icon'
+ import { PageHeader } from '../components/ui/PageHeader'
+ import { PageState } from '../components/ui/PageState'
+ import { AnalysisHistoryTable } from '../features/analysis-history/AnalysisHistoryTable'
+ import { AnalysisSummaryCards } from '../features/analysis-history/AnalysisSummaryCards'
+ import { calculateAnalysisMetrics } from '../features/analysis-history/analysisMetrics'
+ import { useAnalyses } from '../features/analysis-history/useAnalyses'
++import { useReportsAvailableCount } from '../features/analysis-history/useReportsAvailableCount'
+ import { useI18n } from '../i18n/I18nProvider'
+ 
+ export function DashboardRoute() {
+   const { t } = useI18n()
+   const state = useAnalyses()
++  const reportsAvailable = useReportsAvailableCount()
+   const metrics =
+     state.status === 'ready' ? calculateAnalysisMetrics(state.analyses) : null
+ 
+@@ -22,6 +25,7 @@ export function DashboardRoute() {
+         description={t('Create a new evidence-based exam analysis or return to an existing analysis.')}
+         actions={
+           <Link className="ui-button" to="/analyses/new">
++            <Icon name="plus" />
+             {t('New Analysis')}
+           </Link>
+         }
+@@ -44,7 +48,7 @@ export function DashboardRoute() {
+       )}
+       {state.status === 'ready' && (
+         <>
+-          <AnalysisSummaryCards analyses={state.analyses} />
++          <AnalysisSummaryCards analyses={state.analyses} reportsAvailable={reportsAvailable} />
+           {metrics && metrics.recent.length > 0 ? (
+             <section className="dashboard-recent">
+               <div className="dashboard-section-heading">
+diff --git a/frontend/src/routes/ReportPreviewRoute.test.tsx b/frontend/src/routes/ReportPreviewRoute.test.tsx
+index fbefd87..830cb21 100644
+--- a/frontend/src/routes/ReportPreviewRoute.test.tsx
++++ b/frontend/src/routes/ReportPreviewRoute.test.tsx
+@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
+ import * as analysesApi from '../api/analyses'
+ import * as reportsApi from '../api/reports'
+ import { I18nProvider } from '../i18n/I18nProvider'
+-import type { ReportResponse } from '../types/api'
++import type { AnalysisResponse, AnalysisScoreResponse, ReportResponse } from '../types/api'
+ import { ReportPreviewRoute } from './ReportPreviewRoute'
+ 
+ vi.mock('../api/analyses')
+@@ -29,6 +29,40 @@ const REPORT: ReportResponse = {
+   created_at: '2026-07-01T00:00:00Z',
+ }
+ 
++const ANALYSIS: AnalysisResponse = {
++  id: 'analysis-1',
++  course: {
++    id: 'course-1',
++    code: 'CPIT-450',
++    name: 'Software Engineering',
++    department: null,
++    program: null,
++  },
++  exam_type: 'Midterm',
++  term: '2026 Spring',
++  state: 'completed',
++  owner_user_id: 'user-1',
++  predecessor_analysis_id: null,
++  uploaded_files: [],
++  exam_uploaded: true,
++  tp153_uploaded: true,
++  ready_for_analysis: true,
++  created_at: '2026-01-01T00:00:00Z',
++  updated_at: '2026-01-01T00:00:00Z',
++}
++
++const SCORE: AnalysisScoreResponse = {
++  analysis_id: 'analysis-1',
++  score: '80.00',
++  label: null,
++  denominator: 5,
++  satisfied_count: 4,
++  partially_satisfied_count: 0,
++  not_satisfied_count: 1,
++  not_verified_count: 0,
++  not_applicable_count: 0,
++}
++
+ function renderPreview() {
+   return render(
+     <MemoryRouter initialEntries={['/reports/report-1/preview']}>
+@@ -52,28 +86,97 @@ beforeEach(() => {
+     new Blob(['pdf'], { type: 'application/pdf' }),
+   )
+   vi.mocked(analysesApi.downloadBlob).mockImplementation(() => undefined)
+-  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:protected-report')
+-  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
++  vi.mocked(analysesApi.getAnalysis).mockResolvedValue(ANALYSIS)
++  vi.mocked(analysesApi.listQuestions).mockResolvedValue([])
++  vi.mocked(analysesApi.listClos).mockResolvedValue([])
++  vi.mocked(analysesApi.listTopics).mockResolvedValue([])
++  vi.mocked(analysesApi.listAssessmentRecords).mockResolvedValue([])
++  vi.mocked(analysesApi.listFindings).mockResolvedValue([])
++  vi.mocked(analysesApi.getAnalysisScore).mockResolvedValue(SCORE)
++  vi.mocked(analysesApi.listRecommendations).mockResolvedValue([])
++  vi.mocked(analysesApi.listReports).mockResolvedValue([])
++  vi.mocked(analysesApi.getRuleCoverage).mockResolvedValue({
++    analysis_id: 'analysis-1',
++    scope: 'exam_facing_rules',
++    total_rules: 0,
++    evaluated_rules: 0,
++    conditional_capability_gap_rules: 0,
++    unsupported_rules: 0,
++    not_run_rules: 0,
++    runtime_integrity_ok: true,
++    entries: [],
++  })
++  vi.mocked(analysesApi.listSupportingMaterials).mockResolvedValue([])
++  vi.mocked(analysesApi.listSupportingMaterialAnnotations).mockResolvedValue([])
++  vi.mocked(analysesApi.listDocumentReferences).mockResolvedValue([])
++  vi.spyOn(window, 'print').mockImplementation(() => undefined)
+ })
+ 
+ describe('ReportPreviewRoute', () => {
+-  it('loads owner-safe metadata and PDF content into an accessible preview', async () => {
++  it('renders a numbered HTML report document with print and download actions', async () => {
+     renderPreview()
+ 
+-    expect(
+-      await screen.findByTitle('Report PDF preview'),
+-    ).toHaveAttribute('src', 'blob:protected-report')
++    expect(await screen.findByText('1. Report Header')).toBeInTheDocument()
++    expect(screen.getByText('2. Executive Summary')).toBeInTheDocument()
++    expect(screen.getByText('3. Overall Exam Quality Score')).toBeInTheDocument()
++    expect(screen.getByText('4. Status Distribution')).toBeInTheDocument()
++    expect(screen.getByText('13. Scope Disclaimer')).toBeInTheDocument()
++    expect(screen.getByText('14. Technical Traceability Appendix')).toBeInTheDocument()
+     expect(reportsApi.getReportMetadata).toHaveBeenCalledWith('report-1')
+     expect(analysesApi.downloadReportFile).toHaveBeenCalledWith('report-1')
+-    expect(screen.getByText('English Report')).toBeInTheDocument()
++    expect(analysesApi.getAnalysis).toHaveBeenCalledWith('analysis-1')
++    expect(screen.getAllByText('English Report').length).toBeGreaterThan(0)
+     expect(screen.getByRole('link', { name: 'Back to Reports' }))
+       .toHaveAttribute('href', '/reports')
++    expect(screen.queryByRole('img', { name: /report pdf preview/i })).not.toBeInTheDocument()
++    expect(document.querySelector('iframe')).not.toBeInTheDocument()
+ 
+-    fireEvent.click(screen.getByRole('button', { name: 'Download PDF' }))
++    fireEvent.click(screen.getByRole('button', { name: /download pdf/i }))
+     expect(analysesApi.downloadBlob).toHaveBeenCalledWith(
+       expect.any(Blob),
+       'report-en-report-1.pdf',
+     )
++
++    fireEvent.click(screen.getByRole('button', { name: /print/i }))
++    expect(window.print).toHaveBeenCalled()
++  })
++
++  it('does not show provider/model details or Question Type content in the primary report', async () => {
++    vi.mocked(analysesApi.listFindings).mockResolvedValue([
++      {
++        id: 'finding-1',
++        analysis_id: 'analysis-1',
++        requirement_id: 'REQ011',
++        rule_id: 'RULE011',
++        recommendation_id: null,
++        status: 'Satisfied',
++        explanation: 'The question is clear.',
++        confidence: 0.9,
++        confidence_level: 'High',
++        evaluation_details: null,
++        evaluator_type: 'semantic_ai',
++        ai_provider: 'anthropic',
++        ai_model: 'claude',
++        prompt_template_version: 'v1',
++        kb_version: '1.0',
++        created_at: '2026-01-01T00:00:00Z',
++        evidence: [],
++        requirement_name: 'Clear Task Statement',
++        dimension: 'Question Clarity',
++        source_type: 'Derived Exam Requirement',
++        officiality: 'Derived',
++      },
++    ])
++    renderPreview()
++
++    await screen.findByText('1. Report Header')
++    expect(screen.queryByText(/anthropic/i)).not.toBeInTheDocument()
++    expect(screen.queryByText(/claude/i)).not.toBeInTheDocument()
++    expect(screen.queryByText(/prompt_template_version/i)).not.toBeInTheDocument()
++    expect(screen.queryByText(/question type/i)).not.toBeInTheDocument()
++    expect(screen.queryByText(/0\.9/)).not.toBeInTheDocument()
++    expect(screen.queryByText(/upload revised exam/i)).not.toBeInTheDocument()
++    expect(screen.queryByText(/reanalyz/i)).not.toBeInTheDocument()
+   })
+ 
+   it('shows a retryable safe error without exposing storage information', async () => {
+@@ -90,6 +193,6 @@ describe('ReportPreviewRoute', () => {
+     await waitFor(() =>
+       expect(reportsApi.getReportMetadata).toHaveBeenCalledTimes(2),
+     )
+-    expect(await screen.findByTitle('Report PDF preview')).toBeInTheDocument()
++    expect(await screen.findByText('1. Report Header')).toBeInTheDocument()
+   })
+ })
+diff --git a/frontend/src/routes/ReportPreviewRoute.tsx b/frontend/src/routes/ReportPreviewRoute.tsx
+index 47466f1..67a99e0 100644
+--- a/frontend/src/routes/ReportPreviewRoute.tsx
++++ b/frontend/src/routes/ReportPreviewRoute.tsx
+@@ -3,8 +3,10 @@ import { Link, useParams } from 'react-router-dom'
+ import { downloadBlob, downloadReportFile } from '../api/analyses'
+ import { getReportMetadata } from '../api/reports'
+ import { Button } from '../components/ui/Button'
++import { Icon } from '../components/ui/Icon'
+ import { PageHeader } from '../components/ui/PageHeader'
+ import { PageState } from '../components/ui/PageState'
++import { ReportPreviewContent } from '../features/reports/ReportPreviewContent'
+ import { useI18n } from '../i18n/I18nProvider'
+ import { localizeInterfaceError } from '../i18n/localizeError'
+ import type { ReportResponse } from '../types/api'
+@@ -12,7 +14,7 @@ import type { ReportResponse } from '../types/api'
+ type PreviewState =
+   | { status: 'loading' }
+   | { status: 'error'; message: string }
+-  | { status: 'ready'; report: ReportResponse; blob: Blob; url: string }
++  | { status: 'ready'; report: ReportResponse; blob: Blob }
+ 
+ export function ReportPreviewRoute() {
+   const { reportId = '' } = useParams()
+@@ -22,15 +24,10 @@ export function ReportPreviewRoute() {
+ 
+   useEffect(() => {
+     let active = true
+-    let objectUrl: string | null = null
+-    void Promise.all([
+-      getReportMetadata(reportId),
+-      downloadReportFile(reportId),
+-    ])
++    void Promise.all([getReportMetadata(reportId), downloadReportFile(reportId)])
+       .then(([report, blob]) => {
+         if (!active) return
+-        objectUrl = URL.createObjectURL(blob)
+-        setState({ status: 'ready', report, blob, url: objectUrl })
++        setState({ status: 'ready', report, blob })
+       })
+       .catch((error: unknown) => {
+         if (!active) return
+@@ -46,7 +43,6 @@ export function ReportPreviewRoute() {
+       })
+     return () => {
+       active = false
+-      if (objectUrl) URL.revokeObjectURL(objectUrl)
+     }
+   }, [locale, reloadToken, reportId, t])
+ 
+@@ -61,7 +57,7 @@ export function ReportPreviewRoute() {
+                   ? 'Arabic Report'
+                   : 'English Report',
+               )
+-            : t('Review the generated PDF before downloading it.')
++            : t('Review the exam quality report before downloading it.')
+         }
+         actions={
+           <Link className="ui-button ui-button--secondary" to="/reports">
+@@ -99,23 +95,29 @@ export function ReportPreviewRoute() {
+ 
+       {state.status === 'ready' && (
+         <>
+-          <div className="report-preview-actions">
+-            <Button
+-              onClick={() =>
+-                downloadBlob(
+-                  state.blob,
+-                  `report-${state.report.language}-${state.report.id}.pdf`,
+-                )
+-              }
+-            >
+-              {t('Download PDF')}
+-            </Button>
++          <div className="report-preview-toolbar">
++            <span className="report-preview-language-indicator">
++              {t(state.report.language === 'ar' ? 'Arabic Report' : 'English Report')}
++            </span>
++            <div className="report-preview-toolbar-actions">
++              <Button variant="secondary" onClick={() => window.print()}>
++                <Icon name="print" className="ui-icon--sm" />
++                {t('Print')}
++              </Button>
++              <Button
++                onClick={() =>
++                  downloadBlob(
++                    state.blob,
++                    `report-${state.report.language}-${state.report.id}.pdf`,
++                  )
++                }
++              >
++                <Icon name="download" className="ui-icon--sm" />
++                {t('Download PDF')}
++              </Button>
++            </div>
+           </div>
+-          <iframe
+-            className="report-preview-frame"
+-            src={state.url}
+-            title={t('Report PDF preview')}
+-          />
++          <ReportPreviewContent analysisId={state.report.analysis_id} report={state.report} />
+         </>
+       )}
+     </div>
+diff --git a/frontend/src/styles/components.css b/frontend/src/styles/components.css
+index 76606a3..79d1ba4 100644
+--- a/frontend/src/styles/components.css
++++ b/frontend/src/styles/components.css
+@@ -244,6 +244,23 @@
+   border-color: #a7f3d0;
+ }
+ 
++.ui-icon {
++  width: 1.1rem;
++  height: 1.1rem;
++  flex: 0 0 1.1rem;
++  fill: none;
++  stroke: currentcolor;
++  stroke-linecap: round;
++  stroke-linejoin: round;
++  stroke-width: 1.75;
++}
++
++.ui-icon--sm {
++  width: 0.95rem;
++  height: 0.95rem;
++  flex-basis: 0.95rem;
++}
++
+ .ui-status-badge {
+   display: inline-flex;
+   align-items: center;
+diff --git a/frontend/src/styles/dashboard.css b/frontend/src/styles/dashboard.css
+index 6f9e3b6..06209a0 100644
+--- a/frontend/src/styles/dashboard.css
++++ b/frontend/src/styles/dashboard.css
+@@ -1,6 +1,6 @@
+ .analysis-summary-grid {
+   display: grid;
+-  grid-template-columns: repeat(3, minmax(0, 1fr));
++  grid-template-columns: repeat(4, minmax(0, 1fr));
+   gap: var(--space-4);
+ }
+ 
+@@ -10,6 +10,18 @@
+   padding: var(--space-4);
+ }
+ 
++.analysis-summary-card-icon {
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  width: 2.25rem;
++  height: 2.25rem;
++  margin-block-end: var(--space-1);
++  color: var(--color-brand-teal-strong);
++  background: var(--color-brand-teal-subtle);
++  border-radius: var(--radius-md);
++}
++
+ .analysis-summary-card h2 {
+   margin: 0;
+   color: var(--color-text-secondary);
+diff --git a/frontend/src/styles/reports-library.css b/frontend/src/styles/reports-library.css
+index b225e82..f0c2a22 100644
+--- a/frontend/src/styles/reports-library.css
++++ b/frontend/src/styles/reports-library.css
+@@ -285,17 +285,141 @@
+   font-weight: 700;
+ }
+ 
+-.report-preview-actions {
++.report-preview-toolbar {
+   display: flex;
+-  justify-content: flex-end;
++  flex-wrap: wrap;
++  align-items: center;
++  justify-content: space-between;
++  gap: var(--space-3);
++  padding: var(--space-3) var(--space-4);
++  background: var(--color-surface);
++  border: var(--border-width) solid var(--color-border);
++  border-radius: var(--radius-lg);
+ }
+ 
+-.report-preview-frame {
+-  width: 100%;
+-  min-height: 75vh;
+-  background: var(--color-surface-muted);
++.report-preview-language-indicator {
++  font-weight: 700;
++  color: var(--color-text-secondary);
++}
++
++.report-preview-toolbar-actions {
++  display: flex;
++  flex-wrap: wrap;
++  gap: var(--space-2);
++}
++
++.report-preview-sheet {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-6);
++  max-width: 56rem;
++  margin-inline: auto;
++  padding: var(--space-8);
++  background: var(--color-surface);
+   border: var(--border-width) solid var(--color-border);
+   border-radius: var(--radius-xl);
++  box-shadow: var(--shadow-card);
++}
++
++.report-preview-section h2 {
++  padding-block-end: var(--space-2);
++  border-block-end: var(--border-width) solid var(--color-border);
++  font-size: var(--font-size-lg);
++}
++
++.report-preview-title {
++  font-size: var(--font-size-xl);
++  font-weight: 700;
++}
++
++.report-header-facts,
++.report-exam-summary {
++  display: grid;
++  grid-template-columns: repeat(3, minmax(0, 1fr));
++  gap: var(--space-3) var(--space-6);
++}
++
++.report-header-facts dt,
++.report-exam-summary dt {
++  color: var(--color-text-secondary);
++  font-size: var(--font-size-sm);
++  font-weight: 700;
++}
++
++.report-header-facts dd,
++.report-exam-summary dd {
++  margin: 0;
++}
++
++.report-status-distribution {
++  display: grid;
++  grid-template-columns: repeat(5, minmax(0, 1fr));
++  gap: var(--space-3);
++  margin: 0;
++  padding: 0;
++  list-style: none;
++}
++
++.report-status-distribution li {
++  display: grid;
++  gap: var(--space-1);
++  padding: var(--space-3);
++  text-align: center;
++  background: var(--color-surface-muted);
++  border-radius: var(--radius-md);
++}
++
++.report-status-distribution strong {
++  font-size: var(--font-size-xl);
++}
++
++.report-check-list {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-3);
++  margin: 0;
++  padding: 0;
++  list-style: none;
++}
++
++.report-check-list li {
++  padding: var(--space-3);
++  background: var(--color-surface-muted);
++  border-radius: var(--radius-md);
++}
++
++.report-finding-group + .report-finding-group {
++  margin-block-start: var(--space-4);
++}
++
++.report-preview-appendix summary {
++  font-weight: 700;
++  cursor: pointer;
++}
++
++.report-preview-footer {
++  padding-block-start: var(--space-4);
++  border-block-start: var(--border-width) solid var(--color-border);
++}
++
++@media print {
++  .app-sidebar,
++  .app-mobile-header,
++  .skip-link,
++  .report-preview-toolbar,
++  .ui-page-header-actions {
++    display: none !important;
++  }
++
++  .report-preview-sheet {
++    max-width: none;
++    box-shadow: none;
++    border: none;
++  }
++
++  .report-preview-appendix {
++    break-inside: avoid;
++  }
+ }
+ 
+ @media (max-width: 78rem) {
+@@ -341,12 +465,26 @@
+     flex-wrap: wrap;
+   }
+ 
+-  .report-preview-actions .ui-button {
++  .report-preview-toolbar {
++    flex-direction: column;
++    align-items: stretch;
++  }
++
++  .report-preview-toolbar-actions .ui-button {
+     width: 100%;
+   }
+ 
+-  .report-preview-frame {
+-    min-height: 65vh;
++  .report-preview-sheet {
++    padding: var(--space-4);
++  }
++
++  .report-header-facts,
++  .report-exam-summary {
++    grid-template-columns: 1fr;
++  }
++
++  .report-status-distribution {
++    grid-template-columns: repeat(2, minmax(0, 1fr));
+   }
+ }
+ 
+@@ -359,6 +497,10 @@
+   .reports-card-metadata dd {
+     margin-block-start: calc(var(--space-1) * -1);
+   }
++
++  .report-status-distribution {
++    grid-template-columns: 1fr;
++  }
+ }
+ 
+ @media (prefers-reduced-motion: reduce) {
+diff --git a/frontend/src/styles/results.css b/frontend/src/styles/results.css
+index ed3788e..010f38e 100644
+--- a/frontend/src/styles/results.css
++++ b/frontend/src/styles/results.css
+@@ -192,7 +192,138 @@
+ }
+ 
+ .questions-table td:last-child {
+-  min-width: 22rem;
++  min-width: 9rem;
++  white-space: nowrap;
++}
++
++.question-filters {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-3);
++  padding: var(--space-4);
++  background: var(--color-surface);
++  border: var(--border-width) solid var(--color-border);
++  border-radius: var(--radius-lg);
++}
++
++.question-filter-fields {
++  display: grid;
++  grid-template-columns: minmax(14rem, 2fr) repeat(3, minmax(9rem, 1fr));
++  gap: var(--space-3);
++}
++
++.question-filter-fields label {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-2);
++  font-size: var(--font-size-sm);
++  font-weight: 700;
++}
++
++.question-filter-fields select {
++  min-height: var(--control-min-height);
++  padding: var(--space-2) var(--space-3);
++  font: inherit;
++  background: var(--color-surface);
++  border: var(--border-width) solid var(--color-border-strong);
++  border-radius: var(--radius-md);
++}
++
++.question-search-input {
++  display: flex;
++  align-items: center;
++  gap: var(--space-2);
++  padding-inline-start: var(--space-3);
++  background: var(--color-surface);
++  border: var(--border-width) solid var(--color-border-strong);
++  border-radius: var(--radius-md);
++}
++
++.question-search-input .ui-icon {
++  flex: 0 0 auto;
++  color: var(--color-text-muted);
++}
++
++.question-search-input input {
++  flex: 1;
++  min-height: var(--control-min-height);
++  padding: var(--space-2) var(--space-3) var(--space-2) 0;
++  font: inherit;
++  background: none;
++  border: none;
++}
++
++.question-search-input input:focus-visible {
++  outline: none;
++}
++
++.question-filter-fields select:focus-visible,
++.question-search-input:focus-within {
++  outline: none;
++  box-shadow: var(--focus-ring);
++}
++
++.question-filter-summary {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: var(--space-3);
++  color: var(--color-text-secondary);
++  font-size: var(--font-size-sm);
++}
++
++.question-badge-list {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  gap: var(--space-1);
++  max-width: 12rem;
++}
++
++.question-badge-overflow {
++  color: var(--color-text-secondary);
++  background: var(--color-surface-muted);
++  cursor: default;
++}
++
++.question-text-cell {
++  display: block;
++  max-width: 18rem;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.question-view-details-button {
++  display: inline-flex;
++  align-items: center;
++  gap: var(--space-1);
++  color: var(--color-brand-teal-strong);
++  font-weight: 700;
++  background: none;
++  border: none;
++  cursor: pointer;
++}
++
++.question-view-details-button:hover {
++  text-decoration: underline;
++}
++
++@media (max-width: 64rem) {
++  .question-filter-fields {
++    grid-template-columns: repeat(2, minmax(0, 1fr));
++  }
++}
++
++@media (max-width: 36rem) {
++  .question-filter-fields {
++    grid-template-columns: 1fr;
++  }
++
++  .question-filter-summary {
++    flex-direction: column;
++    align-items: stretch;
++  }
+ }
+ 
+ .alignment-source-grid {
+@@ -1651,7 +1782,15 @@
+   }
+ 
+   .questions-table td:last-child {
+-    min-width: 15rem;
++    min-width: 8rem;
++  }
++
++  .question-text-cell {
++    max-width: 12rem;
++  }
++
++  .question-badge-list {
++    max-width: 9rem;
+   }
+ 
+ }
+@@ -1678,3 +1817,184 @@
+   }
+ 
+ }
++
++.ui-drawer-backdrop {
++  position: fixed;
++  inset: 0;
++  z-index: 60;
++  cursor: default;
++  background: rgb(15 23 42 / 45%);
++  border: none;
++}
++
++.ui-drawer {
++  position: fixed;
++  inset-block: 0;
++  inset-inline-end: 0;
++  z-index: 70;
++  display: flex;
++  flex-direction: column;
++  width: min(32rem, 92vw);
++  background: var(--color-surface);
++  box-shadow: var(--shadow-raised);
++  overflow-y: auto;
++}
++
++.ui-drawer-header {
++  position: sticky;
++  inset-block-start: 0;
++  z-index: 1;
++  display: flex;
++  align-items: flex-start;
++  justify-content: space-between;
++  gap: var(--space-4);
++  padding: var(--space-5) var(--space-6);
++  background: var(--color-surface);
++  border-block-end: var(--border-width) solid var(--color-border);
++}
++
++.ui-drawer-heading-copy {
++  min-width: 0;
++}
++
++.ui-drawer-title {
++  margin: 0;
++  font-size: var(--font-size-lg);
++}
++
++.ui-drawer-meta {
++  display: flex;
++  flex-wrap: wrap;
++  gap: var(--space-1) var(--space-3);
++  margin-block-start: var(--space-1);
++  color: var(--color-text-secondary);
++  font-size: var(--font-size-sm);
++}
++
++.ui-drawer-close {
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  flex: 0 0 auto;
++  width: 2.25rem;
++  height: 2.25rem;
++  padding: 0;
++  color: var(--color-text-secondary);
++  background: none;
++  border: var(--border-width) solid var(--color-border);
++  border-radius: var(--radius-md);
++  cursor: pointer;
++}
++
++.ui-drawer-close:hover {
++  color: var(--color-text);
++  background: var(--color-surface-muted);
++}
++
++.ui-drawer-body {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-5);
++  padding: var(--space-6);
++}
++
++.ui-drawer-section h3 {
++  margin-block-end: var(--space-2);
++  font-size: var(--font-size-md);
++}
++
++.ui-drawer-section p {
++  margin: 0;
++}
++
++@media (max-width: 36rem) {
++  .ui-drawer {
++    width: 100vw;
++  }
++}
++
++.drawer-summary-stats {
++  display: flex;
++  flex-wrap: wrap;
++  gap: var(--space-5);
++  margin: 0;
++}
++
++.drawer-summary-stats dt {
++  color: var(--color-text-secondary);
++  font-size: var(--font-size-xs);
++  font-weight: 700;
++  text-transform: uppercase;
++}
++
++.drawer-summary-stats dd {
++  margin: 0;
++  font-size: var(--font-size-md);
++}
++
++.drawer-linked-list {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-2);
++  margin: 0;
++  padding: 0;
++  list-style: none;
++}
++
++.drawer-linked-list li {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: baseline;
++  gap: var(--space-2);
++}
++
++.drawer-badge {
++  display: inline-flex;
++  align-items: center;
++  padding: 0.1rem 0.55rem;
++  font-size: var(--font-size-xs);
++  font-weight: 700;
++  border-radius: var(--radius-pill);
++}
++
++.drawer-badge--clo {
++  color: var(--color-text-secondary);
++  background: var(--color-surface-muted);
++}
++
++.drawer-badge--topic {
++  color: var(--color-brand-teal-strong);
++  background: var(--color-brand-teal-subtle);
++}
++
++.drawer-finding-list {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-4);
++  margin: 0;
++  padding: 0;
++  list-style: none;
++}
++
++.drawer-finding-item {
++  padding: var(--space-3);
++  background: var(--color-surface-muted);
++  border-radius: var(--radius-md);
++}
++
++.drawer-finding-item p {
++  margin-block: var(--space-1) 0;
++}
++
++.drawer-finding-header {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  justify-content: space-between;
++  gap: var(--space-2);
++}
++
++.drawer-evidence-disclosure > summary {
++  font-weight: 700;
++  cursor: pointer;
++}

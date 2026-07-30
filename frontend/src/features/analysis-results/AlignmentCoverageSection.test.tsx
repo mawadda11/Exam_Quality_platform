@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../../i18n/I18nProvider'
@@ -246,7 +246,7 @@ beforeEach(() => {
 })
 
 describe('AlignmentCoverageSection', () => {
-  it('renders two summary panels, one main table, and collapsed coverage details', () => {
+  it('renders two summary panels and three primary tables, with no collapsed coverage details', () => {
     const { container } = renderSection()
 
     expect(screen.getAllByRole('table')).toHaveLength(3)
@@ -255,12 +255,8 @@ describe('AlignmentCoverageSection', () => {
         name: 'Question-to-CLO-and-Topic relationships',
       }),
     ).toBeInTheDocument()
-    expect(
-      screen.queryByRole('table', { name: 'Question-to-CLO relationships' }),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('table', { name: 'Question-to-topic relationships' }),
-    ).not.toBeInTheDocument()
+    expect(screen.getByRole('table', { name: 'CLO Analysis' })).toBeInTheDocument()
+    expect(screen.getByRole('table', { name: 'Topic Analysis' })).toBeInTheDocument()
     expect(container.querySelectorAll('.alignment-compact-summary > li'))
       .toHaveLength(2)
     expect(screen.getByRole('heading', { name: 'Question Relationships' }))
@@ -269,26 +265,40 @@ describe('AlignmentCoverageSection', () => {
     expect(screen.getByText('Questions linked to a course topic'))
       .toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Coverage' })).toBeInTheDocument()
-    expect(container.querySelector('#clo-coverage')).not.toHaveAttribute('open')
-    expect(container.querySelector('#topic-coverage')).not.toHaveAttribute('open')
-    expect(container.querySelector('#clo-coverage summary')).toHaveTextContent(
-      'CLO Coverage (2)Supported: 0 · Partially supported: 1 · Unsupported: 1',
-    )
-    expect(container.querySelector('#topic-coverage summary')).toHaveTextContent(
-      'Topic Coverage (2)Supported: 1 · Partially supported: 0 · Unsupported: 1',
-    )
+    expect(container.querySelector('#clo-coverage')).not.toBeNull()
+    expect(container.querySelector('#clo-coverage details')).not.toBeInTheDocument()
+    expect(container.querySelector('#topic-coverage details')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'CLO Analysis (2)' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Topic Analysis (2)' }),
+    ).toBeInTheDocument()
     expect(screen.queryByText('Assessment Method Consistency'))
       .not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Action' }))
       .not.toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'Details' }))
-      .toBeInTheDocument()
+    expect(screen.getAllByRole('columnheader', { name: 'Details' }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('columnheader', { name: 'Total marks' })).toHaveLength(2)
+    expect(
+      screen.getByText(
+        'A Midterm or Final exam may legitimately cover a subset of course topics. Topic coverage is informational and does not by itself indicate a quality problem.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('uses only the five approved academic statuses everywhere, never unofficial renamed labels', () => {
+    renderSection()
+
+    expect(screen.queryByText('Supported')).not.toBeInTheDocument()
+    expect(screen.queryByText('Partially supported')).not.toBeInTheDocument()
+    expect(screen.queryByText('Not supported')).not.toBeInTheDocument()
+    expect(screen.getAllByText('Satisfied').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Partially Satisfied').length).toBeGreaterThan(0)
   })
 
   it('uses natural question order, preserves official CLO/topic order, and aligns related lists', () => {
-    const { container } = renderSection()
-    fireEvent.click(container.querySelector('#clo-coverage summary')!)
-    fireEvent.click(container.querySelector('#topic-coverage summary')!)
+    renderSection()
 
     const relationshipTable = screen.getByRole('table', {
       name: 'Question-to-CLO-and-Topic relationships',
@@ -299,7 +309,7 @@ describe('AlignmentCoverageSection', () => {
         .map((header) => header.textContent),
     ).toEqual(['Q1', 'Q2', 'Q10'])
 
-    const cloTable = screen.getByRole('table', { name: 'CLO Coverage' })
+    const cloTable = screen.getByRole('table', { name: 'CLO Analysis' })
     expect(
       within(cloTable).getAllByRole('rowheader').map((header) => header.textContent),
     ).toEqual(['CLO2', 'CLO10'])
@@ -307,7 +317,7 @@ describe('AlignmentCoverageSection', () => {
       'Q2, Q10',
     )
 
-    const topicTable = screen.getByRole('table', { name: 'Topic Coverage' })
+    const topicTable = screen.getByRole('table', { name: 'Topic Analysis' })
     expect(
       within(topicTable)
         .getAllByRole('rowheader')
@@ -318,8 +328,52 @@ describe('AlignmentCoverageSection', () => {
     )
   })
 
-  it('keeps differing CLO/topic judgments separate and opens a compact selected-question comparison', () => {
-    const { container } = renderSection()
+  it('shows total marks per CLO/topic from questions with a supported relationship only', () => {
+    renderSection()
+
+    const cloTable = screen.getByRole('table', { name: 'CLO Analysis' })
+    const clo2Row = within(cloTable).getByRole('rowheader', { name: 'CLO2' }).closest('tr')!
+    expect(clo2Row.querySelector('[data-label="Total marks"]')).toHaveTextContent('10')
+
+    const topicTable = screen.getByRole('table', { name: 'Topic Analysis' })
+    const databaseRow = within(topicTable)
+      .getByRole('rowheader', { name: 'Database design' })
+      .closest('tr')!
+    expect(databaseRow.querySelector('[data-label="Total marks"]')).toHaveTextContent('10')
+  })
+
+  it('opens a CLO mapping-details drawer showing linked questions and returns focus on close', async () => {
+    renderSection()
+    const cloTable = screen.getByRole('table', { name: 'CLO Analysis' })
+    const clo2Row = within(cloTable).getByRole('rowheader', { name: 'CLO2' }).closest('tr')!
+    const trigger = within(clo2Row).getByRole('button', { name: 'View mapping details' })
+
+    fireEvent.click(trigger)
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Design relational database solutions.')).toBeInTheDocument()
+    expect(within(dialog).getAllByText('Q2').length).toBeGreaterThan(0)
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await waitFor(() => expect(trigger).toHaveFocus())
+  })
+
+  it('omits the mapping-details action for a topic with no linked questions', () => {
+    renderSection()
+    const topicTable = screen.getByRole('table', { name: 'Topic Analysis' })
+    const networksRow = within(topicTable)
+      .getByRole('rowheader', { name: 'Computer networks' })
+      .closest('tr')!
+
+    expect(
+      within(networksRow).queryByRole('button', { name: 'View mapping details' }),
+    ).not.toBeInTheDocument()
+    expect(networksRow.querySelector('[data-label="Details"]')).toHaveTextContent('—')
+  })
+
+  it('keeps differing CLO/topic judgments separate and opens a consistent mapping drawer', async () => {
+    renderSection()
     const relationshipTable = screen.getByRole('table', {
       name: 'Question-to-CLO-and-Topic relationships',
     })
@@ -327,59 +381,39 @@ describe('AlignmentCoverageSection', () => {
       .getByRole('rowheader', { name: 'Q2' })
       .closest('tr')!
 
-    const states = q2Row.querySelector<HTMLElement>(
-      '.relationship-status-list',
-    )!
+    const states = q2Row.querySelector<HTMLElement>('.relationship-status-list')!
     expect(within(states).getByText('CLO:', { exact: false }).parentElement)
-      .toHaveTextContent('CLO: Partially supported')
+      .toHaveTextContent('CLO: Partially Satisfied')
     expect(within(states).getByText('Course Topic:', { exact: false }).parentElement)
-      .toHaveTextContent('Course Topic: Supported')
-    expect(
-      within(q2Row).getByText(
-        'The question shares a relevant concept with the suggested item, but the relationship is limited.',
-      ),
-    ).toBeInTheDocument()
+      .toHaveTextContent('Course Topic: Satisfied')
 
-    fireEvent.click(
-      within(q2Row).getByRole('button', { name: 'View mapping details' }),
-    )
-    const comparison = container.querySelector<HTMLElement>(
-      '#question-comparison',
-    )!
-    expect(comparison).toHaveAttribute('open')
-    expect(within(comparison).getByText('Design a relational database schema.'))
+    const trigger = within(q2Row).getByRole('button', { name: 'View mapping details' })
+    fireEvent.click(trigger)
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Design a relational database schema.'))
       .toHaveAttribute('dir', 'auto')
-    expect(within(comparison).getByText('Design relational database solutions.'))
+    expect(within(dialog).getByText('Design relational database solutions.'))
       .toHaveAttribute('dir', 'auto')
-    expect(within(comparison).getByText('Database design')).toHaveAttribute(
-      'dir',
-      'auto',
-    )
-    expect(comparison).toHaveTextContent('Q2 — Exam, page 2')
-    expect(comparison).toHaveTextContent('CLO2 — Course Specification, page 1')
-    expect(comparison).toHaveTextContent(
-      'Course Topic — Course Specification, page 3',
-    )
-    expect(comparison).not.toHaveTextContent('Original document excerpt')
-    expect(comparison).not.toHaveTextContent('EVIDENCE TYPE')
-    expect(screen.queryByText(/View comparison/i)).not.toBeInTheDocument()
-    const badges = q2Row.querySelectorAll('.relationship-status-badge')
+    expect(within(dialog).getByText('Database design')).toHaveAttribute('dir', 'auto')
+    expect(within(dialog).getByText('Suggested CLO')).toBeInTheDocument()
+    expect(within(dialog).getByText('Suggested Course Topic')).toBeInTheDocument()
+    expect(dialog).not.toHaveTextContent('Original document excerpt')
+    expect(dialog).not.toHaveTextContent('EVIDENCE TYPE')
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(trigger).toHaveFocus())
+
+    const badges = q2Row.querySelectorAll('.ui-status-badge')
     expect(badges).toHaveLength(2)
-    expect(badges[0]).toHaveAttribute(
-      'data-academic-status',
-      'Partially Satisfied',
-    )
+    expect(badges[0]).toHaveAttribute('data-academic-status', 'Partially Satisfied')
     expect(badges[1]).toHaveAttribute('data-academic-status', 'Satisfied')
     const q10Row = within(relationshipTable)
       .getByRole('rowheader', { name: 'Q10' })
       .closest('tr')!
+    expect(within(q10Row).getAllByText('Not Satisfied')).toHaveLength(2)
     expect(
-      within(q10Row).getAllByText('Not supported'),
-    ).toHaveLength(2)
-    expect(
-      q10Row.querySelectorAll(
-        '.relationship-status-badge[data-academic-status="Not Satisfied"]',
-      ),
+      q10Row.querySelectorAll('.ui-status-badge[data-academic-status="Not Satisfied"]'),
     ).toHaveLength(2)
   })
 

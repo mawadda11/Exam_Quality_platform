@@ -1,0 +1,52 @@
+﻿On branch feat/v2-faculty-results-ux-refinement
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   backend/app/api/analyses.py
+	modified:   backend/app/services/reporting/content.py
+	modified:   backend/app/services/reporting/pdf.py
+	modified:   backend/tests/test_report_content.py
+	modified:   backend/tests/test_report_pdf.py
+	modified:   frontend/src/components/ui/StatusBadge.tsx
+	modified:   frontend/src/features/analysis-history/AnalysisSummaryCards.test.tsx
+	modified:   frontend/src/features/analysis-history/AnalysisSummaryCards.tsx
+	modified:   frontend/src/features/analysis-history/analysisMetrics.test.ts
+	modified:   frontend/src/features/analysis-history/analysisMetrics.ts
+	modified:   frontend/src/features/analysis-results/AlignmentCoverageSection.test.tsx
+	modified:   frontend/src/features/analysis-results/AlignmentCoverageSection.tsx
+	modified:   frontend/src/features/analysis-results/AnalysisResults.tsx
+	modified:   frontend/src/features/analysis-results/QuestionsSection.test.tsx
+	modified:   frontend/src/features/analysis-results/QuestionsSection.tsx
+	modified:   frontend/src/features/analysis-results/StructuredEvidenceSection.tsx
+	modified:   frontend/src/i18n/additionalArabicMessages.ts
+	modified:   frontend/src/router/AppRoutes.test.tsx
+	modified:   frontend/src/routes/DashboardRoute.tsx
+	modified:   frontend/src/routes/ReportPreviewRoute.test.tsx
+	modified:   frontend/src/routes/ReportPreviewRoute.tsx
+	modified:   frontend/src/styles/components.css
+	modified:   frontend/src/styles/dashboard.css
+	modified:   frontend/src/styles/reports-library.css
+	modified:   frontend/src/styles/results.css
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	current-branch.txt
+	current-changes.patch
+	frontend/src/components/ui/Drawer.test.tsx
+	frontend/src/components/ui/Drawer.tsx
+	frontend/src/components/ui/Icon.tsx
+	frontend/src/features/analysis-history/useReportsAvailableCount.test.ts
+	frontend/src/features/analysis-history/useReportsAvailableCount.ts
+	frontend/src/features/analysis-results/QuestionDetailsDrawer.tsx
+	frontend/src/features/analysis-results/QuestionFilters.tsx
+	frontend/src/features/analysis-results/RelationshipMappingDrawer.tsx
+	frontend/src/features/analysis-results/questionPresentation.test.ts
+	frontend/src/features/analysis-results/questionPresentation.ts
+	frontend/src/features/reports/ReportPreviewContent.tsx
+	frontend/src/features/reports/reportPresentation.test.ts
+	frontend/src/features/reports/reportPresentation.ts
+	git-status.txt
+	last-commit.txt
+	staged-changes.patch
+
+no changes added to commit (use "git add" and/or "git commit -a")
