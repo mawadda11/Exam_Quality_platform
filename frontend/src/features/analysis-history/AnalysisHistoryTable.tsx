@@ -42,7 +42,6 @@ export function AnalysisHistoryTable({
             <th scope="col">{t('Term')}</th>
             <th scope="col">{t('Created')}</th>
             <th scope="col">{t('Processing state')}</th>
-            <th scope="col">{t('Relationship')}</th>
             <th scope="col">{t('Action')}</th>
           </tr>
         </thead>
@@ -66,12 +65,6 @@ export function AnalysisHistoryTable({
 
               <td>
                 <ProcessingStateBadge state={analysis.state} />
-              </td>
-
-              <td>
-                {analysis.predecessor_analysis_id
-                  ? t('Linked reanalysis')
-                  : t('Original')}
               </td>
 
               <td>
@@ -106,10 +99,6 @@ export function AnalysisHistoryTable({
                 <div>
                   <dt>{t('Created')}</dt>
                   <dd><time dateTime={analysis.created_at}>{formatDateTime(analysis.created_at)}</time></dd>
-                </div>
-                <div>
-                  <dt>{t('Relationship')}</dt>
-                  <dd>{analysis.predecessor_analysis_id ? t('Linked reanalysis') : t('Original')}</dd>
                 </div>
               </dl>
               <Link className="ui-button ui-button--secondary" to={routeForAnalysis(analysis)}>

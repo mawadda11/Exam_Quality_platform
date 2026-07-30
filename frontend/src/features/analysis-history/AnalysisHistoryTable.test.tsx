@@ -45,33 +45,6 @@ describe('AnalysisHistoryTable', () => {
     expect(screen.getByRole('rowheader', { name: 'CPIT-450' })).toBeInTheDocument()
     expect(screen.getByText('Software Engineering')).toHaveAttribute('dir', 'auto')
     expect(screen.getByLabelText('Processing state: completed')).toHaveTextContent('completed')
-    expect(screen.getByText('Original')).toBeInTheDocument()
-  })
-
-  it('marks and routes a linked reanalysis using its backend state', () => {
-    render(
-      <MemoryRouter>
-        <AnalysisHistoryTable
-          analyses={[
-            analysis({
-              id: 'analysis-2',
-              state: 'validating',
-              predecessor_analysis_id: 'analysis-1',
-            }),
-          ]}
-          caption="Recent analyses"
-        />
-      </MemoryRouter>,
-    )
-
-    expect(screen.getByText('Linked reanalysis')).toBeInTheDocument()
-    expect(screen.getByLabelText('Processing state: validating')).toHaveTextContent(
-      'validating',
-    )
-    expect(screen.getByRole('link', { name: 'Open analysis' })).toHaveAttribute(
-      'href',
-      '/analyses/analysis-2/progress',
-    )
   })
 
   it('uses record cards instead of a table at the mobile breakpoint', () => {

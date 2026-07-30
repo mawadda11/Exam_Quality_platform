@@ -34,7 +34,7 @@ from app.models.supporting_material_annotation import SupportingMaterialAnnotati
 from app.models.topic import Topic
 from app.models.uploaded_file import UploadedFile
 from app.models.user import User
-from app.schemas.analysis import AnalysisCreateRequest, AnalysisResponse, ReanalysisCreateRequest
+from app.schemas.analysis import AnalysisCreateRequest, AnalysisResponse
 from app.schemas.assessment_record import AssessmentRecordResponse
 from app.schemas.clo import CloResponse
 from app.schemas.course import CourseInput
@@ -87,7 +87,7 @@ from app.services.reporting.storage import store_report_pdf
 from app.services.rules.coverage_audit import build_rule_coverage_audit
 from app.services.rules.versioning import CURRENT_CAPABILITY_VERSION, effective_capability_version
 from app.services.storage.files import UploadTooLargeError, stream_validate_and_store
-from app.services.storage.keys import generate_storage_key, resolve_storage_path
+from app.services.storage.keys import resolve_storage_path
 from app.services.storage.validation import UploadValidationError
 
 router = APIRouter(prefix="/analyses", tags=["analyses"])
@@ -451,71 +451,6 @@ def confirm_extraction_review_endpoint(
         confirmed_revision_number=confirmed.revision_number,
         state=ProcessingStage.BUILDING_EVIDENCE,
     )
-
-
-@router.post(
-    "/{analysis_id}/reanalysis",
-    response_model=AnalysisResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_reanalysis(
-    predecessor: Annotated[Analysis, Depends(get_owned_analysis)],
-    db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
-    settings: Annotated[Settings, Depends(get_settings)],
-    payload: ReanalysisCreateRequest | None = None,
-) -> AnalysisResponse:
-    payload = payload or ReanalysisCreateRequest()
-    # PRD: "Create a linked reanalysis for a revised examination when needed"
-    # - reads as a post-review action on results already seen, not a retry
-    # mechanism for a run that never finished.
-    if predecessor.state != ProcessingStage.COMPLETED:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Only a completed analysis can be reanalyzed.",
-        )
-
-    reanalysis = Analysis(
-        user_id=current_user.id,
-        course_id=predecessor.course_id,
-        exam_type=predecessor.exam_type,
-        term=predecessor.term,
-        predecessor_analysis_id=predecessor.id,
-        capability_version=CURRENT_CAPABILITY_VERSION,
-    )
-    db.add(reanalysis)
-    db.flush()
-
-    if payload.reuse_tp153:
-        predecessor_tp153 = next(
-            (f for f in predecessor.files if f.file_type == UploadedFileType.TP153), None
-        )
-        if predecessor_tp153 is not None:
-            # Copy the bytes to a storage key of the *new* analysis's own -
-            # storage_key is unique per row, and every other stage (extraction,
-            # evidence persistence) already assumes "this analysis's own file
-            # reference", so the new row must look exactly like a fresh
-            # upload rather than aliasing the predecessor's row/key.
-            source_path = resolve_storage_path(settings.upload_root, predecessor_tp153.storage_key)
-            new_storage_key = generate_storage_key(reanalysis.id, UploadedFileType.TP153)
-            destination_path = resolve_storage_path(settings.upload_root, new_storage_key)
-            destination_path.parent.mkdir(parents=True, exist_ok=True)
-            destination_path.write_bytes(source_path.read_bytes())
-
-            db.add(
-                UploadedFile(
-                    analysis_id=reanalysis.id,
-                    file_type=UploadedFileType.TP153,
-                    original_filename=predecessor_tp153.original_filename,
-                    storage_key=new_storage_key,
-                    mime_type=predecessor_tp153.mime_type,
-                    size_bytes=predecessor_tp153.size_bytes,
-                    sha256_hash=predecessor_tp153.sha256_hash,
-                )
-            )
-            db.flush()
-
-    return AnalysisResponse.from_model(_load_with_relations(db, reanalysis.id))
 
 
 @router.get("/{analysis_id}/progress", response_model=ProgressResponse)

@@ -140,7 +140,6 @@ describe('ReportsLibrary', () => {
             ...ANALYSIS,
             id: 'analysis-4',
             course_code: 'CPIT-453',
-            predecessor_analysis_id: 'analysis-0',
           },
           report: {
             ...REPORT,
@@ -168,11 +167,6 @@ describe('ReportsLibrary', () => {
     expect(
       container.querySelector('[data-report-status="outdated"]'),
     ).toHaveTextContent('Outdated')
-    expect(
-      screen.getByRole('article', {
-        name: /CPIT-453.*Software Engineering/,
-      }),
-    ).toHaveTextContent('Linked reanalysis')
 
     const generatedCard = screen.getByRole('article', {
       name: /CPIT-450.*Software Engineering/,

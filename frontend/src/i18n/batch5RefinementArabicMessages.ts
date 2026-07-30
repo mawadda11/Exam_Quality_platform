@@ -150,8 +150,6 @@ export const BATCH5_REFINEMENT_ARABIC_MESSAGES: Readonly<Record<string, string>>
     'تستخدم الفحوص المتاحة الأدلة المؤكدة.',
   'Evidence disclosures preserve traceability without interrupting the primary faculty view.':
     'تحافظ إفصاحات الأدلة على إمكانية التتبع دون مقاطعة العرض الأساسي لعضو هيئة التدريس.',
-  'Reanalysis creates a linked analysis record. It does not overwrite the historical result or its review history.':
-    'تنشئ إعادة التحليل سجلًا مرتبطًا، ولا تستبدل النتيجة التاريخية أو سجل مراجعتها.',
   'Question relationships': 'ارتباطات الأسئلة',
   'Question Relationships': 'ربط الأسئلة',
   'Questions linked to a CLO': 'أسئلة مرتبطة بمخرج تعلم',

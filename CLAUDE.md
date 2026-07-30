@@ -141,14 +141,18 @@ marks arithmetic, numbering outcomes, and score aggregation remain deterministic
 
 ## Current handoff state
 
-- M1-M9 are committed through base commit `5f76d6a`.
-- The current intentional working tree implements M10 presentation/report refinement and M11
-  integrated release acceptance.
-- Before editing or discarding any working-tree change, read `docs/M10_M11_HANDOFF.md`,
-  `docs/M10_M11_IMPLEMENTATION_REPORT.md`, and `docs/M10_M11_VERIFICATION.md`.
-- The repository and its tests are the source of truth; do not depend on prior chat context.
-- Do not reset, clean, stash, or overwrite the M10-M11 working tree. Run the documented local
-  completion gate first and fix only verified failures.
+- The repository is on controlled-pilot candidate `v2.0.0-rc1`, verified on branch
+  `test/v2-pilot-readiness`.
+- Before editing pilot-readiness material, read `docs/RELEASE_V2_RC1.md`,
+  `docs/PILOT_ACCEPTANCE_CHECKLIST.md`, and `docs/KNOWN_LIMITATIONS.md`.
+- The Reanalysis feature has been removed from this release. `predecessor_analysis_id` is retained
+  only as a dormant, nullable database/API field for backward compatibility with historical
+  records; no current workflow sets it. New Analysis is the only supported way to evaluate a
+  revised exam.
+- Alembic head is `0012`; the repository and its tests are the source of truth, not prior chat
+  context.
+- Do not reset, clean, stash, or overwrite working-tree changes without confirming their intent
+  first.
 
 ## Definition of done
 A task is complete only when:

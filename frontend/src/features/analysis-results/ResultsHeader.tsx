@@ -69,17 +69,6 @@ export function ResultsHeader({ analysis, score, onRetryScore }: ResultsHeaderPr
               </dd>
             </div>
           </dl>
-          {analysis.predecessor_analysis_id && (
-            <p className="results-reanalysis-context">
-              {t('Linked reanalysis of')}{' '}
-              <Link
-                to={`/analyses/${analysis.predecessor_analysis_id}/results/overview`}
-              >
-                {t('Analysis')} <bdi>{analysis.predecessor_analysis_id}</bdi>
-              </Link>
-              .
-            </p>
-          )}
         </div>
 
         <div className="results-header-score">

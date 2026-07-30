@@ -56,8 +56,6 @@ export const METHODOLOGY_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
   'Review results, findings, and recommendations.':
     'راجع النتائج والملاحظات والتوصيات.',
   'Preview or download the report.': 'عاين التقرير أو نزّله.',
-  'Upload a revised exam for reanalysis when needed.':
-    'ارفع نسخة منقحة من الاختبار لإعادة التحليل عند الحاجة.',
   'Evidence and Governance Principles': 'مبادئ الأدلة والحوكمة',
   'Rule-based checks': 'الفحوص القائمة على القواعد',
   'Use defined rules and confirmed evidence for conditions that can be checked directly, such as totals or numbering.':
@@ -147,11 +145,11 @@ export const METHODOLOGY_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
   'Original evidence is preserved.': 'تُحفظ الأدلة الأصلية.',
   'Technical logs must not expose document contents or secrets.':
     'يجب ألا تكشف السجلات التقنية محتوى المستندات أو المعلومات السرية.',
-  'Reports and Reanalysis': 'التقارير وإعادة التحليل',
+  'Reports and New Analysis': 'التقارير والتحليل الجديد',
   'Reports preserve the selected language, score summary, findings, recommendations, evidence context, and analysis version available when the report is generated.':
     'تحفظ التقارير اللغة المحددة وملخص الدرجة والنتائج والتوصيات وسياق الأدلة وإصدار التحليل المتاح وقت إنشاء التقرير.',
-  'Reanalysis creates a linked record. It does not overwrite the historical analysis, report, or review history.':
-    'تنشئ إعادة التحليل سجلًا مرتبطًا، ولا تستبدل التحليل التاريخي أو تقريره أو سجل مراجعته.',
+  'To evaluate a revised exam, create a New Analysis. Each analysis and its reports are evaluated and stored independently.':
+    'لتقييم نسخة منقحة من الاختبار، أنشئ تحليلًا جديدًا. يُقيَّم كل تحليل وتقاريره ويُحفظان بشكل مستقل.',
   'Limitations and Non-goals': 'الحدود وما لا يهدف إليه المحلل',
   'The analyzer supports exam-quality review; it does not evaluate full program accreditation.':
     'يدعم المحلل مراجعة جودة الاختبار، ولا يقيّم اعتماد البرنامج الأكاديمي كاملًا.',
@@ -202,6 +200,6 @@ export const METHODOLOGY_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
     'لا. يدعم المراجعة الأكاديمية ولا يعتمد الاختبار ولا يصدّقه ولا يرفضه.',
   'What happens when I upload a revised exam?':
     'ماذا يحدث عند رفع نسخة منقحة من الاختبار؟',
-  'Reanalysis creates a linked analysis record and preserves the original analysis and its review history.':
-    'تنشئ إعادة التحليل سجل تحليل مرتبطًا وتحفظ التحليل الأصلي وسجل مراجعته.',
+  'Create a New Analysis for the revised exam. Each analysis and its reports are evaluated and stored independently.':
+    'أنشئ تحليلًا جديدًا للنسخة المنقحة من الاختبار. يُقيَّم كل تحليل وتقاريره ويُحفظان بشكل مستقل.',
 }

@@ -54,10 +54,13 @@ class Analysis(TimestampMixin, Base):
         ),
         default=ProcessingStage.QUEUED,
     )
-    # M10: reanalysis for a revised exam. RESTRICT (not CASCADE/SET NULL) so a
-    # predecessor can never be deleted out from under a linked reanalysis -
-    # "never overwrite previous results" extends to never silently losing the
-    # link either. Nullable: most analyses have no predecessor.
+    # Retained for backward compatibility with historical reanalysis records;
+    # no current workflow sets this column on newly created analyses (see
+    # docs/KNOWN_LIMITATIONS.md). RESTRICT (not CASCADE/SET NULL) so a
+    # predecessor already referenced by a historical row can never be deleted
+    # out from under it - "never overwrite previous results" extends to never
+    # silently losing the link either. Nullable: most analyses have no
+    # predecessor.
     predecessor_analysis_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("analyses.id", ondelete="RESTRICT"),

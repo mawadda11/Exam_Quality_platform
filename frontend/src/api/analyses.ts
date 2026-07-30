@@ -12,7 +12,6 @@ import type {
   FindingResponse,
   ProgressResponse,
   QuestionResponse,
-  ReanalysisCreateRequest,
   RecommendationResponse,
   ReportResponse,
   ReportLanguage,
@@ -194,13 +193,6 @@ export function listReports(analysisId: string): Promise<ReportResponse[]> {
 
 export function downloadReportFile(reportId: string): Promise<Blob> {
   return apiGetBlob(`/reports/${reportId}/download`)
-}
-
-export function createReanalysis(
-  analysisId: string,
-  payload: ReanalysisCreateRequest = {},
-): Promise<AnalysisResponse> {
-  return apiPostJson<AnalysisResponse>(`/analyses/${analysisId}/reanalysis`, payload)
 }
 
 /** Triggers a browser download for an already-fetched Blob - a synthetic

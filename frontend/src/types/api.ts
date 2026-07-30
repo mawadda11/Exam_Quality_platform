@@ -56,6 +56,9 @@ export interface AnalysisResponse {
   term: string
   state: ProcessingStage
   owner_user_id: string
+  /** Retained for backward compatibility with historical analyses created
+   * while reanalysis was available; no current workflow sets this field on
+   * newly created analyses. */
   predecessor_analysis_id: string | null
   uploaded_files: UploadedFileResponse[]
   exam_uploaded: boolean
@@ -64,13 +67,6 @@ export interface AnalysisResponse {
   capability_version?: string
   created_at: string
   updated_at: string
-}
-
-/** course/exam_type/term are always inherited from the predecessor - see
- * backend/app/schemas/analysis.py's ReanalysisCreateRequest docstring.
- * reuse_tp153 defaults to true server-side when the body is omitted. */
-export interface ReanalysisCreateRequest {
-  reuse_tp153?: boolean
 }
 
 export interface ProblemDetail {

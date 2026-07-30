@@ -16,10 +16,6 @@ export function AnalysisSummaryCards({ analyses }: { analyses: AnalysisResponse[
         <strong>{metrics.completed}</strong>
         <h2>{t('Completed analyses')}</h2>
       </Card>
-      <Card as="article" className="analysis-summary-card">
-        <strong>{metrics.linkedReanalyses}</strong>
-        <h2>{t('Linked reanalyses')}</h2>
-      </Card>
     </section>
   )
 }

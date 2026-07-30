@@ -94,7 +94,7 @@ describe('EvaluationScopeRoute', () => {
     renderRoute()
 
     const workflow = screen.getByRole('region', { name: 'Analysis Workflow' })
-    expect(within(workflow).getAllByRole('listitem')).toHaveLength(9)
+    expect(within(workflow).getAllByRole('listitem')).toHaveLength(8)
     expect(
       within(workflow).getByText('Enter the analysis information.'),
     ).toBeInTheDocument()
@@ -102,9 +102,7 @@ describe('EvaluationScopeRoute', () => {
       within(workflow).getByText('Confirm or correct extracted evidence.'),
     ).toBeInTheDocument()
     expect(
-      within(workflow).getByText(
-        'Upload a revised exam for reanalysis when needed.',
-      ),
+      within(workflow).getByText('Preview or download the report.'),
     ).toBeInTheDocument()
     expect(within(workflow).queryByText(/simulated|12 stages|demo/i))
       .not.toBeInTheDocument()
@@ -166,7 +164,7 @@ describe('EvaluationScopeRoute', () => {
     ).toBeInTheDocument()
     expect(
       screen.getByText(
-        'Reanalysis creates a linked record. It does not overwrite the historical analysis, report, or review history.',
+        'To evaluate a revised exam, create a New Analysis. Each analysis and its reports are evaluated and stored independently.',
       ),
     ).toBeInTheDocument()
     expect(

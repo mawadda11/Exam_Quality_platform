@@ -74,7 +74,6 @@ export const BATCH5_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
   'Evidence traceability': 'تتبّع الأدلة',
   'Suggested relationships': 'العلاقات المقترحة',
   'Local processing and privacy': 'المعالجة المحلية والخصوصية',
-  'Reports and reanalysis': 'التقارير وإعادة التحليل',
   'Limitations and non-goals': 'القيود وما لا يهدف إليه المحلل',
   'Frequently asked questions': 'الأسئلة الشائعة',
   'On this page': 'في هذه الصفحة',
@@ -155,8 +154,6 @@ export const BATCH5_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
     'تُحفظ معلومات منشأ المزود والنموذج عند انطباقها في تفاصيل التدقيق، ولا تُعرض بوصفها حالة أكاديمية.',
   'Reports preserve the selected report language, score summary, findings, recommendations, evidence context, and analysis version information available at generation time.':
     'تحفظ التقارير اللغة المحددة وملخص الدرجة والنتائج والتوصيات وسياق الأدلة ومعلومات إصدار التحليل المتاحة وقت الإنشاء.',
-  'Reanalysis creates a linked analysis record. It does not silently overwrite the historical result or its audit trail.':
-    'تنشئ إعادة التحليل سجلًا مرتبطًا، ولا تستبدل النتيجة التاريخية أو مسار تدقيقها دون بيان.',
   'The analyzer supports faculty review; it does not replace academic judgment or institutional approval.':
     'يدعم المحلل مراجعة عضو هيئة التدريس، ولا يحل محل الحكم الأكاديمي أو الاعتماد المؤسسي.',
   'It does not invent missing CLOs, topics, mappings, evidence, standards, or academic thresholds.':
@@ -177,6 +174,4 @@ export const BATCH5_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
     'لا. هي علاقات استرشادية لمراجعة عضو هيئة التدريس ولا تغيّر توصيف المقرر.',
   'Why can the report differ from a historical report?':
     'لماذا قد يختلف التقرير عن تقرير تاريخي؟',
-  'Each analysis and report retains its own version context. Reanalysis creates a linked record instead of replacing history.':
-    'يحتفظ كل تحليل وتقرير بسياق إصداره، وتنشئ إعادة التحليل سجلًا مرتبطًا بدلًا من استبدال السجل التاريخي.',
 }
