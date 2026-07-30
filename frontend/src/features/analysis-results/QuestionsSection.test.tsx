@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { I18nProvider } from '../../i18n/I18nProvider'
-import type { CloResponse, FindingResponse, QuestionResponse, TopicResponse } from '../../types/api'
+import type { FindingResponse, QuestionResponse } from '../../types/api'
 import { QuestionsSection } from './QuestionsSection'
 
 const PARENT: QuestionResponse = {
@@ -38,29 +38,7 @@ const CHILD_B: QuestionResponse = {
   sequence: 3,
 }
 
-const CLO1: CloResponse = {
-  id: 'clo-1',
-  analysis_id: 'analysis-1',
-  code: 'CLO1',
-  text: 'Explain fundamental computing concepts.',
-  program_outcome_reference: null,
-  page_number: 2,
-  confidence: 0.9,
-  geometry: null,
-  created_at: '2026-07-26T00:00:00Z',
-}
 
-const TOPIC1: TopicResponse = {
-  id: 'topic-1',
-  analysis_id: 'analysis-1',
-  code: 'TOPIC1',
-  text: 'Data structures',
-  expected_hours: null,
-  page_number: 2,
-  confidence: 0.9,
-  geometry: null,
-  created_at: '2026-07-26T00:00:00Z',
-}
 
 function finding(overrides: Partial<FindingResponse> = {}): FindingResponse {
   return {
