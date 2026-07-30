@@ -817,9 +817,7 @@ def _appendix(pdf: FPDF, content: ReportContent, language: ReportLanguage) -> No
     if provenance_values:
         _paragraph(
             pdf,
-            strings["appendix_provenance_summary"].format(
-                values="; ".join(provenance_values)
-            ),
+            strings["appendix_provenance_summary"].format(values="; ".join(provenance_values)),
             size=9,
         )
     else:
@@ -918,7 +916,6 @@ def render_report_pdf(
 
     _section_heading(pdf, strings["s13_scope"], language)
     _paragraph(pdf, strings["scope_text"], style="I")
-
 
     output = pdf.output()
     return bytes(output)
