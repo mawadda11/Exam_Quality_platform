@@ -3,22 +3,18 @@ import { ScoreRing } from '../../components/ui/ScoreRing'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import type {
   AcademicStatus,
-  AnalysisResponse,
   AnalysisScoreResponse,
   RuleCoverageAuditResponse,
 } from '../../types/api'
-import { ReanalysisAction } from './ReanalysisAction'
 import { RuleCoveragePanel } from './RuleCoveragePanel'
 import type { ResultResource } from './useAnalysisResultsData'
 import { useI18n } from '../../i18n/I18nProvider'
 import { MethodologyLink } from './MethodologyLink'
 
 interface OverviewSectionProps {
-  analysis: AnalysisResponse
   score: AnalysisScoreResponse
   ruleCoverage: ResultResource<RuleCoverageAuditResponse>
   onRetryRuleCoverage: () => void
-  onReanalysisCreated?: (reanalysis: AnalysisResponse) => void
 }
 
 function statusCounts(score: AnalysisScoreResponse): [AcademicStatus, number][] {
@@ -32,11 +28,9 @@ function statusCounts(score: AnalysisScoreResponse): [AcademicStatus, number][] 
 }
 
 export function OverviewSection({
-  analysis,
   score,
   ruleCoverage,
   onRetryRuleCoverage,
-  onReanalysisCreated,
 }: OverviewSectionProps) {
   const { t } = useI18n()
   return (
@@ -81,10 +75,6 @@ export function OverviewSection({
       </div>
 
       <RuleCoveragePanel coverage={ruleCoverage} onRetry={onRetryRuleCoverage} />
-
-      {onReanalysisCreated && (
-        <ReanalysisAction analysisId={analysis.id} onCreated={onReanalysisCreated} />
-      )}
     </div>
   )
 }

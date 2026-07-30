@@ -32,9 +32,6 @@ export function AnalysisResultsRoute() {
         onSectionChange={(section) =>
           navigate(`/analyses/${analysis.id}/results/${section}`)
         }
-        onReanalysisCreated={(reanalysis) =>
-          navigate(`/analyses/${reanalysis.id}/documents`)
-        }
       />
     </div>
   )

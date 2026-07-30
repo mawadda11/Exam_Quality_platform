@@ -57,8 +57,8 @@ headers are no longer accepted.
 - `GET /analyses/{id}/recommendations` controlled KB recommendations resolved from a semantic
   finding's validated stored recommendation ID, or from the legacy deterministic
   `(rule_id, status)` mapping.
-- `POST /analyses/{id}/reanalysis` create a linked revised analysis without overwriting prior results.
-- `GET /analyses` owned analysis history.
+- `GET /analyses` owned analysis history. Evaluating a revised exam uses `POST /analyses` (New
+  Analysis); there is no dedicated reanalysis endpoint.
 
 ## Reports
 - `POST /analyses/{id}/reports` generate an immutable user-facing PDF snapshot containing the score and denominator context, all five status counts, finding evidence, categorical semantic confidence, governed reasoning, item judgments, source-versus-derived mapping labels, controlled KB references, provenance, and recommendations. Course-wide assessment percentages and platform implementation diagnostics remain internal and are not rendered in the report.

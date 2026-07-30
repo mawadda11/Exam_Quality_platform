@@ -31,7 +31,9 @@ database migration is required.
 - Every finding-evidence link is application-validated to keep finding and evidence ownership on
   the same analysis.
 - Analysis versions are immutable after completion except permitted review metadata.
-- Reanalysis uses `predecessor_analysis_id`.
+- `predecessor_analysis_id` is retained on `analyses` for backward compatibility with historical
+  reanalysis records; no current workflow sets it on newly created analyses. Evaluating a revised
+  exam uses New Analysis.
 - File hashes support integrity and duplicate detection.
 - Page indexing convention: API uses 1-based page numbers; internal extractor offsets must be converted at the boundary.
 
@@ -40,7 +42,8 @@ The `analyses` table intentionally has no persisted score or general KB-version 
 - Overall score (`GET /analyses/{id}/score`) and recommendations
   (`GET /analyses/{id}/recommendations`) are computed read-time from the analysis's current
   `findings` rows plus controlled KB data.
-- `predecessor_analysis_id` preserves linked reanalysis history.
+- `predecessor_analysis_id` preserves linked-analysis history from historical reanalysis records
+  only; it is not set by any current workflow.
 - Generated report rows persist their KB version and aggregate scoring snapshot.
 - Semantic findings persist the exact KB and prompt versions used for their evaluation.
 

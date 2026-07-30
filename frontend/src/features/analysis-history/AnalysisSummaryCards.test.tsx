@@ -10,7 +10,7 @@ const ANALYSES = [
   },
   {
     state: 'completed',
-    predecessor_analysis_id: 'analysis-1',
+    predecessor_analysis_id: null,
   },
   {
     state: 'queued',
@@ -27,13 +27,10 @@ describe('AnalysisSummaryCards', () => {
       .toBeInTheDocument()
     expect(within(summary).getByRole('heading', { name: 'Completed analyses' }))
       .toBeInTheDocument()
-    expect(within(summary).getByRole('heading', { name: 'Linked reanalyses' }))
-      .toBeInTheDocument()
     expect(within(summary).getAllByText('3')).toHaveLength(1)
     expect(within(summary).getAllByText('2')).toHaveLength(1)
-    expect(within(summary).getAllByText('1')).toHaveLength(1)
     const cards = summary.querySelectorAll('.analysis-summary-card')
-    expect(cards).toHaveLength(3)
+    expect(cards).toHaveLength(2)
     expect(cards[0].firstElementChild).toHaveTextContent('3')
     expect(cards[0].lastElementChild).toHaveTextContent('Total analyses')
     expect(within(summary).queryByText(/score/i)).not.toBeInTheDocument()

@@ -207,12 +207,7 @@ describe('AppRoutes', () => {
   it('builds dashboard metrics from one history request without score or detail calls', async () => {
     vi.mocked(analysesApi.listAnalyses).mockResolvedValue([
       COMPLETED_ANALYSIS,
-      {
-        ...QUEUED_ANALYSIS,
-        id: 'analysis-2',
-        state: 'validating',
-        predecessor_analysis_id: 'analysis-1',
-      },
+      { ...QUEUED_ANALYSIS, id: 'analysis-2', state: 'validating' },
       { ...QUEUED_ANALYSIS, id: 'analysis-3' },
     ])
 
@@ -224,13 +219,9 @@ describe('AppRoutes', () => {
     const completedCard = screen
       .getByRole('heading', { name: 'Completed analyses' })
       .closest('article')
-    const reanalysisCard = screen
-      .getByRole('heading', { name: 'Linked reanalyses' })
-      .closest('article')
 
     expect(totalCard && within(totalCard).getByText('3')).toBeInTheDocument()
     expect(completedCard && within(completedCard).getByText('1')).toBeInTheDocument()
-    expect(reanalysisCard && within(reanalysisCard).getByText('1')).toBeInTheDocument()
     expect(analysesApi.listAnalyses).toHaveBeenCalledTimes(1)
     expect(analysesApi.getAnalysis).not.toHaveBeenCalled()
     expect(analysesApi.getAnalysisScore).not.toHaveBeenCalled()
@@ -479,30 +470,6 @@ describe('AppRoutes', () => {
     expect(screen.getByRole('button', { name: /start analysis/i })).toBeInTheDocument()
     expect(analysesApi.runAnalysis).not.toHaveBeenCalled()
     expect(analysesApi.getAnalysis).toHaveBeenCalledTimes(1)
-  })
-
-  it('loads a newly created reanalysis before applying its child-route guards', async () => {
-    const reanalysis = {
-      ...QUEUED_ANALYSIS,
-      id: 'analysis-2',
-      predecessor_analysis_id: 'analysis-1',
-    }
-    vi.mocked(analysesApi.getAnalysis)
-      .mockResolvedValueOnce(COMPLETED_ANALYSIS)
-      .mockResolvedValueOnce(reanalysis)
-    vi.mocked(analysesApi.createReanalysis).mockResolvedValue(reanalysis)
-
-    renderAt('/analyses/analysis-1/results/overview')
-    fireEvent.click(
-      await screen.findByRole('button', { name: /create reanalysis/i }),
-    )
-
-    expect(await screen.findByLabelText(/examination pdf/i)).toBeInTheDocument()
-    expect(screen.getByLabelText('Current route')).toHaveTextContent(
-      '/analyses/analysis-2/documents',
-    )
-    expect(analysesApi.getAnalysis).toHaveBeenNthCalledWith(1, 'analysis-1')
-    expect(analysesApi.getAnalysis).toHaveBeenNthCalledWith(2, 'analysis-2')
   })
 
   it('guards results for a queued analysis and redirects to document upload', async () => {

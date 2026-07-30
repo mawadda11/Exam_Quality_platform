@@ -76,7 +76,6 @@ const WORKFLOW_STEPS = [
   'Run the analysis.',
   'Review results, findings, and recommendations.',
   'Preview or download the report.',
-  'Upload a revised exam for reanalysis when needed.',
 ] as const
 
 const GOVERNANCE_PRINCIPLES = [
@@ -161,7 +160,7 @@ const FAQ_ITEMS = [
   {
     question: 'What happens when I upload a revised exam?',
     answer:
-      'Reanalysis creates a linked analysis record and preserves the original analysis and its review history.',
+      'Create a New Analysis for the revised exam. Each analysis and its reports are evaluated and stored independently.',
   },
 ] as const
 
@@ -690,7 +689,7 @@ export function EvaluationScopeRoute() {
 
       <MethodologySection
         id="reports-reanalysis"
-        title="Reports and Reanalysis"
+        title="Reports and New Analysis"
         icon="↻"
         className="methodology-section--compact"
       >
@@ -701,7 +700,7 @@ export function EvaluationScopeRoute() {
         </p>
         <p>
           {t(
-            'Reanalysis creates a linked record. It does not overwrite the historical analysis, report, or review history.',
+            'To evaluate a revised exam, create a New Analysis. Each analysis and its reports are evaluated and stored independently.',
           )}
         </p>
       </MethodologySection>

@@ -139,12 +139,6 @@ function ReportCard({
           {t(item.analysis.exam_type)}
           <span aria-hidden="true"> · </span>
           <bdi>{item.analysis.term}</bdi>
-          {item.analysis.predecessor_analysis_id && (
-            <>
-              <span aria-hidden="true"> · </span>
-              {t('Linked reanalysis')}
-            </>
-          )}
         </p>
       </div>
 

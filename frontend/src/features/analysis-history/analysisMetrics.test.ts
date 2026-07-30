@@ -2,11 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { AnalysisResponse, ProcessingStage } from '../../types/api'
 import { RECENT_ANALYSES_LIMIT, calculateAnalysisMetrics } from './analysisMetrics'
 
-function analysis(
-  id: string,
-  state: ProcessingStage,
-  predecessorAnalysisId: string | null = null,
-): AnalysisResponse {
+function analysis(id: string, state: ProcessingStage): AnalysisResponse {
   return {
     id,
     course: {
@@ -20,7 +16,7 @@ function analysis(
     term: '2026 Spring',
     state,
     owner_user_id: 'user-1',
-    predecessor_analysis_id: predecessorAnalysisId,
+    predecessor_analysis_id: null,
     uploaded_files: [],
     exam_uploaded: state !== 'queued',
     tp153_uploaded: state !== 'queued',
@@ -31,17 +27,16 @@ function analysis(
 }
 
 describe('calculateAnalysisMetrics', () => {
-  it('calculates only the three approved dashboard metrics', () => {
+  it('calculates only the two approved dashboard metrics', () => {
     const metrics = calculateAnalysisMetrics([
       analysis('1', 'completed'),
-      analysis('2', 'failed', '1'),
+      analysis('2', 'failed'),
       analysis('3', 'validating'),
-      analysis('4', 'completed', '2'),
+      analysis('4', 'completed'),
     ])
 
     expect(metrics.total).toBe(4)
     expect(metrics.completed).toBe(2)
-    expect(metrics.linkedReanalyses).toBe(2)
   })
 
   it('uses the first five backend-ordered records as recent analyses', () => {

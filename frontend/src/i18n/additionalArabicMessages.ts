@@ -51,14 +51,10 @@ export const ADDITIONAL_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
   Course: 'المقرر',
   'Exam type': 'نوع الاختبار',
   Created: 'تاريخ الإنشاء',
-  Relationship: 'العلاقة',
-  'Linked reanalysis': 'إعادة تحليل مرتبطة',
-  Original: 'أصلي',
   'Open analysis': 'فتح التحليل',
   'Analysis summary': 'ملخص التحليلات',
   'Total analyses': 'إجمالي التحليلات',
   'Completed analyses': 'التحليلات المكتملة',
-  'Linked reanalyses': 'إعادات التحليل المرتبطة',
   'Existing governed findings and source-faithful entities extracted from the TP-153.':
     'نتائج التقييم المحكومة والعناصر المستخرجة بأمانة من توصيف المقرر TP-153.',
   'Alignment and coverage findings': 'نتائج المواءمة والتغطية',
@@ -156,15 +152,7 @@ export const ADDITIONAL_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
   Type: 'النوع',
   Text: 'النص',
   'Parent / Container Question': 'سؤال رئيسي / حاوية',
-  'Could not create the reanalysis.': 'تعذر إنشاء إعادة التحليل.',
-  'Analyze a revised exam': 'تحليل نسخة منقحة من الاختبار',
-  'Create a reanalysis linked to analysis': 'إنشاء إعادة تحليل مرتبطة بالتحليل',
-  'This analysis and its reports remain unchanged.': 'سيبقى هذا التحليل وتقاريره دون تغيير.',
-  'Reuse the previous TP-153 (uncheck to upload a new one)':
-    'إعادة استخدام TP-153 السابق (أزل التحديد لرفع ملف جديد)',
   'Creating…': 'جارٍ الإنشاء…',
-  'Create Reanalysis': 'إنشاء إعادة تحليل',
-  'Could not create reanalysis': 'تعذر إنشاء إعادة التحليل',
   'Could not generate the report.': 'تعذر إنشاء التقرير.',
   'The report was generated and report history was refreshed.':
     'تم إنشاء التقرير وتحديث سجل التقارير.',
@@ -183,7 +171,6 @@ export const ADDITIONAL_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
   'Exam file': 'ملف الاختبار',
   'Not available': 'غير متاح',
   'TP-153 file': 'ملف TP-153',
-  'Linked reanalysis of': 'إعادة تحليل مرتبطة بـ',
   'Loading score…': 'جارٍ تحميل الدرجة…',
   'Retry score': 'إعادة محاولة تحميل الدرجة',
   'Analysis execution needs attention': 'يتطلب تنفيذ التحليل الانتباه',
@@ -492,8 +479,6 @@ export const ADDITIONAL_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
     'نسخة الاستخراج المؤكدة المطلوبة لإعادة المحاولة غير متاحة.',
   'A retry or another processing action has already started.':
     'بدأت بالفعل إعادة محاولة أو عملية معالجة أخرى.',
-  'Only a completed analysis can be reanalyzed.':
-    'يمكن إنشاء إعادة تحليل لتحليل مكتمل فقط.',
   'A report can only be generated for a completed analysis.':
     'يمكن إنشاء تقرير لتحليل مكتمل فقط.',
   'An account with this email already exists.':

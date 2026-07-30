@@ -20,14 +20,12 @@ import { useI18n } from '../../i18n/I18nProvider'
 
 interface AnalysisResultsProps {
   analysis: AnalysisResponse
-  onReanalysisCreated?: (reanalysis: AnalysisResponse) => void
   section?: ResultsSectionId
   onSectionChange?: (section: ResultsSectionId) => void
 }
 
 export function AnalysisResults({
   analysis,
-  onReanalysisCreated,
   section: controlledSection,
   onSectionChange,
 }: AnalysisResultsProps) {
@@ -115,11 +113,9 @@ export function AnalysisResults({
           >
             {(score) => (
               <OverviewSection
-                analysis={analysis}
                 score={score}
                 ruleCoverage={resources.ruleCoverage}
                 onRetryRuleCoverage={() => retryResource('ruleCoverage')}
-                onReanalysisCreated={onReanalysisCreated}
               />
             )}
           </ResultResourceState>
