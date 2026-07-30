@@ -10,7 +10,8 @@ import {
   listReports,
   listTopics,
 } from '../../api/analyses'
-import { ApiError } from '../../api/client'
+import { useI18n } from '../../i18n/I18nProvider'
+import { localizeInterfaceError } from '../../i18n/localizeError'
 import type {
   AnalysisScoreResponse,
   AssessmentRecordResponse,
@@ -147,6 +148,7 @@ interface AnalysisResultsData {
 }
 
 export function useAnalysisResultsData(analysisId: string): AnalysisResultsData {
+  const { locale, t } = useI18n()
   const [stored, setStored] = useState<StoredResultsState>(() => ({
     analysisId,
     resources: createLoadingResources(),
@@ -208,14 +210,13 @@ export function useAnalysisResultsData(analysisId: string): AnalysisResultsData 
         if (requestTokensRef.current[resource] === token) {
           updateResource(targetAnalysisId, resource, {
             status: 'error',
-            message:
-              error instanceof ApiError ? error.detail : ERROR_MESSAGES[resource],
+            message: localizeInterfaceError(error, locale, t, ERROR_MESSAGES[resource]),
           })
         }
         throw error
       }
     },
-    [updateResource],
+    [locale, t, updateResource],
   )
 
   useEffect(() => {

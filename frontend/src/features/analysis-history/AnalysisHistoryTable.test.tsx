@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AnalysisResponse } from '../../types/api'
 import { AnalysisHistoryTable } from './AnalysisHistoryTable'
 
@@ -30,6 +30,10 @@ function analysis(overrides: Partial<AnalysisResponse> = {}): AnalysisResponse {
 }
 
 describe('AnalysisHistoryTable', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('renders an accessible native table with source-faithful metadata', () => {
     render(
       <MemoryRouter>
@@ -41,32 +45,23 @@ describe('AnalysisHistoryTable', () => {
     expect(screen.getByRole('rowheader', { name: 'CPIT-450' })).toBeInTheDocument()
     expect(screen.getByText('Software Engineering')).toHaveAttribute('dir', 'auto')
     expect(screen.getByLabelText('Processing state: completed')).toHaveTextContent('completed')
-    expect(screen.getByText('Original')).toBeInTheDocument()
   })
 
-  it('marks and routes a linked reanalysis using its backend state', () => {
+  it('uses record cards instead of a table at the mobile breakpoint', () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+
     render(
       <MemoryRouter>
-        <AnalysisHistoryTable
-          analyses={[
-            analysis({
-              id: 'analysis-2',
-              state: 'validating',
-              predecessor_analysis_id: 'analysis-1',
-            }),
-          ]}
-          caption="Recent analyses"
-        />
+        <AnalysisHistoryTable analyses={[analysis()]} caption="All analyses" />
       </MemoryRouter>,
     )
 
-    expect(screen.getByText('Linked reanalysis')).toBeInTheDocument()
-    expect(screen.getByLabelText('Processing state: validating')).toHaveTextContent(
-      'validating',
-    )
-    expect(screen.getByRole('link', { name: 'Open analysis' })).toHaveAttribute(
-      'href',
-      '/analyses/analysis-2/progress',
-    )
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'All analyses' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open analysis' })).toBeInTheDocument()
   })
 })

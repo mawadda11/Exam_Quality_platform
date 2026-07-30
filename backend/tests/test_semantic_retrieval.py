@@ -17,6 +17,7 @@ from app.services.knowledge_base.vector_store import (
     ChromaVectorStore,
     EmbeddableRecord,
     InMemoryVectorStore,
+    _local_embedding,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -226,6 +227,9 @@ def test_chroma_rebuild_deletes_same_version_then_upserts_with_filtered_query(
     assert collection.delete_calls == [{"kb_version": "1"}]
     assert collection.upserts[0]["ids"] == ["one"]
     assert collection.upserts[0]["metadatas"][0]["record_hash"] == "record-one"
+    assert collection.upserts[0]["embeddings"] == [_local_embedding("CLO relevance")]
+    assert "query_texts" not in collection.query_kwargs
+    assert collection.query_kwargs["query_embeddings"] == [_local_embedding("CLO relevance")]
     assert collection.query_kwargs["where"] == {
         "$and": [
             {"kb_version": "1"},
@@ -237,3 +241,15 @@ def test_chroma_rebuild_deletes_same_version_then_upserts_with_filtered_query(
     }
     assert result[0].record_id == "one"
     assert result[0].source_row_number == 3
+
+
+def test_local_embedding_is_deterministic_unicode_aware_and_normalized() -> None:
+    first = _local_embedding("اختبار نصفي لقواعد البيانات")
+    second = _local_embedding("اختبار نصفي لقواعد البيانات")
+    diacritics = _local_embedding("اِخْتِبَار نِصْفِي لِقَوَاعِدِ الْبَيَانَات")
+
+    assert first == second
+    assert len(first) == 384
+    assert sum(value * value for value in first) == pytest.approx(1.0)
+    assert first == diacritics
+    assert first != _local_embedding("استعلامات SQL متقدمة")

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ai-exam-quality-backend"
 version = "1.0.0"
-description = "FastAPI backend for the AI Exam Quality Platform"
+description = "FastAPI backend for Exam Quality Analyzer"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115,<1",
@@ -17,13 +17,12 @@ dependencies = [
   "alembic>=1.13,<2",
   "pdfplumber>=0.11,<1",
   "fpdf2>=2.8,<3",
+  # Required by fpdf2 for Arabic glyph joining and bidirectional shaping.
+  "uharfbuzz>=0.39,<1",
   "pytesseract>=0.3,<1",
-  # Runtime KB lookups and semantic indexing read the controlled .xlsx
-  # sources; this cannot remain dev-only now that API/pipeline code imports it.
+  "argon2-cffi>=23.1,<26",
+  "PyJWT>=2.9,<3",
   "openpyxl>=3.1,<4",
-  # Exact-pinned (unlike the ranges above): Chroma's client/server wire
-  # protocol has changed across versions, and docker-compose.yml's chromadb
-  # image is pinned to this exact same version to match.
   "chromadb==1.5.9",
   "anthropic>=0.68,<1",
 ]
@@ -53,9 +52,6 @@ python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
 
-# pytesseract ships no inline types and no types-pytesseract stub package
-# exists on PyPI - narrowly scoped to just this module rather than weakening
-# strict mode project-wide.
 [[tool.mypy.overrides]]
 module = "pytesseract.*"
 ignore_missing_imports = true

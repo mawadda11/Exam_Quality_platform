@@ -1,36 +1,10 @@
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
-import type {
-  AnalysisResponse,
-  AnalysisScoreResponse,
-  RuleCoverageAuditResponse,
-} from '../../types/api'
+import type { AnalysisScoreResponse, RuleCoverageAuditResponse } from '../../types/api'
 import { OverviewSection } from './OverviewSection'
 
 vi.mock('../../api/analyses')
-
-const ANALYSIS: AnalysisResponse = {
-  id: 'analysis-1',
-  course: {
-    id: 'course-1',
-    code: 'CPIT-450',
-    name: 'Software Engineering',
-    department: null,
-    program: null,
-  },
-  exam_type: 'Midterm',
-  term: '2026 Spring',
-  state: 'completed',
-  owner_user_id: 'user-1',
-  predecessor_analysis_id: null,
-  uploaded_files: [],
-  exam_uploaded: true,
-  tp153_uploaded: true,
-  ready_for_analysis: true,
-  created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-01T00:00:00Z',
-}
 
 const RULE_COVERAGE: RuleCoverageAuditResponse = {
   analysis_id: 'analysis-1',
@@ -61,15 +35,13 @@ function score(overrides: Partial<AnalysisScoreResponse> = {}): AnalysisScoreRes
   }
 }
 
-function renderOverview(props: { score?: AnalysisScoreResponse; onReanalysisCreated?: () => void } = {}) {
+function renderOverview(props: { score?: AnalysisScoreResponse } = {}) {
   return render(
     <MemoryRouter>
       <OverviewSection
-        analysis={ANALYSIS}
         score={props.score ?? score()}
         ruleCoverage={COVERAGE_RESOURCE}
         onRetryRuleCoverage={vi.fn()}
-        onReanalysisCreated={props.onReanalysisCreated}
       />
     </MemoryRouter>,
   )
@@ -87,6 +59,8 @@ describe('OverviewSection', () => {
     expect(screen.getByText(/analysis completed with a limited check/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /see what the platform evaluates/i }))
       .toHaveAttribute('href', '/evaluation-scope')
+    expect(screen.getByRole('link', { name: /learn how this works/i }))
+      .toHaveAttribute('href', '/evaluation-scope#overall-score')
     expect(screen.getByText('Satisfied').closest('li')).toHaveTextContent('2')
     expect(screen.getByText('Partially Satisfied').closest('li')).toHaveTextContent('1')
     expect(screen.getByText('Not Satisfied').closest('li')).toHaveTextContent('1')
@@ -105,35 +79,5 @@ describe('OverviewSection', () => {
 
     expect(screen.getByText('Insufficient Evidence')).toBeInTheDocument()
     expect(screen.queryByText(/0%/)).not.toBeInTheDocument()
-  })
-
-  it('renders reanalysis only when the current analysis supplies the contextual action', () => {
-    const { rerender } = render(
-      <MemoryRouter>
-        <OverviewSection
-          analysis={ANALYSIS}
-          score={score()}
-          ruleCoverage={COVERAGE_RESOURCE}
-          onRetryRuleCoverage={vi.fn()}
-        />
-      </MemoryRouter>,
-    )
-    expect(screen.queryByRole('button', { name: /create reanalysis/i }))
-      .not.toBeInTheDocument()
-
-    rerender(
-      <MemoryRouter>
-        <OverviewSection
-          analysis={ANALYSIS}
-          score={score()}
-          ruleCoverage={COVERAGE_RESOURCE}
-          onRetryRuleCoverage={vi.fn()}
-          onReanalysisCreated={vi.fn()}
-        />
-      </MemoryRouter>,
-    )
-    expect(screen.getByRole('button', { name: /create reanalysis/i }))
-      .toBeInTheDocument()
-    expect(screen.getByText('analysis-1')).toBeInTheDocument()
   })
 })

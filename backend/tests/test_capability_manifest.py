@@ -215,7 +215,15 @@ def test_only_approved_planned_rules_name_an_implementation_dependency() -> None
         for entry in CAPABILITY_MANIFEST
         if entry.planned_milestone_or_dependency is not None
     }
-    assert planned == {"RULE014", "RULE016", "RULE022"}
+    assert planned == set()
+
+
+def test_batch4_structured_rules_are_supported_with_milestone_provenance() -> None:
+    by_rule_id = {entry.rule_id: entry for entry in CAPABILITY_MANIFEST}
+    for rule_id in ("RULE014", "RULE016", "RULE022"):
+        entry = by_rule_id[rule_id]
+        assert entry.support_status is SupportStatus.SUPPORTED
+        assert entry.implemented_milestone == "V2 Batch 4"
 
 
 def test_criteria_blocked_rules_remain_explicitly_deferred() -> None:
@@ -314,18 +322,18 @@ def test_manifest_contains_every_exam_facing_rule_with_frozen_status() -> None:
         "RULE011",
         "RULE012",
         "RULE013",
+        "RULE014",
+        "RULE016",
         "RULE018",
         "RULE019",
         "RULE021",
+        "RULE022",
     }
     assert by_status[SupportStatus.PARTIALLY_SUPPORTED] == {"RULE006"}
     assert by_status[SupportStatus.UNSUPPORTED] == {
-        "RULE014",
         "RULE015",
-        "RULE016",
         "RULE017",
         "RULE020",
-        "RULE022",
     }
     assert len(CAPABILITY_MANIFEST) == 21
 

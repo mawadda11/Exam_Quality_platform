@@ -1,19 +1,32 @@
 import { NavLink } from 'react-router-dom'
+import { useI18n } from '../../i18n/I18nProvider'
+import { SidebarIcon, type SidebarIconName } from './SidebarIcon'
 
 const NAVIGATION_ITEMS = [
-  { to: '/dashboard', label: 'Dashboard', end: true },
-  { to: '/analyses', label: 'Analyses', end: true },
-  { to: '/analyses/new', label: 'New Analysis', end: true },
-  { to: '/evaluation-scope', label: 'What We Evaluate', end: true },
-] as const
+  { to: '/dashboard', label: 'Dashboard', end: true, icon: 'dashboard' },
+  { to: '/analyses', label: 'Analyses', end: true, icon: 'analyses' },
+  { to: '/reports', label: 'Reports', end: false, icon: 'reports' },
+  {
+    to: '/evaluation-scope',
+    label: 'Methodology & Help',
+    end: true,
+    icon: 'methodology',
+  },
+] as const satisfies ReadonlyArray<{
+  to: string
+  label: string
+  end: boolean
+  icon: SidebarIconName
+}>
 
 interface PrimaryNavigationProps {
   onNavigate?: () => void
 }
 
 export function PrimaryNavigation({ onNavigate }: PrimaryNavigationProps) {
+  const { t } = useI18n()
   return (
-    <nav aria-label="Primary navigation">
+    <nav aria-label={t('Primary navigation')}>
       <ul className="primary-navigation-list">
         {NAVIGATION_ITEMS.map((item) => (
           <li key={item.to}>
@@ -25,7 +38,8 @@ export function PrimaryNavigation({ onNavigate }: PrimaryNavigationProps) {
               }
               onClick={onNavigate}
             >
-              {item.label}
+              <SidebarIcon name={item.icon} />
+              {t(item.label)}
             </NavLink>
           </li>
         ))}

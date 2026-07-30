@@ -10,17 +10,25 @@ from sqlalchemy.orm import Session
 
 from app.models.assessment_record import AssessmentRecord
 from app.models.clo import Clo
+from app.models.document_reference import DocumentReference
 from app.models.evidence import Evidence
 from app.models.extraction_review_revision import ExtractionReviewRevision
 from app.models.question import Question
+from app.models.reference_association import ReferenceAssociation
+from app.models.supporting_material import SupportingMaterial
+from app.models.supporting_material_annotation import SupportingMaterialAnnotation
 from app.models.topic import Topic
 from app.schemas.extraction_review import (
     ExtractionReviewAssessmentRecord,
     ExtractionReviewClo,
+    ExtractionReviewDocumentReference,
     ExtractionReviewEvidence,
     ExtractionReviewGeometry,
     ExtractionReviewQuestion,
+    ExtractionReviewReferenceAssociation,
     ExtractionReviewSnapshot,
+    ExtractionReviewSupportingAnnotation,
+    ExtractionReviewSupportingMaterial,
     ExtractionReviewTopic,
 )
 
@@ -82,6 +90,45 @@ def _build_snapshot(session: Session, analysis_id: UUID) -> ExtractionReviewSnap
                 AssessmentRecord.id,
             )
         ).scalars()
+    )
+    supporting_materials = list(
+        session.execute(
+            select(SupportingMaterial)
+            .where(SupportingMaterial.analysis_id == analysis_id)
+            .order_by(SupportingMaterial.page_number, SupportingMaterial.id)
+        ).scalars()
+    )
+    supporting_annotations = list(
+        session.execute(
+            select(SupportingMaterialAnnotation)
+            .where(SupportingMaterialAnnotation.analysis_id == analysis_id)
+            .order_by(
+                SupportingMaterialAnnotation.page_number,
+                SupportingMaterialAnnotation.id,
+            )
+        ).scalars()
+    )
+    document_references = list(
+        session.execute(
+            select(DocumentReference)
+            .where(DocumentReference.analysis_id == analysis_id)
+            .order_by(DocumentReference.page_number, DocumentReference.id)
+        ).scalars()
+    )
+    reference_ids = [item.id for item in document_references]
+    reference_associations = (
+        list(
+            session.execute(
+                select(ReferenceAssociation)
+                .where(
+                    ReferenceAssociation.reference_id.in_(reference_ids),
+                    ReferenceAssociation.review_revision_id.is_(None),
+                )
+                .order_by(ReferenceAssociation.reference_id, ReferenceAssociation.id)
+            ).scalars()
+        )
+        if reference_ids
+        else []
     )
 
     return ExtractionReviewSnapshot(
@@ -154,6 +201,70 @@ def _build_snapshot(session: Session, analysis_id: UUID) -> ExtractionReviewSnap
                 geometry=_geometry(record.geometry),
             )
             for record in assessment_records
+        ],
+        supporting_materials=[
+            ExtractionReviewSupportingMaterial(
+                source_record_id=item.id,
+                included=True,
+                question_source_record_id=item.question_id,
+                source_document=item.source_document,
+                material_type=item.material_type,
+                source_text=item.source_text,
+                page_number=item.page_number,
+                extraction_confidence=item.confidence,
+                extraction_method=item.extraction_method,
+                geometry=_geometry(item.geometry),
+            )
+            for item in supporting_materials
+        ],
+        supporting_annotations=[
+            ExtractionReviewSupportingAnnotation(
+                source_record_id=item.id,
+                included=True,
+                material_source_record_id=item.material_id,
+                source_document=item.source_document,
+                annotation_type=item.annotation_type,
+                original_text=item.original_text,
+                normalized_label=item.normalized_label,
+                page_number=item.page_number,
+                extraction_confidence=item.confidence,
+                extraction_method=item.extraction_method,
+                geometry=_geometry(item.geometry),
+            )
+            for item in supporting_annotations
+        ],
+        document_references=[
+            ExtractionReviewDocumentReference(
+                source_record_id=item.id,
+                included=True,
+                question_source_record_id=item.question_id,
+                source_document=item.source_document,
+                target_type=item.target_type,
+                original_text=item.original_text,
+                target_label=item.target_label,
+                normalized_target_label=item.normalized_target_label,
+                resolution_status=item.machine_resolution_status,
+                page_number=item.page_number,
+                extraction_confidence=item.confidence,
+                extraction_method=item.extraction_method,
+                geometry=_geometry(item.geometry),
+            )
+            for item in document_references
+        ],
+        reference_associations=[
+            ExtractionReviewReferenceAssociation(
+                source_record_id=item.id,
+                reference_source_record_id=item.reference_id,
+                target_material_source_record_id=item.target_material_id,
+                target_question_source_record_id=item.target_question_id,
+                basis=item.basis,
+                extraction_confidence=item.confidence,
+                proximity_distance=item.proximity_distance,
+                exact_label_match=item.exact_label_match,
+                selected=item.selected,
+                ambiguity_reason=item.ambiguity_reason,
+            )
+            for item in reference_associations
         ],
     )
 

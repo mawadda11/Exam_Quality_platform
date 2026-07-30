@@ -8,12 +8,15 @@ import type {
   ExtractionReviewConfirmResponse,
   ExtractionReviewResponse,
   ExtractionReviewSnapshot,
+  DocumentReferenceResponse,
   FindingResponse,
   ProgressResponse,
   QuestionResponse,
-  ReanalysisCreateRequest,
   RecommendationResponse,
   ReportResponse,
+  ReportLanguage,
+  SupportingMaterialAnnotationResponse,
+  SupportingMaterialResponse,
   RuleCoverageAuditResponse,
   TopicResponse,
   UploadedFileResponse,
@@ -49,6 +52,10 @@ export function runAnalysis(analysisId: string): Promise<AnalysisResponse> {
 
 export function getAnalysisProgress(analysisId: string): Promise<ProgressResponse> {
   return apiGet<ProgressResponse>(`/analyses/${analysisId}/progress`)
+}
+
+export function retryAnalysis(analysisId: string): Promise<AnalysisResponse> {
+  return apiPostJson<AnalysisResponse>(`/analyses/${analysisId}/retry`, {})
 }
 
 
@@ -91,6 +98,30 @@ export function listTopics(analysisId: string): Promise<TopicResponse[]> {
 
 export function listAssessmentRecords(analysisId: string): Promise<AssessmentRecordResponse[]> {
   return apiGet<AssessmentRecordResponse[]>(`/analyses/${analysisId}/assessment-records`)
+}
+
+export function listSupportingMaterials(
+  analysisId: string,
+): Promise<SupportingMaterialResponse[]> {
+  return apiGet<SupportingMaterialResponse[]>(
+    `/analyses/${analysisId}/supporting-materials`,
+  )
+}
+
+export function listSupportingMaterialAnnotations(
+  analysisId: string,
+): Promise<SupportingMaterialAnnotationResponse[]> {
+  return apiGet<SupportingMaterialAnnotationResponse[]>(
+    `/analyses/${analysisId}/supporting-material-annotations`,
+  )
+}
+
+export function listDocumentReferences(
+  analysisId: string,
+): Promise<DocumentReferenceResponse[]> {
+  return apiGet<DocumentReferenceResponse[]>(
+    `/analyses/${analysisId}/document-references`,
+  )
 }
 
 function isNullableString(value: unknown): value is string | null {
@@ -149,8 +180,11 @@ export function listRecommendations(analysisId: string): Promise<RecommendationR
   return apiGet<RecommendationResponse[]>(`/analyses/${analysisId}/recommendations`)
 }
 
-export function generateReport(analysisId: string): Promise<ReportResponse> {
-  return apiPostJson<ReportResponse>(`/analyses/${analysisId}/reports`, {})
+export function generateReport(
+  analysisId: string,
+  language: ReportLanguage = 'en',
+): Promise<ReportResponse> {
+  return apiPostJson<ReportResponse>(`/analyses/${analysisId}/reports`, { language })
 }
 
 export function listReports(analysisId: string): Promise<ReportResponse[]> {
@@ -159,13 +193,6 @@ export function listReports(analysisId: string): Promise<ReportResponse[]> {
 
 export function downloadReportFile(reportId: string): Promise<Blob> {
   return apiGetBlob(`/reports/${reportId}/download`)
-}
-
-export function createReanalysis(
-  analysisId: string,
-  payload: ReanalysisCreateRequest = {},
-): Promise<AnalysisResponse> {
-  return apiPostJson<AnalysisResponse>(`/analyses/${analysisId}/reanalysis`, payload)
 }
 
 /** Triggers a browser download for an already-fetched Blob - a synthetic

@@ -7,7 +7,7 @@ and continue processing. M6-M9 reuse the same nullable semantic columns and popu
 database migration is required.
 
 ## Core tables
-- `users`: Faculty Member identity, institution, and department. Version 1 does not require multi-role authorization.
+- `users`: Faculty Member identity, institution, department, password hash, activation state, token version, and last login. Version 1 does not require multi-role authorization.
 - `courses`: course code/name, department, program.
 - `analyses`: course/user, exam type, term, state, predecessor, timestamps.
 - `uploaded_files`: analysis, type, original name, storage key, MIME, size, hash.
@@ -21,6 +21,7 @@ database migration is required.
 - `finding_evidence`: many-to-many trace links.
 - `reports`: storage key, generated time, format, KB version.
 - `processing_events`: stage, state, safe message, timestamps.
+- `password_reset_tokens`: hashed single-use reset token, owner, expiry, and used time.
 - `extraction_review_revisions`: immutable analysis-local, versioned extraction snapshots.
 
 ## Constraints
@@ -30,7 +31,9 @@ database migration is required.
 - Every finding-evidence link is application-validated to keep finding and evidence ownership on
   the same analysis.
 - Analysis versions are immutable after completion except permitted review metadata.
-- Reanalysis uses `predecessor_analysis_id`.
+- `predecessor_analysis_id` is retained on `analyses` for backward compatibility with historical
+  reanalysis records; no current workflow sets it on newly created analyses. Evaluating a revised
+  exam uses New Analysis.
 - File hashes support integrity and duplicate detection.
 - Page indexing convention: API uses 1-based page numbers; internal extractor offsets must be converted at the boundary.
 
@@ -39,7 +42,8 @@ The `analyses` table intentionally has no persisted score or general KB-version 
 - Overall score (`GET /analyses/{id}/score`) and recommendations
   (`GET /analyses/{id}/recommendations`) are computed read-time from the analysis's current
   `findings` rows plus controlled KB data.
-- `predecessor_analysis_id` preserves linked reanalysis history.
+- `predecessor_analysis_id` preserves linked-analysis history from historical reanalysis records
+  only; it is not set by any current workflow.
 - Generated report rows persist their KB version and aggregate scoring snapshot.
 - Semantic findings persist the exact KB and prompt versions used for their evaluation.
 
@@ -110,3 +114,29 @@ deterministic findings may keep both semantic fields null.
 
 These additions are unnecessary for the bounded Version 1 workflow. Derived mappings remain
 analysis details on their authoritative Finding and never use Exam or TP-153 source provenance.
+
+
+## Version 2 Batch 1 authentication persistence
+
+Migration `0009` adds nullable `users.password_hash` for safe Version 1 upgrades, plus non-null
+`is_active`, `email_verified`, and `token_version`, and nullable `last_login_at`. New public accounts
+always receive a password hash. Existing development identities receive no invented credential.
+
+`password_reset_tokens` stores only SHA-256 hashes of random reset tokens. Each row belongs to one
+user and contains `expires_at` and nullable `used_at`; confirmation is rejected after expiry or first
+use. Password reset increments `users.token_version`, invalidating older bearer tokens.
+
+## Version 2 Batch 3 bilingual and retry metadata
+
+Migration `0011` adds:
+
+- `users.preferred_language`: non-null controlled `ar` / `en` preference, defaulting to Arabic for
+  upgraded and newly created accounts unless explicitly changed;
+- `processing_events.failed_stage`: nullable exact pipeline stage that failed;
+- `processing_events.error_code`: nullable safe stable failure code;
+- `processing_events.retryable`: non-null operational retry eligibility flag;
+- `reports.language`: non-null language of the immutable generated PDF snapshot.
+
+Failure events retain only safe user-facing metadata. Server exception details remain in protected
+logs. Retry does not overwrite the confirmed extraction revision, prior events, completed reports,
+or source uploads.

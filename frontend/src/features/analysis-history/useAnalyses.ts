@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { listAnalyses } from '../../api/analyses'
-import { ApiError } from '../../api/client'
+import { useI18n } from '../../i18n/I18nProvider'
+import { localizeInterfaceError } from '../../i18n/localizeError'
 import type { AnalysisResponse } from '../../types/api'
 
 export type AnalysesLoadState =
@@ -29,6 +30,7 @@ function loadAnalysesOnce(): Promise<AnalysisResponse[]> {
 export type AnalysesLoadResult = AnalysesLoadState & { retry: () => void }
 
 export function useAnalyses(): AnalysesLoadResult {
+  const { locale, t } = useI18n()
   const [state, setState] = useState<AnalysesLoadState>({ status: 'loading' })
   const mountedRef = useRef(false)
   const requestTokenRef = useRef(0)
@@ -47,11 +49,11 @@ export function useAnalyses(): AnalysesLoadResult {
         if (mountedRef.current && requestTokenRef.current === token) {
           setState({
             status: 'error',
-            message: error instanceof ApiError ? error.detail : 'Could not load analyses.',
+            message: localizeInterfaceError(error, locale, t, 'Could not load analyses'),
           })
         }
       })
-  }, [])
+  }, [locale, t])
 
   useEffect(() => {
     mountedRef.current = true

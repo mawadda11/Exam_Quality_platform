@@ -1,8 +1,12 @@
 import { useState } from 'react'
 import { Alert } from '../../components/ui/Alert'
 import { Button } from '../../components/ui/Button'
-import type { FindingResponse, RecommendationResponse } from '../../types/api'
-import type { EvidenceLookupKind } from './EvidenceDrillDown'
+import { useI18n } from '../../i18n/I18nProvider'
+import type {
+  AcademicStatus,
+  FindingResponse,
+  RecommendationResponse,
+} from '../../types/api'
 import {
   EMPTY_FINDING_FILTERS,
   filterFindings,
@@ -10,7 +14,15 @@ import {
 } from './findingFilterModel'
 import { FindingFilters } from './FindingFilters'
 import { FindingCard } from './FindingCard'
+import {
+  ATTENTION_STATUSES,
+  countFindingStatuses,
+  FINDING_STATUSES,
+  sortFindingsForFaculty,
+} from './findingPresentation'
 import type { EvidenceLookups } from './lookups'
+import { MethodologyLink } from './MethodologyLink'
+import { StatusBadge } from './StatusBadge'
 import type { ResultResource } from './useAnalysisResultsData'
 
 interface FindingsRecommendationsSectionProps {
@@ -18,8 +30,14 @@ interface FindingsRecommendationsSectionProps {
   recommendations: ResultResource<RecommendationResponse[]>
   recommendationsByFinding: Map<string, RecommendationResponse[]>
   lookups: EvidenceLookups
-  unavailableLookups?: ReadonlySet<EvidenceLookupKind>
   onRetryRecommendations: () => void
+}
+
+function statusFindings(
+  findings: FindingResponse[],
+  status: AcademicStatus,
+): FindingResponse[] {
+  return findings.filter((finding) => finding.status === status)
 }
 
 export function FindingsRecommendationsSection({
@@ -27,89 +45,167 @@ export function FindingsRecommendationsSection({
   recommendations,
   recommendationsByFinding,
   lookups,
-  unavailableLookups,
   onRetryRecommendations,
 }: FindingsRecommendationsSectionProps) {
-  const [filters, setFilters] = useState<FindingFilterValues>(EMPTY_FINDING_FILTERS)
-  const filteredFindings = filterFindings(findings, filters)
-  const missingEvidence = filteredFindings.filter(
-    (finding) => finding.status === 'Not Verified',
+  const { t } = useI18n()
+  const [filters, setFilters] = useState<FindingFilterValues>(
+    EMPTY_FINDING_FILTERS,
   )
+  const visibleFindings = findings.filter(
+    (finding) =>
+      finding.rule_id !== 'RULE003' || finding.status !== 'Satisfied',
+  )
+  const filteredFindings = filterFindings(visibleFindings, filters)
+  const counts = countFindingStatuses(visibleFindings)
+  const missingEvidenceCount = counts.get('Not Verified') ?? 0
+  const attention = sortFindingsForFaculty(
+    filteredFindings.filter((finding) =>
+      ATTENTION_STATUSES.has(finding.status),
+    ),
+  )
+  const satisfied = statusFindings(filteredFindings, 'Satisfied')
+  const notApplicable = statusFindings(filteredFindings, 'Not Applicable')
+
+  function renderCards(items: FindingResponse[]) {
+    return (
+      <ul className="finding-list">
+        {items.map((finding) => (
+          <FindingCard
+            key={finding.id}
+            finding={finding}
+            lookups={lookups}
+            recommendations={recommendationsByFinding.get(finding.id)}
+          />
+        ))}
+      </ul>
+    )
+  }
 
   return (
     <div className="findings-recommendations-section results-section-stack">
       <div className="results-section-heading">
         <div>
-          <h2>Findings &amp; Recommendations</h2>
-          <p>Filter the findings already returned for this analysis.</p>
+          <h2>{t('Findings & Recommendations')}</h2>
+          <p>
+            {t(
+              'Review results requiring attention first, then open supporting evidence when needed.',
+            )}
+          </p>
         </div>
       </div>
 
-      {findings.length > 0 && (
-        <FindingFilters
-          findings={findings}
-          values={filters}
-          resultCount={filteredFindings.length}
-          onChange={setFilters}
+      <div className="results-methodology-note">
+        <p>
+          {t(
+            'Results use confirmed evidence, rule-based checks, and semantic analysis when needed. The complete methodology is available in Methodology & Help.',
+          )}
+        </p>
+        <MethodologyLink
+          anchor="evaluation-methods"
+          label="How does the platform determine results?"
         />
+      </div>
+
+      {visibleFindings.length > 0 && (
+        <>
+          <ul
+            className="finding-status-summary"
+            aria-label={t('Finding status summary')}
+          >
+            {FINDING_STATUSES.filter(
+              (status) =>
+                status !== 'Not Applicable' || (counts.get(status) ?? 0) > 0,
+            ).map((status) => (
+              <li key={status}>
+                <strong>{counts.get(status) ?? 0}</strong>
+                <StatusBadge status={status} />
+              </li>
+            ))}
+          </ul>
+          <FindingFilters
+            findings={visibleFindings}
+            values={filters}
+            resultCount={filteredFindings.length}
+            onChange={setFilters}
+          />
+        </>
       )}
 
       {recommendations.status === 'loading' && (
         <div className="results-resource-state" role="status" aria-busy="true">
-          Loading recommendations…
+          {t('Loading recommendations…')}
         </div>
       )}
       {recommendations.status === 'error' && (
-        <Alert variant="error" title="Could not load recommendations">
+        <Alert variant="error" title={t('Could not load recommendations')}>
           <p>
-            Findings remain available, but their recommendation records could not be loaded.
-            {` ${recommendations.message}`}
+            {t(
+              'Findings remain available, but their recommendation records could not be loaded.',
+            )}{' '}
+            {recommendations.message}
           </p>
           <Button variant="secondary" onClick={onRetryRecommendations}>
-            Retry recommendations
+            {t('Retry recommendations')}
           </Button>
         </Alert>
       )}
 
-      {missingEvidence.length > 0 && (
-        <div className="missing-evidence-panel">
-          <h3>Missing Evidence ({missingEvidence.length})</h3>
+      {missingEvidenceCount > 0 && (
+        <section className="missing-evidence-panel">
+          <h3>
+            {t('Insufficient Evidence — Excluded from the Score')} ({missingEvidenceCount})
+          </h3>
           <p>
-            These findings are excluded from the score because evidence was missing,
-            unreadable, or insufficient—not because the exam failed the requirement.
+            {t(
+              'The available evidence was insufficient for a reliable judgment, so these results were excluded from the score and were not treated as unmet requirements.',
+            )}
           </p>
-          <ul>
-            {missingEvidence.map((finding) => (
-              <li key={finding.id}>
-                <strong>{finding.requirement_name}</strong>:{' '}
-                <span dir="auto">{finding.explanation}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+        </section>
       )}
 
-      {findings.length === 0 ? (
-        <p className="results-empty-state">No findings are available.</p>
+      {visibleFindings.length === 0 ? (
+        <p className="results-empty-state">{t('No findings are available.')}</p>
       ) : filteredFindings.length === 0 ? (
         <div className="results-empty-state" role="status">
-          <p>No findings match the selected filters.</p>
-          <Button variant="secondary" onClick={() => setFilters(EMPTY_FINDING_FILTERS)}>
-            Reset filters
+          <p>{t('No findings match the selected filters.')}</p>
+          <Button
+            variant="secondary"
+            onClick={() => setFilters(EMPTY_FINDING_FILTERS)}
+          >
+            {t('Reset filters')}
           </Button>
         </div>
       ) : (
-        <ul className="finding-list">
-          {filteredFindings.map((finding) => (
-            <FindingCard
-              key={finding.id}
-              finding={finding}
-              lookups={lookups}
-              unavailableLookups={unavailableLookups}
-              recommendations={recommendationsByFinding.get(finding.id)}
-            />
-          ))}
-        </ul>
+        <div className="finding-priority-groups">
+          {attention.length > 0 && (
+            <section>
+              <h3>{t('Requires attention')}</h3>
+              {renderCards(attention)}
+            </section>
+          )}
+
+          {satisfied.length > 0 && (
+            <details className="finding-group-disclosure">
+              <summary>
+                {t('Satisfied findings ({count})', {
+                  count: satisfied.length,
+                })}
+              </summary>
+              {renderCards(satisfied)}
+            </details>
+          )}
+
+          {notApplicable.length > 0 && (
+            <details className="finding-group-disclosure">
+              <summary>
+                {t('Not Applicable findings ({count})', {
+                  count: notApplicable.length,
+                })}
+              </summary>
+              {renderCards(notApplicable)}
+            </details>
+          )}
+        </div>
       )}
     </div>
   )

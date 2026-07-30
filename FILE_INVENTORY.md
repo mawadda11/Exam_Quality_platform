@@ -11,6 +11,11 @@
 - `docs/OWNER_FINAL_CHECKLIST.md`
 - `docs/RELEASE_V1.md`
 - `docs/V2_ROADMAP.md`
+- `docs/V2_BATCH2_HANDOFF.md`
+- `docs/V2_BATCH2_IMPLEMENTATION_REPORT.md`
+- `docs/V2_BATCH2_TEST_RESULTS.md`
+- `docs/V2_BATCH3_IMPLEMENTATION_REPORT.md`
+- `docs/V2_BATCH3_TEST_RESULTS.md`
 - `VERSION`
 - Earlier milestone reports under `docs/` remain part of the audit trail.
 
@@ -36,8 +41,9 @@
 - React/TypeScript frontend with upload, processing, extraction review, history, results,
   evidence, recommendations, concise analysis-completion messaging, a separate **What the Platform Evaluates**
   page, and reports.
-- Python/FastAPI backend with owner-scoped analysis APIs, secure PDF upload, extraction review,
-  governed deterministic/semantic evaluation, scoring, coverage audit, and PDF reporting.
+- Python/FastAPI backend with owner-scoped analysis APIs, secure PDF upload, bilingual
+  digital/OCR extraction, adaptive Course Specification parsing, extraction review, governed
+  deterministic/semantic evaluation, scoring, coverage audit, and PDF reporting.
 - PostgreSQL application persistence, ChromaDB adapter, offline deterministic development vector
   store, and offline local/fake AI adapters for tests and safe development.
 - Docker Compose and GitHub Actions gates.

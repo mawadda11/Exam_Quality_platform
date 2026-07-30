@@ -35,7 +35,7 @@ from decimal import Decimal
 from app.core.domain import AcademicStatus
 from app.models.evidence import Evidence
 from app.models.question import Question
-from app.services.extraction.digital_pdf_extractor import TOTAL_MARKS_PATTERN
+from app.services.extraction.line_classification import parse_declared_total
 from app.services.rules.question_hierarchy import scorable_leaves
 from app.services.rules.types import RuleFindingResult
 
@@ -43,10 +43,8 @@ _NOT_APPLICABLE_EXPLANATION = "No declared total marks were found in the exam."
 
 
 def _parse_declared_total(text: str) -> Decimal | None:
-    match = TOTAL_MARKS_PATTERN.match(text.strip())
-    if match is None:
-        return None
-    return Decimal(match.group(1))
+    value = parse_declared_total(text)
+    return Decimal(str(value)) if value is not None else None
 
 
 def evaluate_marks_and_total(

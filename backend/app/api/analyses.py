@@ -13,20 +13,28 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_user, get_owned_analysis
 from app.core.config import Settings, get_settings
-from app.core.domain import ProcessingStage, ReportFormat, UploadedFileType
+from app.core.domain import (
+    ProcessingStage,
+    ReferenceResolutionStatus,
+    ReportFormat,
+    UploadedFileType,
+)
 from app.db.session import get_db
 from app.models.analysis import Analysis
 from app.models.assessment_record import AssessmentRecord
 from app.models.clo import Clo
 from app.models.course import Course
+from app.models.document_reference import DocumentReference
 from app.models.finding import Finding, FindingEvidence
 from app.models.processing_event import ProcessingEvent
 from app.models.question import Question
 from app.models.report import Report
+from app.models.supporting_material import SupportingMaterial
+from app.models.supporting_material_annotation import SupportingMaterialAnnotation
 from app.models.topic import Topic
 from app.models.uploaded_file import UploadedFile
 from app.models.user import User
-from app.schemas.analysis import AnalysisCreateRequest, AnalysisResponse, ReanalysisCreateRequest
+from app.schemas.analysis import AnalysisCreateRequest, AnalysisResponse
 from app.schemas.assessment_record import AssessmentRecordResponse
 from app.schemas.clo import CloResponse
 from app.schemas.course import CourseInput
@@ -40,9 +48,15 @@ from app.schemas.finding import FindingResponse
 from app.schemas.progress import ProgressResponse
 from app.schemas.question import QuestionResponse
 from app.schemas.recommendation import RecommendationResponse
-from app.schemas.report import ReportResponse
+from app.schemas.report import ReportCreateRequest, ReportResponse
 from app.schemas.rule_coverage import RuleCoverageAuditResponse
 from app.schemas.score import AnalysisScoreResponse
+from app.schemas.structured_evidence import (
+    DocumentReferenceResponse,
+    ReferenceAssociationResponse,
+    SupportingMaterialAnnotationResponse,
+    SupportingMaterialResponse,
+)
 from app.schemas.topic import TopicResponse
 from app.schemas.uploaded_file import UploadedFileResponse
 from app.services.extraction.review_workflow import (
@@ -53,8 +67,10 @@ from app.services.extraction.review_workflow import (
     ExtractionReviewStaleRevisionError,
     append_extraction_review_revision,
     confirm_extraction_review,
+    confirmed_supporting_annotation_texts,
     get_extraction_review,
 )
+from app.services.extraction.structured_evidence import logical_annotation_text
 from app.services.knowledge_base.reference_data import (
     get_controlled_recommendations,
     get_requirement_display,
@@ -62,13 +78,16 @@ from app.services.knowledge_base.reference_data import (
 from app.services.processing.runner import (
     run_analysis_pipeline,
     run_post_confirmation_pipeline,
+    run_retry_pipeline,
 )
+from app.services.processing.stages import POST_CONFIRMATION_STAGES
 from app.services.reporting.content import assemble_report_content
 from app.services.reporting.pdf import render_report_pdf
 from app.services.reporting.storage import store_report_pdf
 from app.services.rules.coverage_audit import build_rule_coverage_audit
+from app.services.rules.versioning import CURRENT_CAPABILITY_VERSION, effective_capability_version
 from app.services.storage.files import UploadTooLargeError, stream_validate_and_store
-from app.services.storage.keys import generate_storage_key, resolve_storage_path
+from app.services.storage.keys import resolve_storage_path
 from app.services.storage.validation import UploadValidationError
 
 router = APIRouter(prefix="/analyses", tags=["analyses"])
@@ -117,6 +136,7 @@ def create_analysis(
         course_id=course.id,
         exam_type=payload.exam_type,
         term=payload.term,
+        capability_version=CURRENT_CAPABILITY_VERSION,
     )
     db.add(analysis)
     db.flush()
@@ -257,6 +277,95 @@ def run_analysis(
     return AnalysisResponse.from_model(_load_with_relations(db, analysis.id))
 
 
+@router.post(
+    "/{analysis_id}/retry", response_model=AnalysisResponse, status_code=status.HTTP_202_ACCEPTED
+)
+def retry_analysis(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    background_tasks: BackgroundTasks,
+) -> AnalysisResponse:
+    if analysis.state != ProcessingStage.FAILED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only a failed analysis can be retried.",
+        )
+
+    latest_failure = db.execute(
+        select(ProcessingEvent)
+        .where(
+            ProcessingEvent.analysis_id == analysis.id,
+            ProcessingEvent.stage == ProcessingStage.FAILED,
+        )
+        .order_by(ProcessingEvent.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if (
+        latest_failure is None
+        or latest_failure.failed_stage is None
+        or not latest_failure.retryable
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This failure does not have a safe retry boundary.",
+        )
+    if not analysis.ready_for_analysis:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The original examination and TP-153 files are required before retrying.",
+        )
+    unavailable_files = [
+        uploaded.original_filename
+        for uploaded in analysis.files
+        if not resolve_storage_path(settings.upload_root, uploaded.storage_key).is_file()
+    ]
+    if unavailable_files:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The original uploaded files are unavailable. Upload them in a new analysis.",
+        )
+    if (
+        latest_failure.failed_stage in POST_CONFIRMATION_STAGES
+        and analysis.confirmed_review_id is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The confirmed extraction revision required for retry is unavailable.",
+        )
+
+    retry_stage = latest_failure.failed_stage
+    confirmed_review_id = analysis.confirmed_review_id
+    claim = cast(
+        CursorResult[Any],
+        db.execute(
+            update(Analysis)
+            .where(
+                Analysis.id == analysis.id,
+                Analysis.state == ProcessingStage.FAILED,
+            )
+            .values(state=retry_stage)
+            .execution_options(synchronize_session=False)
+        ),
+    )
+    if claim.rowcount != 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A retry or another processing action has already started.",
+        )
+    db.add(
+        ProcessingEvent(
+            analysis_id=analysis.id,
+            stage=retry_stage,
+            message="Retry accepted. Processing will resume from the failed stage.",
+        )
+    )
+    db.commit()
+    db.expire_all()
+    background_tasks.add_task(run_retry_pipeline, analysis.id, retry_stage, confirmed_review_id)
+    return AnalysisResponse.from_model(_load_with_relations(db, analysis.id))
+
+
 def _review_http_error(exc: Exception) -> HTTPException:
     if isinstance(exc, ExtractionReviewRevisionNotFoundError):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
@@ -344,70 +453,6 @@ def confirm_extraction_review_endpoint(
     )
 
 
-@router.post(
-    "/{analysis_id}/reanalysis",
-    response_model=AnalysisResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_reanalysis(
-    predecessor: Annotated[Analysis, Depends(get_owned_analysis)],
-    db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
-    settings: Annotated[Settings, Depends(get_settings)],
-    payload: ReanalysisCreateRequest | None = None,
-) -> AnalysisResponse:
-    payload = payload or ReanalysisCreateRequest()
-    # PRD: "Create a linked reanalysis for a revised examination when needed"
-    # - reads as a post-review action on results already seen, not a retry
-    # mechanism for a run that never finished.
-    if predecessor.state != ProcessingStage.COMPLETED:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Only a completed analysis can be reanalyzed.",
-        )
-
-    reanalysis = Analysis(
-        user_id=current_user.id,
-        course_id=predecessor.course_id,
-        exam_type=predecessor.exam_type,
-        term=predecessor.term,
-        predecessor_analysis_id=predecessor.id,
-    )
-    db.add(reanalysis)
-    db.flush()
-
-    if payload.reuse_tp153:
-        predecessor_tp153 = next(
-            (f for f in predecessor.files if f.file_type == UploadedFileType.TP153), None
-        )
-        if predecessor_tp153 is not None:
-            # Copy the bytes to a storage key of the *new* analysis's own -
-            # storage_key is unique per row, and every other stage (extraction,
-            # evidence persistence) already assumes "this analysis's own file
-            # reference", so the new row must look exactly like a fresh
-            # upload rather than aliasing the predecessor's row/key.
-            source_path = resolve_storage_path(settings.upload_root, predecessor_tp153.storage_key)
-            new_storage_key = generate_storage_key(reanalysis.id, UploadedFileType.TP153)
-            destination_path = resolve_storage_path(settings.upload_root, new_storage_key)
-            destination_path.parent.mkdir(parents=True, exist_ok=True)
-            destination_path.write_bytes(source_path.read_bytes())
-
-            db.add(
-                UploadedFile(
-                    analysis_id=reanalysis.id,
-                    file_type=UploadedFileType.TP153,
-                    original_filename=predecessor_tp153.original_filename,
-                    storage_key=new_storage_key,
-                    mime_type=predecessor_tp153.mime_type,
-                    size_bytes=predecessor_tp153.size_bytes,
-                    sha256_hash=predecessor_tp153.sha256_hash,
-                )
-            )
-            db.flush()
-
-    return AnalysisResponse.from_model(_load_with_relations(db, reanalysis.id))
-
-
 @router.get("/{analysis_id}/progress", response_model=ProgressResponse)
 def get_analysis_progress(
     analysis: Annotated[Analysis, Depends(get_owned_analysis)],
@@ -423,6 +468,13 @@ def get_analysis_progress(
         analysis_id=analysis.id,
         state=analysis.state,
         message=latest_event.message if latest_event else None,
+        failed_stage=latest_event.failed_stage if latest_event else None,
+        error_code=latest_event.error_code if latest_event else None,
+        can_retry=bool(
+            analysis.state == ProcessingStage.FAILED
+            and latest_event is not None
+            and latest_event.retryable
+        ),
         updated_at=analysis.updated_at,
     )
 
@@ -480,6 +532,117 @@ def list_analysis_assessment_records(
     return [AssessmentRecordResponse.model_validate(record) for record in records]
 
 
+@router.get(
+    "/{analysis_id}/supporting-materials",
+    response_model=list[SupportingMaterialResponse],
+)
+def list_analysis_supporting_materials(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[SupportingMaterialResponse]:
+    rows = db.execute(
+        select(SupportingMaterial)
+        .where(SupportingMaterial.analysis_id == analysis.id)
+        .order_by(SupportingMaterial.page_number, SupportingMaterial.created_at)
+    ).scalars()
+    return [SupportingMaterialResponse.model_validate(row) for row in rows]
+
+
+@router.get(
+    "/{analysis_id}/supporting-material-annotations",
+    response_model=list[SupportingMaterialAnnotationResponse],
+)
+def list_analysis_supporting_material_annotations(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[SupportingMaterialAnnotationResponse]:
+    rows = list(
+        db.execute(
+            select(SupportingMaterialAnnotation)
+            .where(SupportingMaterialAnnotation.analysis_id == analysis.id)
+            .order_by(
+                SupportingMaterialAnnotation.page_number,
+                SupportingMaterialAnnotation.created_at,
+            )
+        ).scalars()
+    )
+    reviewed_texts = confirmed_supporting_annotation_texts(db, analysis)
+    if reviewed_texts is not None:
+        rows = [row for row in rows if row.id in reviewed_texts]
+    return [
+        SupportingMaterialAnnotationResponse.model_validate(row).model_copy(
+            update={
+                "original_text": (
+                    reviewed_texts[row.id]
+                    if reviewed_texts is not None
+                    else logical_annotation_text(row.original_text, row.normalized_label)
+                )
+            }
+        )
+        for row in rows
+    ]
+
+
+@router.get(
+    "/{analysis_id}/document-references",
+    response_model=list[DocumentReferenceResponse],
+)
+def list_analysis_document_references(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[DocumentReferenceResponse]:
+    rows = (
+        db.execute(
+            select(DocumentReference)
+            .where(DocumentReference.analysis_id == analysis.id)
+            .options(selectinload(DocumentReference.association_candidates))
+            .order_by(DocumentReference.page_number, DocumentReference.created_at)
+        )
+        .scalars()
+        .all()
+    )
+    responses: list[DocumentReferenceResponse] = []
+    for row in rows:
+        active_candidates = [
+            item
+            for item in row.association_candidates
+            if item.review_revision_id == analysis.confirmed_review_id
+        ]
+        exact_candidates = [item for item in active_candidates if item.exact_label_match]
+        selected_candidates = [item for item in exact_candidates if item.selected]
+        resolution_status = (
+            ReferenceResolutionStatus.RESOLVED
+            if len(selected_candidates) == 1
+            else (
+                ReferenceResolutionStatus.AMBIGUOUS
+                if len(exact_candidates) > 1
+                else ReferenceResolutionStatus.UNRESOLVED
+            )
+        )
+        responses.append(
+            DocumentReferenceResponse(
+                id=row.id,
+                analysis_id=row.analysis_id,
+                question_id=row.question_id,
+                source_document=row.source_document,
+                target_type=row.target_type,
+                original_text=row.original_text,
+                target_label=row.target_label,
+                normalized_target_label=row.normalized_target_label,
+                page_number=row.page_number,
+                geometry=row.geometry,
+                confidence=row.confidence,
+                extraction_method=row.extraction_method,
+                resolution_status=resolution_status,
+                association_candidates=[
+                    ReferenceAssociationResponse.model_validate(item) for item in active_candidates
+                ],
+                created_at=row.created_at,
+            )
+        )
+    return responses
+
+
 def _load_findings(db: Session, analysis_id: uuid.UUID) -> list[Finding]:
     return list(
         db.execute(
@@ -525,7 +688,11 @@ def get_analysis_rule_coverage(
     five academic statuses used by Findings.
     """
 
-    return build_rule_coverage_audit(analysis.id, _load_findings(db, analysis.id))
+    return build_rule_coverage_audit(
+        analysis.id,
+        _load_findings(db, analysis.id),
+        capability_version=effective_capability_version(analysis),
+    )
 
 
 @router.get("/{analysis_id}/score", response_model=AnalysisScoreResponse)
@@ -570,7 +737,9 @@ def create_report(
     analysis: Annotated[Analysis, Depends(get_owned_analysis)],
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
+    payload: ReportCreateRequest | None = None,
 ) -> ReportResponse:
+    payload = payload or ReportCreateRequest()
     # M10 decision: on-demand only, triggered by this explicit action - never
     # generated automatically by the processing pipeline. Regenerating
     # creates a new Report row rather than replacing an existing one (see
@@ -590,7 +759,46 @@ def create_report(
             .order_by(AssessmentRecord.page_number, AssessmentRecord.created_at)
         ).scalars()
     )
-    coverage = build_rule_coverage_audit(analysis.id, findings)
+    supporting_materials = list(
+        db.execute(
+            select(SupportingMaterial)
+            .where(SupportingMaterial.analysis_id == analysis.id)
+            .order_by(SupportingMaterial.page_number, SupportingMaterial.created_at)
+        ).scalars()
+    )
+    supporting_annotations = list(
+        db.execute(
+            select(SupportingMaterialAnnotation)
+            .where(SupportingMaterialAnnotation.analysis_id == analysis.id)
+            .order_by(
+                SupportingMaterialAnnotation.page_number,
+                SupportingMaterialAnnotation.created_at,
+            )
+        ).scalars()
+    )
+    reviewed_annotation_texts = confirmed_supporting_annotation_texts(db, analysis)
+    if reviewed_annotation_texts is not None:
+        supporting_annotations = [
+            item for item in supporting_annotations if item.id in reviewed_annotation_texts
+        ]
+    else:
+        reviewed_annotation_texts = {
+            item.id: logical_annotation_text(item.original_text, item.normalized_label)
+            for item in supporting_annotations
+        }
+    document_references = list(
+        db.execute(
+            select(DocumentReference)
+            .where(DocumentReference.analysis_id == analysis.id)
+            .options(selectinload(DocumentReference.association_candidates))
+            .order_by(DocumentReference.page_number, DocumentReference.created_at)
+        ).scalars()
+    )
+    coverage = build_rule_coverage_audit(
+        analysis.id,
+        findings,
+        capability_version=effective_capability_version(analysis),
+    )
     content = assemble_report_content(
         analysis,
         findings,
@@ -598,8 +806,15 @@ def create_report(
         datetime.now(UTC),
         assessment_records=assessment_records,
         rule_coverage=coverage,
+        supporting_materials=supporting_materials,
+        supporting_annotations=supporting_annotations,
+        supporting_annotation_texts=reviewed_annotation_texts,
+        document_references=document_references,
+        questions=list(analysis.questions),
+        clos=list(analysis.clos),
+        topics=list(analysis.topics),
     )
-    pdf_bytes = render_report_pdf(content)
+    pdf_bytes = render_report_pdf(content, language=payload.language)
 
     report_id = uuid.uuid4()
     stored = store_report_pdf(
@@ -613,10 +828,12 @@ def create_report(
         id=report_id,
         analysis_id=analysis.id,
         format=ReportFormat.PDF,
+        language=payload.language,
         storage_key=stored.storage_key,
         size_bytes=stored.size_bytes,
         sha256_hash=stored.sha256_hash,
         kb_version=content.kb_version,
+        capability_version=effective_capability_version(analysis),
         score=content.score,
         score_label=content.score_label,
         denominator=content.denominator,

@@ -12,7 +12,7 @@ from tp153_pdf_fixtures import build_complete_tp153_pdf
 import app.services.processing.stages as stages
 from app.core.domain import ProcessingStage
 from app.models.analysis import Analysis
-from app.services.processing.runner import SAFE_FAILURE_MESSAGE
+from app.services.processing.runner import SAFE_FAILURE_MESSAGES
 
 ANALYSIS_PAYLOAD = {
     "course": {"code": "CPIT-450", "name": "Software Engineering"},
@@ -153,5 +153,111 @@ def test_progress_reports_failed_with_safe_message(
 
     progress = _poll_until_terminal(client, analysis_id, headers)
     assert progress["state"] == "failed"
-    assert progress["message"] == SAFE_FAILURE_MESSAGE
+    assert progress["message"] == SAFE_FAILURE_MESSAGES[ProcessingStage.EXTRACTING_EXAM]
     assert "sensitive internal detail" not in (progress["message"] or "")
+
+
+def test_failed_pre_review_analysis_can_retry_without_reupload(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = stages.STAGE_HANDLERS[ProcessingStage.EXTRACTING_EXAM]
+    calls = 0
+
+    def fail_once(analysis: Analysis, session: object, settings: object) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("private one-time extraction failure")
+        original(analysis, session, settings)
+
+    monkeypatch.setitem(stages.STAGE_HANDLERS, ProcessingStage.EXTRACTING_EXAM, fail_once)
+
+    email = "retry-pre-review@kau.edu.sa"
+    analysis_id = _make_ready_analysis(client, email)
+    headers = auth_header(email)
+    assert client.post(f"/api/v1/analyses/{analysis_id}/run", headers=headers).status_code == 202
+
+    failed = _poll_until_terminal(client, analysis_id, headers)
+    assert failed["state"] == "failed"
+    assert failed["failed_stage"] == "extracting_exam"
+    assert failed["error_code"] == "EXAM_EXTRACTION_FAILED"
+    assert failed["can_retry"] is True
+    assert "private one-time extraction failure" not in failed["message"]
+
+    retried = client.post(f"/api/v1/analyses/{analysis_id}/retry", headers=headers)
+    assert retried.status_code == 202
+    completed_retry = _poll_until_terminal(client, analysis_id, headers)
+    assert completed_retry["state"] == "review_ready"
+    assert calls == 2
+
+    duplicate = client.post(f"/api/v1/analyses/{analysis_id}/retry", headers=headers)
+    assert duplicate.status_code == 409
+
+
+def test_retry_is_owner_scoped(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(analysis: Analysis, session: object, settings: object) -> None:
+        raise RuntimeError("private failure")
+
+    monkeypatch.setitem(stages.STAGE_HANDLERS, ProcessingStage.EXTRACTING_EXAM, boom)
+    analysis_id = _make_ready_analysis(client, "retry-owner@kau.edu.sa")
+    owner_headers = auth_header("retry-owner@kau.edu.sa")
+    client.post(f"/api/v1/analyses/{analysis_id}/run", headers=owner_headers)
+    assert _poll_until_terminal(client, analysis_id, owner_headers)["state"] == "failed"
+
+    response = client.post(
+        f"/api/v1/analyses/{analysis_id}/retry",
+        headers=auth_header("retry-intruder@kau.edu.sa"),
+    )
+    assert response.status_code == 404
+
+
+def test_failed_post_confirmation_analysis_reuses_confirmed_revision_on_retry(
+    client: TestClient,
+    test_settings: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Use the governed local baseline so the downstream pipeline can finish
+    # after the injected one-time knowledge-retrieval failure.
+    test_settings.ai_provider = "local"
+    test_settings.ai_model = "local-governed-baseline-v1"
+
+    email = "retry-post-confirmation@kau.edu.sa"
+    analysis_id = _make_ready_analysis(client, email)
+    headers = auth_header(email)
+    assert client.post(f"/api/v1/analyses/{analysis_id}/run", headers=headers).status_code == 202
+    assert _poll_until_terminal(client, analysis_id, headers)["state"] == "review_ready"
+
+    review = client.get(f"/api/v1/analyses/{analysis_id}/extraction-review", headers=headers).json()
+    original = stages.STAGE_HANDLERS[ProcessingStage.RETRIEVING_KNOWLEDGE]
+    calls = 0
+
+    def fail_once(analysis: Analysis, session: object, settings: object) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("private one-time retrieval failure")
+        original(analysis, session, settings)
+
+    monkeypatch.setitem(
+        stages.STAGE_HANDLERS,
+        ProcessingStage.RETRIEVING_KNOWLEDGE,
+        fail_once,
+    )
+    confirmed = client.post(
+        f"/api/v1/analyses/{analysis_id}/extraction-review/confirm",
+        headers=headers,
+        json={"revision_id": review["revision_id"]},
+    )
+    assert confirmed.status_code == 202
+
+    failed = _poll_until_terminal(client, analysis_id, headers)
+    assert failed["state"] == "failed"
+    assert failed["failed_stage"] == "retrieving_knowledge"
+    assert failed["error_code"] == "KNOWLEDGE_RETRIEVAL_FAILED"
+    assert failed["can_retry"] is True
+
+    retry = client.post(f"/api/v1/analyses/{analysis_id}/retry", headers=headers)
+    assert retry.status_code == 202
+    completed = _poll_until_terminal(client, analysis_id, headers)
+    assert completed["state"] == "completed"
+    assert calls == 2

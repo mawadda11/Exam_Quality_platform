@@ -4,32 +4,34 @@ import { PageHeader } from '../components/ui/PageHeader'
 import { PageState } from '../components/ui/PageState'
 import { AnalysisHistoryTable } from '../features/analysis-history/AnalysisHistoryTable'
 import { useAnalyses } from '../features/analysis-history/useAnalyses'
+import { useI18n } from '../i18n/I18nProvider'
 
 export function AnalysesRoute() {
+  const { t } = useI18n()
   const state = useAnalyses()
 
   return (
     <div className="route-stack route-content-wide">
       <PageHeader
-        title="Analyses"
-        description="Open an existing analysis or begin a new one."
+        title={t('Analyses')}
+        description={t('Open an existing analysis or begin a new one.')}
         actions={
           <Link className="ui-button" to="/analyses/new">
-            New Analysis
+            {t('New Analysis')}
           </Link>
         }
       />
       {state.status === 'loading' && (
-        <PageState state="loading" title="Loading analyses" message="Retrieving your analyses…" />
+        <PageState state="loading" title={t('Loading analyses')} message={t('Retrieving your analyses…')} />
       )}
       {state.status === 'error' && (
         <PageState
           state="error"
-          title="Could not load analyses"
+          title={t('Could not load analyses')}
           message={state.message}
           action={
             <Button variant="secondary" onClick={state.retry}>
-              Retry analyses
+              {t('Retry analyses')}
             </Button>
           }
         />
@@ -37,17 +39,17 @@ export function AnalysesRoute() {
       {state.status === 'ready' && state.analyses.length === 0 && (
         <PageState
           state="empty"
-          title="No analyses yet"
-          message="Create an analysis to upload an exam and its populated TP-153."
+          title={t('No analyses yet')}
+          message={t('Create an analysis to upload an exam and its Course Specification.')}
           action={
             <Link className="ui-button" to="/analyses/new">
-              New Analysis
+              {t('New Analysis')}
             </Link>
           }
         />
       )}
       {state.status === 'ready' && state.analyses.length > 0 && (
-        <AnalysisHistoryTable analyses={state.analyses} caption="All analyses" />
+        <AnalysisHistoryTable analyses={state.analyses} caption={t('All analyses')} />
       )}
     </div>
   )

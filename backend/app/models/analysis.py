@@ -14,12 +14,15 @@ if TYPE_CHECKING:
     from app.models.assessment_record import AssessmentRecord
     from app.models.clo import Clo
     from app.models.course import Course
+    from app.models.document_reference import DocumentReference
     from app.models.evidence import Evidence
     from app.models.extraction_review_revision import ExtractionReviewRevision
     from app.models.finding import Finding
     from app.models.processing_event import ProcessingEvent
     from app.models.question import Question
     from app.models.report import Report
+    from app.models.supporting_material import SupportingMaterial
+    from app.models.supporting_material_annotation import SupportingMaterialAnnotation
     from app.models.topic import Topic
     from app.models.uploaded_file import UploadedFile
     from app.models.user import User
@@ -51,10 +54,13 @@ class Analysis(TimestampMixin, Base):
         ),
         default=ProcessingStage.QUEUED,
     )
-    # M10: reanalysis for a revised exam. RESTRICT (not CASCADE/SET NULL) so a
-    # predecessor can never be deleted out from under a linked reanalysis -
-    # "never overwrite previous results" extends to never silently losing the
-    # link either. Nullable: most analyses have no predecessor.
+    # Retained for backward compatibility with historical reanalysis records;
+    # no current workflow sets this column on newly created analyses (see
+    # docs/KNOWN_LIMITATIONS.md). RESTRICT (not CASCADE/SET NULL) so a
+    # predecessor already referenced by a historical row can never be deleted
+    # out from under it - "never overwrite previous results" extends to never
+    # silently losing the link either. Nullable: most analyses have no
+    # predecessor.
     predecessor_analysis_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("analyses.id", ondelete="RESTRICT"),
@@ -70,6 +76,7 @@ class Analysis(TimestampMixin, Base):
         ),
         default=None,
     )
+    capability_version: Mapped[str | None] = mapped_column(String(100), default=None, index=True)
 
     owner: Mapped[User] = relationship(back_populates="analyses")
     course: Mapped[Course] = relationship(back_populates="analyses")
@@ -96,6 +103,15 @@ class Analysis(TimestampMixin, Base):
         back_populates="analysis", cascade="all, delete-orphan"
     )
     reports: Mapped[list[Report]] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan"
+    )
+    supporting_materials: Mapped[list[SupportingMaterial]] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan"
+    )
+    supporting_material_annotations: Mapped[list[SupportingMaterialAnnotation]] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan"
+    )
+    document_references: Mapped[list[DocumentReference]] = relationship(
         back_populates="analysis", cascade="all, delete-orphan"
     )
     review_revisions: Mapped[list[ExtractionReviewRevision]] = relationship(

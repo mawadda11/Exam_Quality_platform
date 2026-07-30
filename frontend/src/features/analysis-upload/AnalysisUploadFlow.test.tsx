@@ -1,7 +1,14 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as analysesApi from '../../api/analyses'
 import { ApiError } from '../../api/client'
+import { I18nProvider } from '../../i18n/I18nProvider'
 import type { AnalysisResponse, UploadedFileResponse } from '../../types/api'
 import { AnalysisDocuments, AnalysisUploadFlow } from './AnalysisUploadFlow'
 
@@ -51,6 +58,7 @@ const UPLOADED_TP153: UploadedFileResponse = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  window.localStorage.clear()
 })
 
 function fillCreateForm(): void {
@@ -103,12 +111,34 @@ describe('AnalysisUploadFlow', () => {
 
     expect(screen.getByText('CPIT-450')).toBeInTheDocument()
     expect(screen.getByText(/software engineering/i)).toBeInTheDocument()
-    expect(screen.getByText(/browser will require you to select that file again/i))
+    expect(
+      screen.getByText(
+        'Both documents are required to continue. Unsaved file selections must be selected again after refreshing the page.',
+      ),
+    )
       .toBeInTheDocument()
     expect(
-      screen.getByText(/english-language examination and tp-153 pdf files are supported/i),
+      screen.getByRole('heading', { name: 'Upload Course Specification' }),
     ).toBeInTheDocument()
-    expect(screen.getAllByText('missing')).toHaveLength(2)
+    expect(screen.getByText('Course Specification file')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Upload the completed official Course Specification PDF, such as a completed TP-153 template.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getAllByText('Missing')).toHaveLength(2)
+    expect(screen.queryByRole('heading', { name: 'Upload Documents' }))
+      .not.toBeInTheDocument()
+    const examCard = screen
+      .getByRole('heading', { name: 'Examination PDF' })
+      .closest('section')!
+    const courseCard = screen
+      .getByRole('heading', { name: 'Upload Course Specification' })
+      .closest('section')!
+    expect(examCard).toHaveTextContent('Midterm — 2026 Spring')
+    expect(within(examCard).queryByText('CPIT-450')).not.toBeInTheDocument()
+    expect(within(courseCard).getByText('CPIT-450')).toBeInTheDocument()
+    expect(courseCard).not.toHaveTextContent('Midterm — 2026 Spring')
   })
 
   it('renders only backend-confirmed readiness and persisted uploaded files', () => {
@@ -126,6 +156,29 @@ describe('AnalysisUploadFlow', () => {
     expect(screen.getByText(/exam\.pdf/i)).toBeInTheDocument()
     expect(screen.getByText(/tp153\.pdf/i)).toBeInTheDocument()
     expect(analysesApi.uploadAnalysisFile).not.toHaveBeenCalled()
+  })
+
+  it('uses complete Arabic Course Specification upload terminology and controls', () => {
+    window.localStorage.setItem('exam-quality-analyzer-locale', 'ar')
+    render(
+      <I18nProvider>
+        <AnalysisDocuments analysis={BASE_ANALYSIS} onRefreshed={vi.fn()} />
+      </I18nProvider>,
+    )
+
+    expect(
+      screen.getByRole('heading', { name: 'رفع توصيف المقرر' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('ملف توصيف المقرر')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'ارفع ملف توصيف المقرر المعتمد بصيغة PDF، مثل نموذج TP-153 بعد تعبئته.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'اختيار ملف PDF' }))
+      .toHaveLength(2)
+    expect(screen.getAllByText('غير مرفوع')).toHaveLength(2)
+    expect(screen.queryByText('تعذر عرض النص المترجم.')).not.toBeInTheDocument()
   })
 
   it('shows a create-analysis API error and keeps the information form available', async () => {

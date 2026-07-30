@@ -6,7 +6,13 @@ pin down the actual decision rules independently of either extraction path.
 
 from __future__ import annotations
 
-from app.services.extraction.line_classification import LineKind, classify_line
+import pytest
+
+from app.services.extraction.line_classification import (
+    LineKind,
+    classify_line,
+    parse_declared_total,
+)
 
 
 def test_question_line_sets_kind_and_label_and_becomes_new_parent() -> None:
@@ -63,6 +69,44 @@ def test_total_marks_line_is_classified() -> None:
     result = classify_line("Total Marks: 20", current_parent_label=None)
 
     assert result.kind is LineKind.TOTAL_MARKS
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("Total Marks: 40", 40.0),
+        ("Total Score – ٤٠", 40.0),
+        ("Exam Total = ۴۰", 40.0),
+        ("Maximum Marks 40", 40.0),
+        ("Total: 40", 40.0),
+        ("الدرجة الكلية: 40 درجة", 40.0),
+        ("الدرجة الكلية للاختبار: ٤٠", 40.0),
+        ("إجمالي الدرجات: ۴۰", 40.0),
+        ("مجموع الدرجات 40", 40.0),
+        ("المجموع الكلي: 40", 40.0),
+        ("الدرجة النهائية ٤٠", 40.0),
+        ("الدرجة الكلية: 40 درجة المدة: ساعتان", 40.0),
+    ],
+)
+def test_declared_total_supports_approved_bilingual_labels_and_digits(
+    source: str,
+    expected: float,
+) -> None:
+    assert parse_declared_total(source) == expected
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "العام الجامعي: 1448",
+        "المدة: ساعتان",
+        "رمز المقرر: CS 241",
+        "Page 2 of 7",
+        "Q1 [6 marks]",
+    ],
+)
+def test_declared_total_rejects_unrelated_exam_header_numbers(source: str) -> None:
+    assert parse_declared_total(source) is None
 
 
 def test_plain_prose_line_is_other_with_no_marks() -> None:

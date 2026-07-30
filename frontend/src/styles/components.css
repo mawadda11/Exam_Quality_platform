@@ -244,6 +244,23 @@
   border-color: #a7f3d0;
 }
 
+.ui-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: 0 0 1.1rem;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
+}
+
+.ui-icon--sm {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex-basis: 0.95rem;
+}
+
 .ui-status-badge {
   display: inline-flex;
   align-items: center;
@@ -495,4 +512,13 @@
   .ui-progress-step:not(:last-child)::after {
     display: none;
   }
+}
+
+.methodology-link {
+  display: inline-flex;
+  min-height: var(--control-min-height);
+  align-items: center;
+  color: var(--color-brand-navy);
+  font-weight: 700;
+  text-underline-offset: 0.2em;
 }

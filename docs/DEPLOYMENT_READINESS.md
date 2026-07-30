@@ -16,19 +16,16 @@ Each item states the current, verified state of the code/config (not a guess), w
 production-ready, and what kind of decision - not what specific product - would be needed to close it.
 
 ## Authentication
-**Current state:** the only identity mechanism is the `X-Dev-User-Email` request header
-(`backend/app/api/deps.py`), self-declared by the caller with no password, token, session, or
-identity-provider verification of any kind. Any request bearing a syntactically valid email in that
-header is auto-provisioned as that user (`get_or_create_faculty_user`) and gains that user's full
-access to their own analyses.
+**Current state:** Version 2 Batch 1 replaces the arbitrary `X-Dev-User-Email` header with public
+Faculty Member registration, Argon2id password hashing, signed bearer access tokens, protected
+routes, token-version revocation, and single-use password-reset tokens. Ownership remains rooted at
+`analyses.user_id`, with owner-safe `404` responses for cross-user access attempts. Staging and
+production require a strong secret and SMTP configuration at startup.
 
-**Why deferred:** no document in this repository specifies a real identity provider (institutional
-SSO/OIDC, a local password store, etc.), a session/token strategy, or a login UI. Building any of
-those now would mean inventing the institution's actual identity-integration requirements.
-
-**What would close it:** a decision on how KAU faculty actually authenticate (existing institutional
-SSO vs. a standalone credential store), which is an institutional/product decision, not an
-engineering default this codebase can safely assume.
+**Still required before a broad public launch:** external penetration testing, deployment-level rate
+limiting for registration/login/reset endpoints, abuse monitoring, and a decision on whether the
+pilot will later move to institutional SSO/OIDC. These are deployment controls, not reasons to
+restore the Version 1 development identity.
 
 ## TLS / transport security
 **Current state:** `docs/SECURITY_AND_PRIVACY.md` states "Use TLS in deployed environments," but no

@@ -14,11 +14,11 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from tp153_pdf_fixtures import build_complete_tp153_pdf, build_missing_clo_section_tp153_pdf
 
-from app.core.domain import UploadedFileType
+from app.core.domain import ProcessingStage, UploadedFileType
 from app.models.evidence import Evidence
 from app.services.extraction.digital_tp153_extractor import PdfPlumberTp153Extractor
 from app.services.extraction.types import ExtractionError, Tp153ExtractionResult
-from app.services.processing.runner import SAFE_FAILURE_MESSAGE
+from app.services.processing.runner import SAFE_FAILURE_MESSAGES
 
 ANALYSIS_PAYLOAD = {
     "course": {"code": "CPIT-450", "name": "Software Engineering"},
@@ -166,7 +166,7 @@ def test_pipeline_tp153_extraction_failure_yields_failed_state_with_safe_message
 
     progress = _poll_until_terminal(client, analysis_id, headers)
     assert progress["state"] == "failed"
-    assert progress["message"] == SAFE_FAILURE_MESSAGE
+    assert progress["message"] == SAFE_FAILURE_MESSAGES[ProcessingStage.EXTRACTING_TP153]
     assert "pdfminer" not in progress["message"].lower()
 
     clos_response = client.get(f"/api/v1/analyses/{analysis_id}/clos", headers=headers)

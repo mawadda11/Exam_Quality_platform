@@ -10,14 +10,14 @@ const FINDING: FindingResponse = {
   rule_id: 'RULE001',
   recommendation_id: null,
   status: 'Satisfied',
-  explanation: 'Questions were mapped to controlled CLO evidence.',
+  explanation: 'Questions were mapped to Course Specification evidence.',
   confidence: 1,
   confidence_level: 'High',
   evaluation_details: {
     schema_version: 1,
     decision: 'Satisfied',
     evidence_used: ['question-evidence', 'clo-evidence'],
-    reasoning: 'The confirmed question evidence is related to the confirmed CLO.',
+    reasoning: 'The question is related to the CLO.',
     recommendation: null,
     confidence_basis: ['All required question items were judged.'],
     item_judgments: [
@@ -25,33 +25,18 @@ const FINDING: FindingResponse = {
         source_evidence_id: 'question-evidence',
         target_evidence_ids: ['clo-evidence'],
         status: 'Satisfied',
-        reasoning: 'The question directly addresses the controlled CLO concept.',
+        reasoning: 'The question addresses the CLO concept.',
       },
     ],
     retrieved_knowledge_ids: ['REQ001', 'RULE001'],
   },
   evaluator_type: 'semantic_ai',
-  ai_provider: 'fake',
-  ai_model: 'fake-semantic-v1',
-  prompt_template_version: 'semantic-rule-v1',
-  kb_version: '1.0',
+  ai_provider: 'internal-provider',
+  ai_model: 'internal-model',
+  prompt_template_version: 'internal-prompt',
+  kb_version: 'internal-kb',
   created_at: '2026-07-27T00:00:00Z',
-  evidence: [
-    {
-      id: 'question-evidence',
-      source_document: 'exam',
-      evidence_type: 'question_text',
-      page_number: 1,
-      item_reference: 'Q1',
-    },
-    {
-      id: 'clo-evidence',
-      source_document: 'tp153',
-      evidence_type: 'clo',
-      page_number: 3,
-      item_reference: 'CLO1',
-    },
-  ],
+  evidence: [],
   requirement_name: 'Question-to-CLO Mapping',
   dimension: 'CLO Alignment',
   source_type: 'Derived Exam Requirement',
@@ -59,41 +44,34 @@ const FINDING: FindingResponse = {
 }
 
 describe('SemanticEvaluationDetails', () => {
-  it('labels retained relationship judgments as AI-derived advisory output', () => {
+  it('shows only faculty-facing determination details', () => {
     render(<SemanticEvaluationDetails finding={FINDING} />)
 
-    expect(screen.getByText('AI-derived advisory relationship')).toBeInTheDocument()
-    expect(screen.getByText(/not an official TP-153 mapping/i)).toBeInTheDocument()
-    expect(screen.getByText(/Q1 · Exam page 1 · question_text/i)).toBeInTheDocument()
-    expect(screen.getByText(/CLO1 · TP-153 page 3 · clo/i)).toBeInTheDocument()
-    expect(screen.getByText(/directly addresses the controlled CLO concept/i))
-      .toBeInTheDocument()
-    expect(screen.getByText(/All required question items were judged/i))
-      .toBeInTheDocument()
-    expect(screen.getByText(/Controlled KB references/i)).toHaveTextContent('REQ001, RULE001')
+    expect(screen.getByText('Semantic content analysis')).toBeInTheDocument()
+    expect(screen.getByText('Evidence reliability')).toBeInTheDocument()
+    expect(screen.getByText('Suggested relationship')).toBeInTheDocument()
+    expect(screen.getByText(/analytical suggestion for review/i)).toBeInTheDocument()
+    expect(screen.queryByText(/internal-provider|internal-model|internal-prompt|internal-kb/))
+      .not.toBeInTheDocument()
+    expect(screen.queryByText(/REQ001|RULE001/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/audit references/i)).not.toBeInTheDocument()
   })
 
-  it('does not relabel a target-free judgment as a mapping', () => {
-    const finding: FindingResponse = {
-      ...FINDING,
-      rule_id: 'RULE011',
-      evaluation_details: {
-        ...FINDING.evaluation_details!,
-        item_judgments: [
-          {
-            source_evidence_id: 'question-evidence',
-            target_evidence_ids: [],
-            status: 'Satisfied',
-            reasoning: 'The wording is concise.',
-          },
-        ],
-      },
-    }
+  it('labels deterministic evaluation in plain language', () => {
+    render(
+      <SemanticEvaluationDetails
+        finding={{
+          ...FINDING,
+          rule_id: 'RULE018',
+          dimension: 'Marks and Totals',
+          evaluator_type: 'deterministic_rule',
+          evaluation_details: null,
+          confidence_level: null,
+        }}
+      />,
+    )
 
-    render(<SemanticEvaluationDetails finding={finding} />)
-
-    expect(screen.getByText('Governed semantic item judgment')).toBeInTheDocument()
-    expect(screen.queryByText('AI-derived advisory relationship')).not.toBeInTheDocument()
-    expect(screen.getByText(/No target relationship was asserted/i)).toBeInTheDocument()
+    expect(screen.getByText('Rule-based automated check')).toBeInTheDocument()
+    expect(screen.queryByText('Suggested relationship')).not.toBeInTheDocument()
   })
 })

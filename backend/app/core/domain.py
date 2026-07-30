@@ -19,6 +19,45 @@ class ReportFormat(StrEnum):
     PDF = "pdf"
 
 
+class LanguageCode(StrEnum):
+    ARABIC = "ar"
+    ENGLISH = "en"
+
+
+class ReportLanguage(StrEnum):
+    ARABIC = "ar"
+    ENGLISH = "en"
+
+
+class SupportingMaterialType(StrEnum):
+    FIGURE = "figure"
+    TABLE = "table"
+    CODE_BLOCK = "code_block"
+
+
+class SupportingAnnotationType(StrEnum):
+    CAPTION = "caption"
+    LABEL = "label"
+
+
+class ReferenceTargetType(StrEnum):
+    FIGURE = "figure"
+    TABLE = "table"
+    CODE_BLOCK = "code_block"
+    QUESTION = "question"
+
+
+class ReferenceResolutionStatus(StrEnum):
+    RESOLVED = "resolved"
+    AMBIGUOUS = "ambiguous"
+    UNRESOLVED = "unresolved"
+
+
+class AssociationBasis(StrEnum):
+    EXACT_LABEL = "exact_label"
+    PROXIMITY_SUPPORT = "proximity_support"
+
+
 class AcademicStatus(StrEnum):
     SATISFIED = "Satisfied"
     PARTIALLY_SATISFIED = "Partially Satisfied"

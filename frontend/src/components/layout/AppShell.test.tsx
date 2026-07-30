@@ -20,8 +20,21 @@ describe('AppShell', () => {
       'page',
     )
     expect(screen.getByRole('link', { name: 'Analyses' })).not.toHaveAttribute('aria-current')
+    expect(screen.getByRole('link', { name: 'Reports' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'New Analysis' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'What We Evaluate' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Methodology & Help' })).toBeInTheDocument()
+    for (const label of ['Dashboard', 'Analyses', 'Reports', 'Methodology & Help']) {
+      const link = screen.getByRole('link', { name: label })
+      expect(link.querySelector('.sidebar-navigation-icon')).toHaveAttribute(
+        'aria-hidden',
+        'true',
+      )
+    }
+    expect(
+      screen
+        .getByRole('link', { name: 'New Analysis' })
+        .querySelector('.sidebar-navigation-icon'),
+    ).toHaveAttribute('aria-hidden', 'true')
     expect(screen.getByRole('heading', { name: 'Dashboard content' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Skip to main content' })).toHaveAttribute(
       'href',
@@ -30,7 +43,7 @@ describe('AppShell', () => {
     expect(screen.getByRole('main')).toHaveAttribute('tabindex', '-1')
   })
 
-  it('keeps the temporary development identity explicit without auth controls', () => {
+  it('does not expose the removed development identity control', () => {
     render(
       <MemoryRouter initialEntries={['/dashboard']}>
         <Routes>
@@ -41,9 +54,7 @@ describe('AppShell', () => {
       </MemoryRouter>,
     )
 
-    expect(screen.getByText(/development identity \(temporary, not real sign-in\)/i))
-      .toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /sign out/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: /profile/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/development identity/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/development identity/i)).not.toBeInTheDocument()
   })
 })

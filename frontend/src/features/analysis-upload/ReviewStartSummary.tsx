@@ -1,4 +1,5 @@
 import { Alert } from '../../components/ui/Alert'
+import { useI18n } from '../../i18n/I18nProvider'
 import type { AnalysisResponse, UploadedFileResponse, UploadedFileType } from '../../types/api'
 
 interface ReviewStartSummaryProps {
@@ -24,6 +25,7 @@ function FileSummary({
   label: string
   file: UploadedFileResponse | undefined
 }) {
+  const { t } = useI18n()
   return (
     <div className="review-file">
       <dt>{label}</dt>
@@ -34,7 +36,7 @@ function FileSummary({
             <span>{formatFileSize(file.size_bytes)}</span>
           </>
         ) : (
-          'Not uploaded'
+          t('Not uploaded')
         )}
       </dd>
     </div>
@@ -42,35 +44,36 @@ function FileSummary({
 }
 
 export function ReviewStartSummary({ analysis }: ReviewStartSummaryProps) {
+  const { t } = useI18n()
   const exam = findFile(analysis, 'exam')
   const tp153 = findFile(analysis, 'tp153')
 
   return (
     <div className="review-start-summary">
       <div>
-        <h2>Review and Start</h2>
-        <p>Confirm the persisted details and uploaded documents before starting the analysis.</p>
+        <h2>{t('Review and Start')}</h2>
+        <p>{t('Confirm the persisted details and uploaded documents before starting the analysis.')}</p>
       </div>
 
       <dl className="review-metadata">
         <div>
-          <dt>Course code</dt>
+          <dt>{t('Course code')}</dt>
           <dd>
             <bdi>{analysis.course.code}</bdi>
           </dd>
         </div>
         <div>
-          <dt>Course name</dt>
+          <dt>{t('Course name')}</dt>
           <dd>
             <bdi dir="auto">{analysis.course.name}</bdi>
           </dd>
         </div>
         <div>
-          <dt>Exam type</dt>
-          <dd>{analysis.exam_type}</dd>
+          <dt>{t('Exam type')}</dt>
+          <dd>{t(analysis.exam_type)}</dd>
         </div>
         <div>
-          <dt>Term</dt>
+          <dt>{t('Term')}</dt>
           <dd>
             <bdi dir="auto">{analysis.term}</bdi>
           </dd>
@@ -78,13 +81,12 @@ export function ReviewStartSummary({ analysis }: ReviewStartSummaryProps) {
       </dl>
 
       <dl className="review-files">
-        <FileSummary label="Examination PDF" file={exam} />
-        <FileSummary label="Populated TP-153" file={tp153} />
+        <FileSummary label={t('Examination PDF')} file={exam} />
+        <FileSummary label={t('Course Specification file')} file={tp153} />
       </dl>
 
-      <Alert variant="info" title="Scope reminder">
-        The analysis applies only to this uploaded examination and its corresponding populated
-        TP-153. Starting the analysis does not issue an accreditation or institutional decision.
+      <Alert variant="info" title={t('Scope reminder')}>
+        {t('The analysis applies only to this uploaded examination and its corresponding Course Specification. Starting the analysis does not issue an accreditation or institutional decision.')}
       </Alert>
     </div>
   )

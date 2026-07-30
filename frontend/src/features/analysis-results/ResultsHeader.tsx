@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { ScoreRing } from '../../components/ui/ScoreRing'
+import { useI18n } from '../../i18n/I18nProvider'
 import type { AnalysisResponse, AnalysisScoreResponse, UploadedFileType } from '../../types/api'
 import type { ResultResource } from './useAnalysisResultsData'
 
@@ -9,14 +10,6 @@ interface ResultsHeaderProps {
   analysis: AnalysisResponse
   score: ResultResource<AnalysisScoreResponse>
   onRetryScore: () => void
-}
-
-function formatDate(timestamp: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  }).format(new Date(timestamp))
 }
 
 function filename(analysis: AnalysisResponse, fileType: UploadedFileType): string | null {
@@ -27,6 +20,7 @@ function filename(analysis: AnalysisResponse, fileType: UploadedFileType): strin
 }
 
 export function ResultsHeader({ analysis, score, onRetryScore }: ResultsHeaderProps) {
+  const { t, formatDateTime } = useI18n()
   const examFilename = filename(analysis, 'exam')
   const tp153Filename = filename(analysis, 'tp153')
 
@@ -35,15 +29,15 @@ export function ResultsHeader({ analysis, score, onRetryScore }: ResultsHeaderPr
       <div className="results-header-main">
         <div className="results-header-copy">
           <Link className="results-back-link" to="/analyses">
-            ← Back to Analyses
+            ← {t('Return to Analyses')}
           </Link>
           <div className="results-header-identifiers">
             <span className="results-course-code">
               <bdi>{analysis.course.code}</bdi>
             </span>
-            <span>{analysis.exam_type}</span>
+            <span>{t(analysis.exam_type)}</span>
             <span>
-              Analysis <bdi>{analysis.id}</bdi>
+              {t('Analysis')} <bdi>{analysis.id}</bdi>
             </span>
           </div>
           <h1>
@@ -51,54 +45,43 @@ export function ResultsHeader({ analysis, score, onRetryScore }: ResultsHeaderPr
           </h1>
           <dl className="results-header-metadata">
             <div>
-              <dt>Term</dt>
+              <dt>{t('Term')}</dt>
               <dd>
                 <bdi dir="auto">{analysis.term}</bdi>
               </dd>
             </div>
             <div>
-              <dt>Last updated</dt>
+              <dt>{t('Last updated')}</dt>
               <dd>
-                <time dateTime={analysis.updated_at}>{formatDate(analysis.updated_at)}</time>
+                <time dateTime={analysis.updated_at}>{formatDateTime(analysis.updated_at)}</time>
               </dd>
             </div>
             <div>
-              <dt>Exam file</dt>
+              <dt>{t('Exam file')}</dt>
               <dd>
-                {examFilename ? <bdi dir="auto">{examFilename}</bdi> : 'Not available'}
+                {examFilename ? <bdi dir="auto">{examFilename}</bdi> : t('Not available')}
               </dd>
             </div>
             <div>
-              <dt>TP-153 file</dt>
+              <dt>{t('Course Specification file')}</dt>
               <dd>
-                {tp153Filename ? <bdi dir="auto">{tp153Filename}</bdi> : 'Not available'}
+                {tp153Filename ? <bdi dir="auto">{tp153Filename}</bdi> : t('Not available')}
               </dd>
             </div>
           </dl>
-          {analysis.predecessor_analysis_id && (
-            <p className="results-reanalysis-context">
-              Linked reanalysis of{' '}
-              <Link
-                to={`/analyses/${analysis.predecessor_analysis_id}/results/overview`}
-              >
-                analysis <bdi>{analysis.predecessor_analysis_id}</bdi>
-              </Link>
-              .
-            </p>
-          )}
         </div>
 
         <div className="results-header-score">
           {score.status === 'loading' && (
             <div className="results-score-state" role="status" aria-busy="true">
-              Loading score…
+              {t('Loading score…')}
             </div>
           )}
           {score.status === 'error' && (
             <div className="results-score-state" role="alert">
               <p>{score.message}</p>
               <Button variant="secondary" onClick={onRetryScore}>
-                Retry score
+                {t('Retry score')}
               </Button>
             </div>
           )}
@@ -106,7 +89,7 @@ export function ResultsHeader({ analysis, score, onRetryScore }: ResultsHeaderPr
             <ScoreRing
               score={score.data.score}
               denominator={score.data.denominator}
-              emptyLabel={score.data.label ?? 'Insufficient Evidence'}
+              emptyLabel={score.data.label ?? t('Insufficient Evidence')}
             />
           )}
         </div>

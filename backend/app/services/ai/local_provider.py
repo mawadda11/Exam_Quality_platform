@@ -13,8 +13,9 @@ import re
 from typing import Any, cast
 
 from app.services.ai.provider import AiProviderError
+from app.services.extraction.text_normalization import normalize_arabic_for_matching
 
-_TOKEN = re.compile(r"[a-z0-9]+", re.IGNORECASE)
+_TOKEN = re.compile(r"[a-z0-9\u0600-\u06ff]+", re.IGNORECASE)
 _ACTION_VERBS = {
     "analyze",
     "calculate",
@@ -39,8 +40,30 @@ _ACTION_VERBS = {
     "state",
     "trace",
     "write",
+    # Arabic command/action forms used in computing assessments. Diacritics
+    # and a leading conjunction are normalized before lookup.
+    "اشرح",
+    "عرف",
+    "حدد",
+    "حول",
+    "اكتب",
+    "احسب",
+    "حل",
+    "حلل",
+    "قارن",
+    "ناقش",
+    "طبق",
+    "صمم",
+    "استخرج",
+    "اذكر",
+    "بين",
+    "وضح",
+    "برهن",
+    "اختر",
+    "قيم",
+    "فسر",
 }
-_WEAK_ACTIONS = {"comment", "mention", "talk"}
+_WEAK_ACTIONS = {"comment", "mention", "talk", "علق", "اذكر باختصار"}
 _STOPWORDS = {
     "a",
     "an",
@@ -68,6 +91,28 @@ _STOPWORDS = {
     "mark",
     "student",
     "students",
+    "في",
+    "من",
+    "على",
+    "الى",
+    "إلى",
+    "عن",
+    "ما",
+    "يلي",
+    "جميع",
+    "هذا",
+    "هذه",
+    "ذلك",
+    "تلك",
+    "مع",
+    "او",
+    "أو",
+    "ثم",
+    "كل",
+    "السؤال",
+    "سؤال",
+    "درجات",
+    "درجة",
 }
 _AMBIGUOUS_MARKERS = {
     "and/or",
@@ -78,6 +123,10 @@ _AMBIGUOUS_MARKERS = {
     "things",
     "various",
     "whatever",
+    "مناسب",
+    "بعض",
+    "أشياء",
+    "اشياء",
 }
 _REFERENCE_MARKERS = {
     "above",
@@ -89,10 +138,46 @@ _REFERENCE_MARKERS = {
     "table",
     "diagram",
     "code shown",
+    "المعطى",
+    "الموضح",
+    "التالي",
+    "المرفق",
+    "الشكل",
+    "الجدول",
+    "الرسم",
+    "الكود",
 }
 
 
+def _is_arabic_token(token: str) -> bool:
+    return any("\u0600" <= char <= "\u06ff" for char in token)
+
+
+def _normalize_arabic_token(token: str) -> str:
+    normalized = normalize_arabic_for_matching(token).casefold()
+    # Remove a common attached conjunction before the definite article or an
+    # imperative verb (e.g. واشرح -> اشرح, والبيانات -> البيانات).
+    if normalized.startswith(("وال", "فال")) and len(normalized) > 5:
+        normalized = normalized[1:]
+    elif normalized.startswith(("و", "ف")) and (
+        normalized[1:] in _ACTION_VERBS
+        or (normalized.startswith("و") and normalized[1:].startswith(("ا", "إ", "آ")))
+    ):
+        normalized = normalized[1:]
+    if normalized.startswith("ال") and len(normalized) > 4:
+        normalized = normalized[2:]
+    # Conservative regular plural handling helps exact concept matching such
+    # as استعلام / استعلامات without pretending to be a full Arabic stemmer.
+    if normalized.endswith("ات") and len(normalized) > 5:
+        normalized = normalized[:-2]
+    if normalized == "قواعد":
+        return "قاعدة"
+    return normalized
+
+
 def _stem(token: str) -> str:
+    if _is_arabic_token(token):
+        return _normalize_arabic_token(token)
     token = token.casefold()
     for suffix in ("ations", "ation", "ments", "ment", "ing", "ed", "es", "s"):
         if token.endswith(suffix) and len(token) > len(suffix) + 3:
@@ -101,11 +186,20 @@ def _stem(token: str) -> str:
 
 
 def _tokens(text: str) -> set[str]:
-    return {
-        _stem(token)
-        for token in _TOKEN.findall(text.casefold())
-        if token.casefold() not in _STOPWORDS and len(token) > 1
+    normalized_text = normalize_arabic_for_matching(text).casefold()
+    normalized_stopwords = {_stem(word) for word in _STOPWORDS}
+    tokens = {
+        normalized
+        for token in _TOKEN.findall(normalized_text)
+        if len(token) > 1
+        for normalized in (_stem(token),)
+        if normalized and normalized not in normalized_stopwords
     }
+    # In database courses, the standard 2NF/3NF labels and the Arabic phrase
+    # "الصورة الطبيعية" are explicit, auditable names for normalization.
+    if "2nf" in tokens or "3nf" in tokens or "الصورة الطبيعية" in normalized_text:
+        tokens.add("تطبيع")
+    return tokens
 
 
 def _concept_overlap(left: str, right: str) -> int:
@@ -261,19 +355,30 @@ def _item_for_rule(
         }
 
     if rule_id == "RULE003":
-        exam_text = source_text.casefold()
-        combined = " ".join(str(item.get("text", "")) for item in targets).casefold()
-        expected = "midterm" if "midterm" in exam_text else "final" if "final" in exam_text else ""
-        opposite = "final" if expected == "midterm" else "midterm"
-        if expected and expected in combined:
+        exam_text = normalize_arabic_for_matching(source_text).casefold()
+        combined = normalize_arabic_for_matching(
+            " ".join(str(item.get("text", "")) for item in targets)
+        ).casefold()
+        midterm_markers = ("midterm", "نصفي", "منتصف")
+        final_markers = ("final", "نهائي")
+        expected = (
+            "midterm"
+            if any(marker in exam_text for marker in midterm_markers)
+            else "final"
+            if any(marker in exam_text for marker in final_markers)
+            else ""
+        )
+        expected_markers = midterm_markers if expected == "midterm" else final_markers
+        opposite_markers = final_markers if expected == "midterm" else midterm_markers
+        if expected and any(marker in combined for marker in expected_markers):
             status = "Satisfied"
             reasoning = f"The documented assessment evidence explicitly includes the {expected}."
-        elif "exam" in combined or "written" in combined:
+        elif any(marker in combined for marker in ("exam", "written", "اختبار", "تحريري")):
             status = "Partially Satisfied"
             reasoning = (
                 "A general exam method is documented, but the exact exam type is incomplete."
             )
-        elif expected and opposite in combined:
+        elif expected and any(marker in combined for marker in opposite_markers):
             status = "Not Satisfied"
             reasoning = "The documented assessment evidence identifies the other exam type."
         else:
@@ -305,7 +410,7 @@ def _item_for_rule(
         }
 
     if rule_id == "RULE012":
-        lowered = source_text.casefold()
+        lowered = normalize_arabic_for_matching(source_text).casefold()
         markers = sorted(marker for marker in _AMBIGUOUS_MARKERS if marker in lowered)
         if not source_text.strip():
             status = "Not Verified"
@@ -327,7 +432,7 @@ def _item_for_rule(
         }
 
     if rule_id == "RULE013":
-        lowered = source_text.casefold()
+        lowered = normalize_arabic_for_matching(source_text).casefold()
         references = sorted(marker for marker in _REFERENCE_MARKERS if marker in lowered)
         instruction_ids = [
             str(item["id"]) for item in context if item.get("evidence_type") == "instructions"
@@ -354,7 +459,7 @@ def _item_for_rule(
         instruction_ids = [
             str(item["id"]) for item in context if item.get("evidence_type") == "instructions"
         ]
-        lowered = source_text.casefold()
+        lowered = normalize_arabic_for_matching(source_text).casefold()
         unresolved = any(marker in lowered for marker in _REFERENCE_MARKERS)
         if instruction_ids:
             status = "Satisfied"

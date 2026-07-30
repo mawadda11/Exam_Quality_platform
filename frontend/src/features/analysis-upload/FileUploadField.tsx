@@ -1,15 +1,25 @@
-import { useId, useState, type ChangeEvent } from 'react'
+import {
+  useId,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ReactNode,
+} from 'react'
 import { uploadAnalysisFile } from '../../api/analyses'
-import { ApiError } from '../../api/client'
 import { Button } from '../../components/ui/Button'
 import type { UploadedFileResponse, UploadedFileType } from '../../types/api'
 import { isPdfFile } from './validation'
+import { useI18n } from '../../i18n/I18nProvider'
+import { localizeInterfaceError } from '../../i18n/localizeError'
 
 interface FileUploadFieldProps {
   analysisId: string
   fileType: UploadedFileType
+  heading?: string
   label: string
   description: string
+  contextLabel: string
+  contextValue: ReactNode
   uploaded: UploadedFileResponse | undefined
   onUploaded: () => Promise<void>
 }
@@ -17,12 +27,17 @@ interface FileUploadFieldProps {
 export function FileUploadField({
   analysisId,
   fileType,
+  heading,
   label,
   description,
+  contextLabel,
+  contextValue,
   uploaded,
   onUploaded,
 }: FileUploadFieldProps) {
+  const { locale, t } = useI18n()
   const inputId = useId()
+  const inputRef = useRef<HTMLInputElement>(null)
   const descriptionId = `${inputId}-description`
   const statusId = `${inputId}-status`
   const errorId = `${inputId}-error`
@@ -42,7 +57,7 @@ export function FileUploadField({
     setRefreshError(null)
     if (!isPdfFile(file)) {
       setSelectedFile(null)
-      setUploadError(`"${file.name}" must be a .pdf file.`)
+      setUploadError(`${file.name}: ${t('The selected file must be a PDF.')}`)
       return
     }
 
@@ -56,11 +71,12 @@ export function FileUploadField({
     try {
       await onUploaded()
     } catch (error) {
-      setRefreshError(
-        error instanceof ApiError
-          ? error.detail
-          : 'The upload was accepted, but the analysis status could not be refreshed.',
-      )
+      setRefreshError(localizeInterfaceError(
+        error,
+        locale,
+        t,
+        'The upload was accepted, but the analysis status could not be refreshed.',
+      ))
     } finally {
       setIsRefreshing(false)
     }
@@ -77,9 +93,7 @@ export function FileUploadField({
       setAcceptedUpload(response)
       await refreshAuthoritativeState()
     } catch (error) {
-      setUploadError(
-        error instanceof ApiError ? error.detail : 'Upload failed. Please try again.',
-      )
+      setUploadError(localizeInterfaceError(error, locale, t, 'Upload failed. Please try again.'))
     } finally {
       setIsUploading(false)
     }
@@ -104,47 +118,65 @@ export function FileUploadField({
     <section className="file-upload-card" data-upload-state={state}>
       <div className="file-upload-heading">
         <div>
-          <h3 id={`${inputId}-label`}>{label}</h3>
+          <h3 id={`${inputId}-label`}>{heading ?? label}</h3>
+          {heading && <p className="file-upload-field-label">{label}</p>}
           <p id={descriptionId}>{description}</p>
         </div>
-        <span className="file-upload-state">{state}</span>
+        <span className="file-upload-state">
+          {t(state === 'missing' ? 'Missing' : state)}
+        </span>
       </div>
+      <dl className="file-upload-context">
+        <div>
+          <dt>{contextLabel}</dt>
+          <dd>{contextValue}</dd>
+        </div>
+      </dl>
 
       <label className="visually-hidden" htmlFor={inputId}>
-        Select {label}
+        {t('Select')} {label}
       </label>
       <input
+        ref={inputRef}
         id={inputId}
-        className="file-upload-input"
+        className="file-upload-input visually-hidden"
         type="file"
         accept="application/pdf,.pdf"
         disabled={isUploading || isRefreshing || Boolean(displayedUpload)}
         onChange={handleChange}
         aria-describedby={describedBy}
       />
+      {!displayedUpload && !isUploading && !isRefreshing && (
+        <Button
+          variant="secondary"
+          onClick={() => inputRef.current?.click()}
+        >
+          {t(selectedFile ? 'Choose another PDF' : 'Choose PDF file')}
+        </Button>
+      )}
 
       <div id={statusId} className="file-upload-status" aria-live="polite">
-        {!displayedUpload && !selectedFile && !uploadError && 'No PDF selected.'}
+        {!displayedUpload && !selectedFile && !uploadError && t('No PDF selected.')}
         {selectedFile && !isUploading && !displayedUpload && (
           <>
-            Selected: <bdi dir="auto">{selectedFile.name}</bdi>
+            {t('Selected')}: <bdi dir="auto">{selectedFile.name}</bdi>
           </>
         )}
         {isUploading && (
           <>
-            Uploading <bdi dir="auto">{selectedFile?.name}</bdi>…
+            {t('Uploading…')} <bdi dir="auto">{selectedFile?.name}</bdi>…
           </>
         )}
         {displayedUpload && (
           <span className="file-upload-status--success">
-            Uploaded: <bdi dir="auto">{displayedUpload.original_filename}</bdi>
+            {t('Uploaded')}: <bdi dir="auto">{displayedUpload.original_filename}</bdi>
           </span>
         )}
       </div>
 
       {isAwaitingRefresh && (
         <p className="file-upload-status">
-          The upload response was received. The refreshed analysis has not yet confirmed readiness.
+          {t('The upload response was received. The refreshed analysis has not yet confirmed readiness.')}
         </p>
       )}
       {!uploaded && uploadError && (
@@ -163,9 +195,9 @@ export function FileUploadField({
           <Button
             onClick={() => void handleUpload()}
             isLoading={isUploading}
-            loadingLabel="Uploading…"
+            loadingLabel={t('Uploading…')}
           >
-            {uploadError ? 'Retry upload' : 'Upload PDF'}
+            {uploadError ? t('Retry upload') : t('Upload PDF')}
           </Button>
         )}
         {isAwaitingRefresh && (
@@ -173,9 +205,9 @@ export function FileUploadField({
             variant="secondary"
             onClick={() => void refreshAuthoritativeState()}
             isLoading={isRefreshing}
-            loadingLabel="Refreshing…"
+            loadingLabel={t('Refreshing…')}
           >
-            Retry status refresh
+            {t('Retry status refresh')}
           </Button>
         )}
       </div>

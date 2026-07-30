@@ -12,6 +12,20 @@ without changing the public API contract.
 ## Health
 - `GET /health`
 
+
+## Authentication
+- `POST /auth/register` create a Faculty Member account and return a bearer session.
+- `POST /auth/login` authenticate email/password and return a bearer session.
+- `GET /auth/me` return the verified current Faculty Member.
+- `POST /auth/logout` revoke all currently issued access tokens for the account.
+- `POST /auth/password-reset/request` return a generic anti-enumeration response and create a
+  single-use reset token for an eligible account.
+- `POST /auth/password-reset/confirm` consume the reset token, replace the password hash, and revoke
+  earlier access tokens.
+
+All analysis and report endpoints require `Authorization: Bearer <token>`. Development identity
+headers are no longer accepted.
+
 ## Analyses
 - `POST /analyses` create metadata.
 - `POST /analyses/{id}/files` upload exam and TP-153.
@@ -43,8 +57,8 @@ without changing the public API contract.
 - `GET /analyses/{id}/recommendations` controlled KB recommendations resolved from a semantic
   finding's validated stored recommendation ID, or from the legacy deterministic
   `(rule_id, status)` mapping.
-- `POST /analyses/{id}/reanalysis` create a linked revised analysis without overwriting prior results.
-- `GET /analyses` owned analysis history.
+- `GET /analyses` owned analysis history. Evaluating a revised exam uses `POST /analyses` (New
+  Analysis); there is no dedicated reanalysis endpoint.
 
 ## Reports
 - `POST /analyses/{id}/reports` generate an immutable user-facing PDF snapshot containing the score and denominator context, all five status counts, finding evidence, categorical semantic confidence, governed reasoning, item judgments, source-versus-derived mapping labels, controlled KB references, provenance, and recommendations. Course-wide assessment percentages and platform implementation diagnostics remain internal and are not rendered in the report.
@@ -111,3 +125,17 @@ Finding is `not_run`, which is a system coverage gap rather than academic Not Ve
 
 Explicit source mappings remain source evidence. AI-derived relationships are labeled derived,
 reference confirmed IDs, and never overwrite a source mapping or source record.
+
+## Version 2 Batch 3 bilingual and recovery additions
+
+- `PATCH /auth/preferences` updates the authenticated Faculty Member's `preferred_language` using
+  the controlled `ar` / `en` language codes.
+- `GET /analyses/{id}/progress` additionally returns nullable `failed_stage`, nullable safe
+  `error_code`, and `can_retry`.
+- `POST /analyses/{id}/retry` atomically resumes an owner-scoped failed analysis from its last
+  durable failed-stage boundary. Existing uploads and the exact confirmed review revision are reused;
+  file re-upload is not required. A non-failed analysis, missing source files, unsafe boundary, or
+  concurrent retry returns `409`.
+- `POST /analyses/{id}/reports` accepts an optional `{ "language": "ar" | "en" }` body. Generated
+  report metadata includes the selected language. Static report presentation is localized while
+  governed source evidence and official knowledge-base wording remain source-faithful.

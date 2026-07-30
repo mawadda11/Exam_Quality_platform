@@ -10,6 +10,7 @@ not define a concentration threshold.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -22,12 +23,14 @@ from app.models.analysis import Analysis
 from app.models.clo import Clo
 from app.models.evidence import Evidence
 from app.models.question import Question
+from app.models.uploaded_file import UploadedFile
+from app.schemas.extraction_review import ExtractionReviewSnapshot
 from app.services.extraction.digital_pdf_extractor import PdfPlumberExamExtractor
 from app.services.extraction.digital_tp153_extractor import PdfPlumberTp153Extractor
 from app.services.extraction.persistence import persist_extraction_result
 from app.services.extraction.review_snapshot import materialize_initial_review_revision
 from app.services.extraction.tp153_persistence import persist_tp153_extraction_result
-from app.services.extraction.types import ExtractionError
+from app.services.extraction.types import ExtractionError, PageExtractionDiagnostic
 from app.services.knowledge_base.runtime import get_semantic_runtime
 from app.services.rules.clo_topic_coverage import (
     evaluate_applicable_clo_coverage_from_relationships,
@@ -49,6 +52,9 @@ from app.services.rules.identifiers import (
     QUESTION_FORMAT_SUITABILITY,
     QUESTION_TO_CLO_MAPPING,
     QUESTION_TO_TOPIC_ALIGNMENT,
+    REFERENCED_MATERIAL_AVAILABILITY,
+    RESOLVABLE_CROSS_REFERENCES,
+    SUPPORTING_MATERIAL_ASSOCIATION,
     UNAMBIGUOUS_WORDING,
     RuleIdentifier,
 )
@@ -59,6 +65,12 @@ from app.services.rules.semantic_evaluators import (
     evaluate_semantic_judgment_rules,
     evaluate_semantic_relationship_rules,
 )
+from app.services.rules.structured_evidence import (
+    evaluate_referenced_material_availability,
+    evaluate_resolvable_cross_references,
+    evaluate_supporting_material_association,
+)
+from app.services.rules.versioning import batch4_structured_rules_enabled
 from app.services.storage.keys import resolve_storage_path
 
 # The RuleIdentifiers run_applying_rules actually evaluates at runtime.
@@ -81,7 +93,39 @@ RUNTIME_RULE_IDENTIFIERS: tuple[RuleIdentifier, ...] = (
     UNAMBIGUOUS_WORDING,
     COMPLETE_QUESTION_INFORMATION,
     COMPLETE_INSTRUCTIONS,
+    REFERENCED_MATERIAL_AVAILABILITY,
+    SUPPORTING_MATERIAL_ASSOCIATION,
+    RESOLVABLE_CROSS_REFERENCES,
 )
+
+
+def _record_extraction_metadata(
+    uploaded_file: UploadedFile,
+    *,
+    document_language: str,
+    diagnostics: list[PageExtractionDiagnostic],
+    parser_layout: str | None = None,
+) -> None:
+    methods = {item.extraction_method for item in diagnostics}
+    if len(methods) == 1:
+        extraction_method = next(iter(methods))
+    elif methods:
+        extraction_method = "mixed"
+    else:
+        extraction_method = None
+
+    average_confidence = (
+        sum(item.text_quality_confidence for item in diagnostics) / len(diagnostics)
+        if diagnostics
+        else None
+    )
+    uploaded_file.detected_language = document_language
+    uploaded_file.extraction_method = extraction_method
+    uploaded_file.extraction_confidence = (
+        round(average_confidence, 4) if average_confidence is not None else None
+    )
+    uploaded_file.review_recommended = any(item.review_recommended for item in diagnostics)
+    uploaded_file.parser_layout = parser_layout
 
 
 class ReviewConfirmationRequiredError(RuntimeError):
@@ -117,6 +161,11 @@ def run_extracting_exam(analysis: Analysis, session: Session, settings: Settings
     pdf_path = resolve_storage_path(settings.upload_root, exam_file.storage_key)
     result = PdfPlumberExamExtractor().extract(pdf_path)
     persist_extraction_result(session, analysis.id, result)
+    _record_extraction_metadata(
+        exam_file,
+        document_language=result.document_language.value,
+        diagnostics=result.page_diagnostics,
+    )
 
 
 def run_extracting_tp153(analysis: Analysis, session: Session, settings: Settings) -> None:
@@ -130,6 +179,12 @@ def run_extracting_tp153(analysis: Analysis, session: Session, settings: Setting
     pdf_path = resolve_storage_path(settings.upload_root, tp153_file.storage_key)
     result = PdfPlumberTp153Extractor().extract(pdf_path)
     persist_tp153_extraction_result(session, analysis.id, result)
+    _record_extraction_metadata(
+        tp153_file,
+        document_language=result.document_language.value,
+        diagnostics=result.page_diagnostics,
+        parser_layout=result.layout_family,
+    )
 
 
 def run_building_evidence(analysis: Analysis, session: Session, settings: Settings) -> None:
@@ -219,6 +274,44 @@ def run_applying_rules(analysis: Analysis, session: Session, settings: Settings)
         NUMBERING,
         evaluate_numbering(questions, evidence),
     )
+    if batch4_structured_rules_enabled(analysis):
+        assert analysis.confirmed_review is not None
+        confirmed_snapshot = ExtractionReviewSnapshot.model_validate_json(
+            json.dumps(analysis.confirmed_review.snapshot)
+        )
+        confirmed_revision_id = analysis.confirmed_review_id
+        assert confirmed_revision_id is not None
+        structured_results = (
+            (
+                REFERENCED_MATERIAL_AVAILABILITY,
+                evaluate_referenced_material_availability(
+                    session,
+                    analysis_id=analysis.id,
+                    snapshot=confirmed_snapshot,
+                    confirmed_revision_id=confirmed_revision_id,
+                ),
+            ),
+            (
+                SUPPORTING_MATERIAL_ASSOCIATION,
+                evaluate_supporting_material_association(
+                    session,
+                    analysis_id=analysis.id,
+                    snapshot=confirmed_snapshot,
+                    confirmed_revision_id=confirmed_revision_id,
+                ),
+            ),
+            (
+                RESOLVABLE_CROSS_REFERENCES,
+                evaluate_resolvable_cross_references(
+                    session,
+                    analysis_id=analysis.id,
+                    snapshot=confirmed_snapshot,
+                    confirmed_revision_id=confirmed_revision_id,
+                ),
+            ),
+        )
+        for identifier, structured_result in structured_results:
+            persist_finding(session, analysis.id, identifier, structured_result)
 
     runtime = get_semantic_runtime(settings)
     runtime.ensure_index()
@@ -259,8 +352,8 @@ def run_applying_rules(analysis: Analysis, session: Session, settings: Settings)
         kb_source_dir,
         validation_retries=settings.ai_validation_retries,
     )
-    for result in semantic_results:
-        persist_semantic_finding(session, analysis.id, result)
+    for semantic_result in semantic_results:
+        persist_semantic_finding(session, analysis.id, semantic_result)
 
 
 def run_generating_report(analysis: Analysis, session: Session, settings: Settings) -> None:

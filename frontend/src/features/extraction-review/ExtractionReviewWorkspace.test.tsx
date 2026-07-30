@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 import * as analysesApi from '../../api/analyses'
 import { ApiError } from '../../api/client'
 import type {
@@ -93,13 +94,215 @@ beforeEach(() => {
 describe('ExtractionReviewWorkspace', () => {
   it('loads the latest immutable revision and exposes source anchors and warnings', async () => {
     render(
-      <ExtractionReviewWorkspace analysisId="analysis-1" onConfirmed={vi.fn()} />,
+      <MemoryRouter>
+        <ExtractionReviewWorkspace analysisId="analysis-1" onConfirmed={vi.fn()} />
+      </MemoryRouter>,
     )
 
     expect(await screen.findByText('Revision 1')).toBeInTheDocument()
     expect(screen.getByText('Page 1 · 66% extraction confidence')).toBeInTheDocument()
     expect(screen.getByText(/low machine-extraction confidence/i)).toBeInTheDocument()
     expect(analysesApi.getExtractionReview).toHaveBeenCalledWith('analysis-1')
+    expect(screen.getByRole('link', { name: /learn how this works/i })).toHaveAttribute(
+      'href',
+      '/evaluation-scope#extraction-review',
+    )
+  })
+
+  it('shows structured source records and all association candidates for review', async () => {
+    const structuredSnapshot = structuredClone(ORIGINAL_SNAPSHOT)
+    structuredSnapshot.supporting_materials = [
+      {
+        source_record_id: '50000000-0000-0000-0000-000000000001',
+        included: true,
+        question_source_record_id: '10000000-0000-0000-0000-000000000001',
+        source_document: 'exam',
+        material_type: 'figure',
+        source_text: '',
+        page_number: 2,
+        extraction_confidence: 0.94,
+        extraction_method: 'direct_text',
+        geometry: null,
+      },
+    ]
+    structuredSnapshot.supporting_annotations = [
+      {
+        source_record_id: '60000000-0000-0000-0000-000000000001',
+        included: true,
+        material_source_record_id: '50000000-0000-0000-0000-000000000001',
+        source_document: 'exam',
+        annotation_type: 'label',
+        original_text: 'Figure 1',
+        normalized_label: 'figure:1',
+        page_number: 2,
+        extraction_confidence: 0.93,
+        extraction_method: 'direct_text',
+        geometry: null,
+      },
+      {
+        source_record_id: '60000000-0000-0000-0000-000000000002',
+        included: true,
+        material_source_record_id: '50000000-0000-0000-0000-000000000001',
+        source_document: 'exam',
+        annotation_type: 'caption',
+        original_text: 'Figure 1: Relational Database Schema',
+        normalized_label: 'figure:1',
+        page_number: 2,
+        extraction_confidence: 0.93,
+        extraction_method: 'direct_text',
+        geometry: null,
+      },
+    ]
+    structuredSnapshot.document_references = [
+      {
+        source_record_id: '70000000-0000-0000-0000-000000000001',
+        included: true,
+        question_source_record_id: '10000000-0000-0000-0000-000000000001',
+        source_document: 'exam',
+        target_type: 'figure',
+        original_text: 'Refer to Figure 1',
+        target_label: 'Figure 1',
+        normalized_target_label: 'figure:1',
+        resolution_status: 'resolved',
+        page_number: 1,
+        extraction_confidence: 0.96,
+        extraction_method: 'direct_text',
+        geometry: null,
+      },
+    ]
+    structuredSnapshot.reference_associations = [
+      {
+        source_record_id: '80000000-0000-0000-0000-000000000001',
+        reference_source_record_id: '70000000-0000-0000-0000-000000000001',
+        target_material_source_record_id: '50000000-0000-0000-0000-000000000001',
+        target_question_source_record_id: null,
+        basis: 'exact_label',
+        extraction_confidence: 0.93,
+        proximity_distance: null,
+        exact_label_match: true,
+        selected: true,
+        ambiguity_reason: null,
+      },
+    ]
+    vi.mocked(analysesApi.getExtractionReview).mockResolvedValue(
+      reviewResponse({
+        snapshot: structuredSnapshot,
+        original_snapshot: structuredClone(structuredSnapshot),
+      }),
+    )
+
+    render(
+      <ExtractionReviewWorkspace analysisId="analysis-1" onConfirmed={vi.fn()} />,
+    )
+
+    fireEvent.click(await screen.findByRole('tab', { name: /materials & references/i }))
+    expect(screen.getByLabelText('Reference label')).toHaveValue('Figure 1')
+    expect(screen.getByLabelText('Caption or title')).toHaveValue(
+      'Relational Database Schema',
+    )
+    expect(screen.getByText('Refer to Figure 1')).toBeInTheDocument()
+    expect(screen.getByLabelText('Target label')).toHaveValue('Figure 1')
+    expect(screen.queryByText(/Labels and captions/i)).not.toBeInTheDocument()
+    expect(screen.getAllByLabelText('Include in analysis')).toHaveLength(1)
+    expect(screen.getByText(/association review details/i)).toBeInTheDocument()
+    expect(screen.getByText(/uniquely linked material/i)).toBeInTheDocument()
+  })
+
+  it('edits and saves logical Arabic and English annotation text with bidi isolation', async () => {
+    const structuredSnapshot = structuredClone(ORIGINAL_SNAPSHOT)
+    structuredSnapshot.supporting_materials = [
+      {
+        source_record_id: '50000000-0000-0000-0000-000000000001',
+        included: true,
+        question_source_record_id: '10000000-0000-0000-0000-000000000001',
+        source_document: 'exam',
+        material_type: 'figure',
+        source_text: '',
+        page_number: 2,
+        extraction_confidence: 0.94,
+        extraction_method: 'direct_text',
+        geometry: null,
+      },
+    ]
+    structuredSnapshot.supporting_annotations = [
+      {
+        source_record_id: '60000000-0000-0000-0000-000000000001',
+        included: true,
+        material_source_record_id: '50000000-0000-0000-0000-000000000001',
+        source_document: 'exam',
+        annotation_type: 'label',
+        original_text: 'الشكل 1',
+        normalized_label: 'figure:1',
+        page_number: 2,
+        extraction_confidence: 0.93,
+        extraction_method: 'direct_text',
+        geometry: null,
+      },
+      {
+        source_record_id: '60000000-0000-0000-0000-000000000002',
+        included: true,
+        material_source_record_id: '50000000-0000-0000-0000-000000000001',
+        source_document: 'exam',
+        annotation_type: 'caption',
+        original_text: 'الشكل 1: Relational Database Schema',
+        normalized_label: 'figure:1',
+        page_number: 2,
+        extraction_confidence: 0.93,
+        extraction_method: 'direct_text',
+        geometry: null,
+      },
+    ]
+    vi.mocked(analysesApi.getExtractionReview).mockResolvedValue(
+      reviewResponse({
+        snapshot: structuredSnapshot,
+        original_snapshot: structuredClone(structuredSnapshot),
+      }),
+    )
+    vi.mocked(analysesApi.saveExtractionReview).mockResolvedValue(
+      reviewResponse({
+        revision_id: '40000000-0000-0000-0000-000000000002',
+        revision_number: 2,
+        snapshot: structuredSnapshot,
+      }),
+    )
+
+    render(<ExtractionReviewWorkspace analysisId="analysis-1" onConfirmed={vi.fn()} />)
+
+    fireEvent.click(await screen.findByRole('tab', { name: /materials & references/i }))
+    const label = screen.getByLabelText('Reference label')
+    const annotation = screen.getByLabelText('Caption or title')
+    expect(label).toHaveValue('الشكل 1')
+    expect(annotation).toHaveValue('Relational Database Schema')
+    expect(annotation).toHaveAttribute('dir', 'auto')
+    expect(annotation).toHaveClass('bidi-plaintext')
+    fireEvent.change(annotation, {
+      target: { value: 'Relational Database Schema — reviewed' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Restore machine value' }))
+    expect(screen.getByLabelText('Caption or title')).toHaveValue(
+      'Relational Database Schema',
+    )
+    fireEvent.change(screen.getByLabelText('Caption or title'), {
+      target: { value: 'Relational Database Schema — reviewed' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /save new revision/i }))
+
+    await waitFor(() =>
+      expect(analysesApi.saveExtractionReview).toHaveBeenCalledWith(
+        'analysis-1',
+        '40000000-0000-0000-0000-000000000001',
+        expect.objectContaining({
+          supporting_annotations: [
+            expect.objectContaining({
+              original_text: 'الشكل 1',
+            }),
+            expect.objectContaining({
+              original_text: 'Relational Database Schema — reviewed',
+            }),
+          ],
+        }),
+      ),
+    )
   })
 
   it('requires saving a new revision before confirming edited extraction text', async () => {
@@ -197,6 +400,54 @@ describe('ExtractionReviewWorkspace', () => {
         }),
       ),
     )
+  })
+
+  it('keeps a container question selected while allowing child questions to be reviewed independently', async () => {
+    const hierarchySnapshot = structuredClone(ORIGINAL_SNAPSHOT)
+    hierarchySnapshot.questions = [
+      {
+        source_record_id: '10000000-0000-0000-0000-000000000010',
+        included: true,
+        parent_source_record_id: null,
+        number_label: 'Q2',
+        question_text: 'Answer the following.',
+        page_number: 1,
+        marks: null,
+        sequence: 1,
+        extraction_confidence: 0.9,
+        geometry: null,
+      },
+      {
+        source_record_id: '10000000-0000-0000-0000-000000000011',
+        included: true,
+        parent_source_record_id: '10000000-0000-0000-0000-000000000010',
+        number_label: 'Q2(a)',
+        question_text: 'Explain normalization.',
+        page_number: 1,
+        marks: 4,
+        sequence: 2,
+        extraction_confidence: 0.9,
+        geometry: null,
+      },
+    ]
+    vi.mocked(analysesApi.getExtractionReview).mockResolvedValue(
+      reviewResponse({
+        snapshot: hierarchySnapshot,
+        original_snapshot: structuredClone(hierarchySnapshot),
+        warnings: [],
+      }),
+    )
+
+    render(<ExtractionReviewWorkspace analysisId="analysis-1" onConfirmed={vi.fn()} />)
+
+    expect(
+  (await screen.findAllByText('Parent / Container Question')).length,
+).toBeGreaterThan(0)
+    expect(screen.getByText(/not scored as an independent semantic item/i)).toBeInTheDocument()
+    expect(screen.getByText(/sub-question marks total/i)).toHaveTextContent('4')
+    const includeControls = screen.getAllByRole('checkbox', { name: 'Include in analysis' })
+    expect(includeControls[0]).toBeDisabled()
+    expect(includeControls[1]).toBeEnabled()
   })
 
   it('shows a safe API conflict and keeps the draft available for review', async () => {

@@ -1,10 +1,28 @@
 from __future__ import annotations
 
+import uuid
+
 from fpdf import FPDF
+
+from app.core.config import Settings
+from app.services.auth.tokens import create_access_token
 
 
 def auth_header(email: str) -> dict[str, str]:
-    return {"X-Dev-User-Email": email}
+    normalized = email.strip().lower()
+    settings = Settings(
+        app_env="test",
+        secret_key="test-secret-key-not-for-production",
+        database_url="sqlite:///:memory:",
+    )
+    token, _ = create_access_token(
+        user_id=uuid.uuid5(uuid.NAMESPACE_URL, normalized),
+        email=normalized,
+        display_name=normalized.split("@", maxsplit=1)[0],
+        token_version=0,
+        settings=settings,
+    )
+    return {"Authorization": f"Bearer {token}"}
 
 
 def valid_pdf_bytes() -> bytes:

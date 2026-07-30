@@ -35,6 +35,24 @@
   background: var(--color-brand-navy);
 }
 
+.app-sidebar > nav {
+  flex: 1;
+}
+
+.app-new-analysis-action {
+  width: 100%;
+  gap: var(--space-3);
+  color: var(--color-brand-navy);
+  background: #5eead4;
+  border-color: #5eead4;
+}
+
+.app-new-analysis-action:hover {
+  color: var(--color-brand-navy);
+  background: #99f6e4;
+  border-color: #99f6e4;
+}
+
 .app-sidebar .ui-brand-mark {
   color: var(--color-text-inverse);
 }
@@ -56,12 +74,24 @@
   display: flex;
   min-height: var(--control-min-height);
   align-items: center;
+  gap: var(--space-3);
   padding: var(--space-2) var(--space-4);
   color: #dbeafe;
   font-weight: 600;
   text-decoration: none;
   border: var(--border-width) solid transparent;
   border-radius: var(--radius-lg);
+}
+
+.sidebar-navigation-icon {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: 0 0 1.15rem;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
 }
 
 .primary-navigation-link:hover {
@@ -86,10 +116,6 @@
   margin-inline-start: 17rem;
 }
 
-.app-workspace > .dev-identity-bar {
-  max-width: var(--content-width-wide);
-  margin: 0 auto var(--space-6);
-}
 
 .app-route-content {
   width: 100%;
@@ -184,6 +210,10 @@
   color: var(--color-brand-navy);
 }
 
+.mobile-navigation-drawer .app-new-analysis-action {
+  margin-block-end: var(--space-5, 1.25rem);
+}
+
 .mobile-navigation-drawer .primary-navigation-link:hover,
 .mobile-navigation-drawer .primary-navigation-link--active,
 .mobile-navigation-drawer .primary-navigation-link[aria-current="page"] {
@@ -233,5 +263,142 @@
   .route-actions,
   .route-actions .ui-button {
     width: 100%;
+  }
+}
+
+
+.user-account-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2) var(--space-3);
+  align-items: center;
+  padding: var(--space-3);
+  color: var(--color-text-inverse);
+  background: rgb(255 255 255 / 8%);
+  border: var(--border-width) solid rgb(255 255 255 / 12%);
+  border-radius: var(--radius-lg);
+}
+
+.user-account-avatar {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  font-weight: 800;
+  background: var(--color-brand-teal-strong);
+  border-radius: var(--radius-pill);
+}
+
+.user-account-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.user-account-copy strong,
+.user-account-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-account-copy span {
+  color: #dbeafe;
+  font-size: var(--font-size-xs);
+}
+
+.user-account-logout {
+  grid-column: 1 / -1;
+  min-height: 2.25rem;
+  color: var(--color-text-inverse);
+  font-weight: 700;
+  cursor: pointer;
+  background: transparent;
+  border: var(--border-width) solid rgb(255 255 255 / 30%);
+  border-radius: var(--radius-md);
+}
+
+.user-account-logout:hover {
+  background: rgb(255 255 255 / 10%);
+}
+
+.user-account-logout:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.mobile-navigation-drawer .user-account-panel {
+  margin-block-start: var(--space-8);
+  color: var(--color-text);
+  background: var(--color-surface-muted);
+  border-color: var(--color-border);
+}
+
+.mobile-navigation-drawer .user-account-copy span {
+  color: var(--color-text-secondary);
+}
+
+.mobile-navigation-drawer .user-account-logout {
+  color: var(--color-brand-navy);
+  border-color: var(--color-border-strong);
+}
+
+.language-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: rgb(255 255 255 / 10%);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-pill);
+}
+
+.language-switcher__button {
+  min-height: 2rem;
+  padding: 0.25rem 0.65rem;
+  color: inherit;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-pill);
+}
+
+.language-switcher__button.is-active {
+  color: var(--color-brand-navy);
+  font-weight: 800;
+  background: var(--color-surface);
+}
+
+.auth-header .language-switcher,
+.mobile-navigation-drawer .language-switcher {
+  color: var(--color-brand-navy);
+  background: var(--color-surface-muted);
+}
+
+html[dir="rtl"] .results-back-link {
+  direction: rtl;
+}
+
+html[dir="rtl"] .mobile-navigation-drawer {
+  inset-inline-end: 0;
+}
+
+html[dir="rtl"] input[type="email"],
+html[dir="rtl"] input[type="password"],
+html[dir="rtl"] [dir="ltr"] {
+  direction: ltr;
+  text-align: left;
+}
+
+@media (max-width: 64rem) {
+  .app-sidebar > .language-switcher {
+    display: none;
+  }
+}
+
+@media (max-width: 36rem) {
+  .language-switcher {
+    width: 100%;
+    justify-content: center;
   }
 }

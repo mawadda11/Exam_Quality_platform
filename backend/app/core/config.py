@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file="../.env", extra="ignore")
 
-    app_name: str = "AI Exam Quality Platform"
+    app_name: str = "Exam Quality Analyzer"
     app_env: str = "development"
     api_prefix: str = "/api/v1"
     secret_key: str = Field(default="development-only-change-me", min_length=16)
@@ -35,9 +35,38 @@ class Settings(BaseSettings):
     ai_api_key: str = ""
     ai_validation_retries: int = Field(default=1, ge=0, le=2)
 
+    # First-party faculty authentication. Access tokens are short-lived signed
+    # bearer tokens; password reset tokens are random, hashed, single-use DB rows.
+    auth_access_token_minutes: int = Field(default=720, ge=15, le=10080)
+    auth_issuer: str = "ai-exam-quality-platform"
+    auth_audience: str = "ai-exam-quality-web"
+    password_reset_token_minutes: int = Field(default=30, ge=5, le=1440)
+    password_reset_url: str = "http://localhost:5173/reset-password"
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_use_tls: bool = True
+
     @property
     def allowed_origin_list(self) -> list[str]:
         return [item.strip() for item in self.allowed_origins.split(",") if item.strip()]
+
+
+def validate_runtime_settings(settings: Settings) -> None:
+    """Fail closed when a pilot/production environment lacks auth essentials."""
+
+    if settings.app_env.lower() not in {"staging", "production"}:
+        return
+    insecure_defaults = {
+        "development-only-change-me",
+        "replace-with-a-long-random-development-secret",
+    }
+    if settings.secret_key in insecure_defaults or len(settings.secret_key) < 32:
+        raise RuntimeError("A strong SECRET_KEY is required outside development.")
+    if not settings.smtp_host or not settings.smtp_from_email:
+        raise RuntimeError("SMTP_HOST and SMTP_FROM_EMAIL are required for password reset.")
 
 
 @lru_cache

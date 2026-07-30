@@ -2,6 +2,9 @@ export type ExamType = 'Midterm' | 'Final'
 
 export type UploadedFileType = 'exam' | 'tp153'
 
+export type Locale = 'ar' | 'en'
+export type ReportLanguage = Locale
+
 export type ProcessingStage =
   | 'queued'
   | 'validating'
@@ -53,20 +56,17 @@ export interface AnalysisResponse {
   term: string
   state: ProcessingStage
   owner_user_id: string
+  /** Retained for backward compatibility with historical analyses created
+   * while reanalysis was available; no current workflow sets this field on
+   * newly created analyses. */
   predecessor_analysis_id: string | null
   uploaded_files: UploadedFileResponse[]
   exam_uploaded: boolean
   tp153_uploaded: boolean
   ready_for_analysis: boolean
+  capability_version?: string
   created_at: string
   updated_at: string
-}
-
-/** course/exam_type/term are always inherited from the predecessor - see
- * backend/app/schemas/analysis.py's ReanalysisCreateRequest docstring.
- * reuse_tp153 defaults to true server-side when the body is omitted. */
-export interface ReanalysisCreateRequest {
-  reuse_tp153?: boolean
 }
 
 export interface ProblemDetail {
@@ -80,6 +80,9 @@ export interface ProgressResponse {
   analysis_id: string
   state: ProcessingStage
   message: string | null
+  failed_stage: ProcessingStage | null
+  error_code: string | null
+  can_retry: boolean
   updated_at: string
 }
 
@@ -142,6 +145,72 @@ export interface AssessmentRecordResponse {
   created_at: string
 }
 
+export type SupportingMaterialType = 'figure' | 'table' | 'code_block'
+export type SupportingAnnotationType = 'caption' | 'label'
+export type ReferenceTargetType = SupportingMaterialType | 'question'
+export type ReferenceResolutionStatus = 'resolved' | 'ambiguous' | 'unresolved'
+export type AssociationBasis = 'exact_label' | 'proximity_support'
+
+export interface SupportingMaterialResponse {
+  id: string
+  analysis_id: string
+  question_id: string | null
+  source_document: UploadedFileType
+  material_type: SupportingMaterialType
+  page_number: number
+  source_text: string
+  geometry: Record<string, unknown> | null
+  confidence: number
+  extraction_method: string
+  created_at: string
+}
+
+export interface SupportingMaterialAnnotationResponse {
+  id: string
+  analysis_id: string
+  material_id: string | null
+  source_document: UploadedFileType
+  annotation_type: SupportingAnnotationType
+  original_text: string
+  normalized_label: string | null
+  page_number: number
+  geometry: Record<string, unknown> | null
+  confidence: number
+  extraction_method: string
+  created_at: string
+}
+
+export interface ReferenceAssociationResponse {
+  id: string
+  target_material_id: string | null
+  target_question_id: string | null
+  review_revision_id: string | null
+  basis: AssociationBasis
+  confidence: number
+  proximity_distance: number | null
+  exact_label_match: boolean
+  selected: boolean
+  ambiguity_reason: string | null
+}
+
+export interface DocumentReferenceResponse {
+  id: string
+  analysis_id: string
+  question_id: string | null
+  source_document: UploadedFileType
+  target_type: ReferenceTargetType
+    original_text: string
+    target_label: string
+    normalized_target_label: string
+  page_number: number
+  geometry: Record<string, unknown> | null
+  confidence: number
+  extraction_method: string
+  resolution_status: ReferenceResolutionStatus
+  association_candidates: ReferenceAssociationResponse[]
+  created_at: string
+}
+
 /** Known `evidence_type` values produced by the extraction/rule-engine
  * pipeline (backend/app/services/extraction/*, backend/app/services/rules/*).
  * Not a closed backend contract - evidence_type is a free string column, so
@@ -156,6 +225,12 @@ export type KnownEvidenceType =
   | 'assessment_record'
   | 'missing_section'
   | 'exam_metadata'
+  | 'figure'
+  | 'table'
+  | 'code_block'
+  | 'caption'
+  | 'label'
+  | 'explicit_reference'
 
 export interface FindingEvidenceRef {
   id: string
@@ -231,6 +306,7 @@ export interface RuleCoverageEntryResponse {
 
 export interface RuleCoverageAuditResponse {
   analysis_id: string
+  capability_version?: string
   scope: 'exam_facing_rules'
   total_rules: number
   evaluated_rules: number
@@ -271,7 +347,9 @@ export interface ReportResponse {
   id: string
   analysis_id: string
   format: ReportFormat
+  language: ReportLanguage
   kb_version: string
+  capability_version?: string | null
   score: string | null
   score_label: string | null
   denominator: number
@@ -282,6 +360,55 @@ export interface ReportResponse {
   not_applicable_count: number
   size_bytes: number
   created_at: string
+}
+
+export type ReportLibraryPersistedStatus =
+  | 'available'
+  | 'not_generated'
+  | 'outdated'
+  | 'insufficient_evidence'
+
+export type ReportLibraryStatus =
+  | ReportLibraryPersistedStatus
+  | 'generation_failed'
+
+export type ReportLibrarySort = 'newest' | 'oldest' | 'course' | 'score'
+
+export interface ReportLibraryAnalysisResponse {
+  id: string
+  course_code: string
+  course_name: string
+  exam_type: ExamType
+  term: string
+  state: ProcessingStage
+  capability_version: string | null
+  predecessor_analysis_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ReportLibraryItemResponse {
+  status: ReportLibraryPersistedStatus
+  analysis: ReportLibraryAnalysisResponse
+  report: ReportResponse | null
+}
+
+export interface ReportLibraryPageResponse {
+  items: ReportLibraryItemResponse[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+export interface ReportLibraryQuery {
+  q?: string
+  status?: ReportLibraryPersistedStatus
+  exam_type?: ExamType
+  language?: ReportLanguage
+  sort?: ReportLibrarySort
+  page?: number
+  page_size?: number
 }
 
 
@@ -351,6 +478,62 @@ export interface ExtractionReviewAssessmentRecord {
   geometry: ExtractionReviewGeometry | null
 }
 
+export interface ExtractionReviewSupportingMaterial {
+  source_record_id: string
+  included: boolean
+  question_source_record_id: string | null
+  source_document: UploadedFileType
+  material_type: SupportingMaterialType
+  source_text: string
+  page_number: number
+  extraction_confidence: number
+  extraction_method: string
+  geometry: ExtractionReviewGeometry | null
+}
+
+export interface ExtractionReviewSupportingAnnotation {
+  source_record_id: string
+  included: boolean
+  material_source_record_id: string | null
+  source_document: UploadedFileType
+  annotation_type: SupportingAnnotationType
+  original_text: string
+  normalized_label: string | null
+  page_number: number
+  extraction_confidence: number
+  extraction_method: string
+  geometry: ExtractionReviewGeometry | null
+}
+
+export interface ExtractionReviewDocumentReference {
+  source_record_id: string
+  included: boolean
+  question_source_record_id: string | null
+  source_document: UploadedFileType
+  target_type: ReferenceTargetType
+  original_text: string
+  target_label: string
+  normalized_target_label: string
+  resolution_status: ReferenceResolutionStatus
+  page_number: number
+  extraction_confidence: number
+  extraction_method: string
+  geometry: ExtractionReviewGeometry | null
+}
+
+export interface ExtractionReviewReferenceAssociation {
+  source_record_id: string
+  reference_source_record_id: string
+  target_material_source_record_id: string | null
+  target_question_source_record_id: string | null
+  basis: AssociationBasis
+  extraction_confidence: number
+  proximity_distance: number | null
+  exact_label_match: boolean
+  selected: boolean
+  ambiguity_reason: string | null
+}
+
 export interface ExtractionReviewSnapshot {
   schema_version: 1
   questions: ExtractionReviewQuestion[]
@@ -358,6 +541,10 @@ export interface ExtractionReviewSnapshot {
   clos: ExtractionReviewClo[]
   topics: ExtractionReviewTopic[]
   assessment_records: ExtractionReviewAssessmentRecord[]
+  supporting_materials?: ExtractionReviewSupportingMaterial[]
+  supporting_annotations?: ExtractionReviewSupportingAnnotation[]
+  document_references?: ExtractionReviewDocumentReference[]
+  reference_associations?: ExtractionReviewReferenceAssociation[]
 }
 
 export type ExtractionReviewCollection =
@@ -366,6 +553,10 @@ export type ExtractionReviewCollection =
   | 'clos'
   | 'topics'
   | 'assessment_records'
+  | 'supporting_materials'
+  | 'supporting_annotations'
+  | 'document_references'
+  | 'reference_associations'
   | 'review'
 
 export interface ExtractionReviewWarning {
@@ -396,4 +587,51 @@ export interface ExtractionReviewConfirmResponse {
   confirmed_revision_id: string
   confirmed_revision_number: number
   state: ProcessingStage
+}
+
+export interface FacultyUserResponse {
+  id: string
+  email: string
+  display_name: string
+  institution: string | null
+  department: string | null
+  user_type: 'Faculty Member'
+  preferred_language: Locale
+  email_verified: boolean
+  created_at: string
+}
+
+export interface RegisterRequest {
+  email: string
+  password: string
+  display_name: string
+  institution?: string | null
+  department?: string | null
+  preferred_language?: Locale
+}
+
+export interface LoginRequest {
+  email: string
+  password: string
+}
+
+export interface AuthSessionResponse {
+  access_token: string
+  token_type: 'bearer'
+  expires_in: number
+  user: FacultyUserResponse
+}
+
+export interface PasswordResetRequestResponse {
+  message: string
+  debug_reset_token: string | null
+}
+
+export interface PasswordResetConfirmRequest {
+  token: string
+  new_password: string
+}
+
+export interface MessageResponse {
+  message: string
 }

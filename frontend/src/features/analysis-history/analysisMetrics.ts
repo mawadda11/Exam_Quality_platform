@@ -5,7 +5,7 @@ export const RECENT_ANALYSES_LIMIT = 5
 export interface AnalysisMetrics {
   total: number
   completed: number
-  linkedReanalyses: number
+  needsAttention: number
   recent: AnalysisResponse[]
 }
 
@@ -13,9 +13,7 @@ export function calculateAnalysisMetrics(analyses: AnalysisResponse[]): Analysis
   return {
     total: analyses.length,
     completed: analyses.filter((analysis) => analysis.state === 'completed').length,
-    linkedReanalyses: analyses.filter(
-      (analysis) => analysis.predecessor_analysis_id !== null,
-    ).length,
+    needsAttention: analyses.filter((analysis) => analysis.state === 'failed').length,
     recent: analyses.slice(0, RECENT_ANALYSES_LIMIT),
   }
 }

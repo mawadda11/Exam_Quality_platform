@@ -5,7 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 # fallback path (app.services.extraction.ocr) - not pip-installable, so it
 # needs its own apt-get step rather than living in pyproject.toml.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends tesseract-ocr \
+    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-ara fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml ./
 COPY app ./app

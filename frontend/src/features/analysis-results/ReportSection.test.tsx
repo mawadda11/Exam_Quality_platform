@@ -12,6 +12,7 @@ function report(overrides: Partial<ReportResponse> = {}): ReportResponse {
     id: 'report-1',
     analysis_id: 'analysis-1',
     format: 'pdf',
+    language: 'en',
     kb_version: '1.0',
     score: '75.00',
     score_label: null,
@@ -73,8 +74,20 @@ describe('ReportSection', () => {
     await vi.waitFor(() => expect(onRefreshReports).toHaveBeenCalledTimes(1))
     expect(await screen.findByText(/report history was refreshed/i))
       .toBeInTheDocument()
-    expect(analysesApi.generateReport).toHaveBeenCalledWith('analysis-1')
+    expect(analysesApi.generateReport).toHaveBeenCalledWith('analysis-1', 'en')
     expect(analysesApi.listReports).not.toHaveBeenCalled()
+  })
+
+  it('generates an Arabic report when Arabic is selected', async () => {
+    vi.mocked(analysesApi.generateReport).mockResolvedValue(report({ language: 'ar' }))
+    renderSection()
+
+    fireEvent.change(screen.getByLabelText(/report language/i), { target: { value: 'ar' } })
+    fireEvent.click(screen.getByRole('button', { name: /generate report/i }))
+
+    await vi.waitFor(() =>
+      expect(analysesApi.generateReport).toHaveBeenCalledWith('analysis-1', 'ar'),
+    )
   })
 
   it('shows generation and history-refresh failures distinctly', async () => {
@@ -101,7 +114,7 @@ describe('ReportSection', () => {
     )
     expect(analysesApi.downloadBlob).toHaveBeenCalledWith(
       blob,
-      'report-report-1.pdf',
+      'report-en-report-1.pdf',
     )
   })
 
@@ -111,5 +124,12 @@ describe('ReportSection', () => {
       data: [report({ score: null, score_label: 'Insufficient Evidence' })],
     })
     expect(screen.getByText(/insufficient evidence/i)).toBeInTheDocument()
+  })
+
+  it('does not expose the retained knowledge-base version in report history', () => {
+    renderSection({ status: 'ready', data: [report({ kb_version: 'internal-kb-1.0' })] })
+
+    expect(screen.queryByText(/internal-kb-1\.0/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/knowledge-base version/i)).not.toBeInTheDocument()
   })
 })

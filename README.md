@@ -1,38 +1,26 @@
-# AI Exam Quality Platform
+# Exam Quality Analyzer
 
-**Current product release: v1.0.0** — the first complete controlled Version 1 release.
+**Current candidate: v2.0.0-rc1** — under verification for a controlled pilot.
 
 Evidence-based Midterm and Final exam quality-analysis platform for Faculty Members. Deterministic aggregation and ten governed advisory semantic/hybrid evaluators produce traceable
 findings; the faculty member retains final academic responsibility.
 
-## Start with Claude Code
-1. Upload this repository to GitHub.
-2. Confirm the 11 approved knowledge-base `.xlsx` files are present in `knowledge_base/source/`.
-3. Open the repository in VS Code.
-4. Start Claude Code in the repository root.
-5. Paste the contents of `CLAUDE_CODE_PROMPT.md`.
-6. Ask Claude Code to inspect the repository and implement one milestone at a time.
 
-Claude Code automatically reads `CLAUDE.md` in the repository root.
+## Controlled pilot status
 
-## Current implementation status
+The current implementation provides the authenticated bilingual workflow, digital and OCR
+extraction, Extraction Review, governed results, Arabic/English PDF reports, Reports Library,
+and Methodology & Help experience intended for the controlled pilot. A revised exam is evaluated
+by creating a New Analysis; there is no separate reanalysis workflow.
 
-M1-M9 are committed through base commit `5f76d6a`. M10-M11 are committed on the
-`release/v1.0.0` branch at `d2eb3d4`:
+Before any pilot use, read:
 
-- **M10:** categorical-confidence, semantic reasoning, derived mapping, evidence, score-denominator,
-  runtime rule-coverage, and PDF-report presentation; and
-- **M11:** a synthetic, offline, API-level acceptance test for the complete supported upload ->
-  extraction review -> confirmation -> governed evaluation -> score/coverage -> report workflow.
+- [Pilot acceptance checklist](docs/PILOT_ACCEPTANCE_CHECKLIST.md)
+- [Known limitations](docs/KNOWN_LIMITATIONS.md)
+- [v2.0.0-rc1 release-note draft](docs/RELEASE_V2_RC1.md)
 
-The remaining working-tree changes are the final Version 1 faculty-facing UX refinement: concise
-score explanation, analysis-specific completion messaging, and the separate **What the Platform
-Evaluates** page.
-
-Read `docs/RELEASE_V1.md`, `docs/M10_M11_HANDOFF.md`,
-`docs/M10_M11_IMPLEMENTATION_REPORT.md`, and `docs/M10_M11_VERIFICATION.md` before editing or
-committing. Version 2 planning is maintained in `docs/V2_ROADMAP.md`. The final local frontend/Ruff/mypy
-checks documented there remain mandatory where package registries are available.
+This candidate is not a production deployment and does not issue accreditation, approval,
+certification, or pass/fail decisions.
 
 ## Local development
 
@@ -46,16 +34,18 @@ docker compose up --build
 - Backend API: http://localhost:8000
 - API docs: http://localhost:8000/docs
 
+Create a Faculty Member account from the registration page. In local development, password-reset
+requests show a development reset link. Staging/production require SMTP settings from `.env.example`.
+
 Without Docker (native backend dev server): PostgreSQL must still run somewhere reachable at
 `localhost:5432` (via `docker compose up -d postgres`, or a native install) - see "Running
 PostgreSQL locally" and the backend commands in `CLAUDE.md`.
 
-Native development uses the deterministic in-memory vector store and fake AI provider by default,
-so tests and local runs never make external AI calls. Docker Compose selects ChromaDB at
-`chromadb:8000`; its host-published native-development endpoint is `localhost:8001`. To perform an
-optional manual Anthropic run, set `AI_PROVIDER=anthropic`, an approved exact `AI_MODEL`, and
-`AI_API_KEY`. Do this only where the privacy policy permits sending the minimized evidence context.
-See [RAG and AI Design](docs/RAG_AND_AI_DESIGN.md) for the provider, validation, and failure policy.
+Native development uses the deterministic in-memory vector store and governed local/offline
+analysis behavior, so controlled-pilot verification does not send document evidence to an external
+language model. Docker Compose selects ChromaDB at `chromadb:8000`; its host-published
+native-development endpoint is `localhost:8001`. External language-model integration is not part of
+`v2.0.0-rc1`.
 
 ## Repository map
 - `frontend/`: React/TypeScript application.
@@ -66,5 +56,5 @@ See [RAG and AI Design](docs/RAG_AND_AI_DESIGN.md) for the provider, validation,
 - `infrastructure/`: deployment-related configuration.
 
 ## Important
-This remains a development system, not a production accreditation or approval platform. Do not add
+This remains a controlled pilot under development, not a production accreditation or approval platform. Do not add
 real exam files or secrets to Git.

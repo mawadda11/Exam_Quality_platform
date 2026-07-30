@@ -20,7 +20,7 @@ describe('foundation primitives', () => {
       </Card>,
     )
 
-    expect(screen.getByText('AI Exam Quality')).toBeVisible()
+    expect(screen.getByText('Exam Quality Analyzer')).toBeVisible()
     expect(screen.getByRole('heading', { level: 1, name: 'New Analysis' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
   })

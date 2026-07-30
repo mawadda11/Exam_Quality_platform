@@ -3,7 +3,11 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as analysesApi from '../api/analyses'
+import * as authApi from '../api/auth'
+import * as reportsApi from '../api/reports'
+import { setStoredAccessToken } from '../api/authToken'
 import { ApiError } from '../api/client'
+import { AuthProvider } from '../features/auth/AuthProvider'
 import type {
   AnalysisResponse,
   AnalysisScoreResponse,
@@ -13,6 +17,8 @@ import type {
 import { AppRoutes } from './AppRoutes'
 
 vi.mock('../api/analyses')
+vi.mock('../api/auth')
+vi.mock('../api/reports')
 
 const QUEUED_ANALYSIS: AnalysisResponse = {
   id: 'analysis-1',
@@ -144,8 +150,10 @@ function LocationControls() {
 function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <AppRoutes />
-      <LocationControls />
+      <AuthProvider>
+        <AppRoutes />
+        <LocationControls />
+      </AuthProvider>
     </MemoryRouter>,
   )
 }
@@ -163,7 +171,27 @@ function mockResults(): void {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  window.localStorage.clear()
+  setStoredAccessToken('test-access-token')
+  vi.mocked(authApi.getCurrentFaculty).mockResolvedValue({
+    id: 'user-1',
+    email: 'faculty@university.edu',
+    display_name: 'Dr Faculty',
+    institution: 'Example University',
+    department: 'Computing',
+    user_type: 'Faculty Member',
+    preferred_language: 'en',
+    email_verified: false,
+    created_at: '2026-01-01T00:00:00Z',
+  })
   vi.mocked(analysesApi.listAnalyses).mockResolvedValue([])
+  vi.mocked(reportsApi.listReportLibrary).mockResolvedValue({
+    items: [],
+    total: 0,
+    page: 1,
+    page_size: 12,
+    total_pages: 0,
+  })
   vi.mocked(analysesApi.getExtractionReview).mockResolvedValue(EXTRACTION_REVIEW)
   mockResults()
 })
@@ -176,17 +204,19 @@ describe('AppRoutes', () => {
     expect(screen.getByLabelText('Current route')).toHaveTextContent('/dashboard')
   })
 
-  it('builds dashboard metrics from one history request without score or detail calls', async () => {
+  it('builds dashboard metrics from one history request and one lightweight reports count, without score or detail calls', async () => {
     vi.mocked(analysesApi.listAnalyses).mockResolvedValue([
       COMPLETED_ANALYSIS,
-      {
-        ...QUEUED_ANALYSIS,
-        id: 'analysis-2',
-        state: 'validating',
-        predecessor_analysis_id: 'analysis-1',
-      },
-      { ...QUEUED_ANALYSIS, id: 'analysis-3' },
+      { ...QUEUED_ANALYSIS, id: 'analysis-2', state: 'validating' },
+      { ...QUEUED_ANALYSIS, id: 'analysis-3', state: 'failed' },
     ])
+    vi.mocked(reportsApi.listReportLibrary).mockResolvedValue({
+      items: [],
+      total: 5,
+      page: 1,
+      page_size: 1,
+      total_pages: 5,
+    })
 
     renderAt('/dashboard')
 
@@ -196,14 +226,25 @@ describe('AppRoutes', () => {
     const completedCard = screen
       .getByRole('heading', { name: 'Completed analyses' })
       .closest('article')
-    const reanalysisCard = screen
-      .getByRole('heading', { name: 'Linked reanalyses' })
+    const attentionCard = screen
+      .getByRole('heading', { name: 'Analyses needing attention' })
+      .closest('article')
+    const reportsCard = screen
+      .getByRole('heading', { name: 'Reports available' })
       .closest('article')
 
     expect(totalCard && within(totalCard).getByText('3')).toBeInTheDocument()
     expect(completedCard && within(completedCard).getByText('1')).toBeInTheDocument()
-    expect(reanalysisCard && within(reanalysisCard).getByText('1')).toBeInTheDocument()
+    expect(attentionCard && within(attentionCard).getByText('1')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(reportsCard && within(reportsCard).getByText('5')).toBeInTheDocument(),
+    )
     expect(analysesApi.listAnalyses).toHaveBeenCalledTimes(1)
+    expect(reportsApi.listReportLibrary).toHaveBeenCalledWith({
+      status: 'available',
+      page: 1,
+      page_size: 1,
+    })
     expect(analysesApi.getAnalysis).not.toHaveBeenCalled()
     expect(analysesApi.getAnalysisScore).not.toHaveBeenCalled()
   })
@@ -212,7 +253,9 @@ describe('AppRoutes', () => {
     render(
       <StrictMode>
         <MemoryRouter initialEntries={['/dashboard']}>
-          <AppRoutes />
+          <AuthProvider>
+            <AppRoutes />
+          </AuthProvider>
         </MemoryRouter>
       </StrictMode>,
     )
@@ -233,6 +276,21 @@ describe('AppRoutes', () => {
       .toHaveTextContent('extracting_tp153')
     expect(analysesApi.listAnalyses).toHaveBeenCalledTimes(1)
     expect(analysesApi.getAnalysisScore).not.toHaveBeenCalled()
+  })
+
+  it('protects and renders the reports library route', async () => {
+    renderAt('/reports')
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Reports' }),
+    ).toBeInTheDocument()
+    expect(reportsApi.listReportLibrary).toHaveBeenCalledWith(
+      expect.objectContaining({ page: 1, page_size: 12 }),
+    )
+    expect(screen.getByRole('link', { name: 'Reports' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
   })
 
   it('shows an API-derived dashboard error without requesting metric details', async () => {
@@ -319,6 +377,26 @@ describe('AppRoutes', () => {
       'aria-selected',
       'true',
     )
+  })
+
+  it('has no Question Types tab or route', async () => {
+    vi.mocked(analysesApi.getAnalysis).mockResolvedValue(COMPLETED_ANALYSIS)
+    renderAt('/analyses/analysis-1/results/question-types')
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Current route')).toHaveTextContent(
+        '/analyses/analysis-1/results/overview',
+      ),
+    )
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    expect(
+      screen.queryByRole('tab', { name: /Question Types/i }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/Question Type Distribution/i))
+      .not.toBeInTheDocument()
   })
 
   it('preserves result-tab focus while the tab URL changes', async () => {
@@ -416,30 +494,6 @@ describe('AppRoutes', () => {
     expect(analysesApi.getAnalysis).toHaveBeenCalledTimes(1)
   })
 
-  it('loads a newly created reanalysis before applying its child-route guards', async () => {
-    const reanalysis = {
-      ...QUEUED_ANALYSIS,
-      id: 'analysis-2',
-      predecessor_analysis_id: 'analysis-1',
-    }
-    vi.mocked(analysesApi.getAnalysis)
-      .mockResolvedValueOnce(COMPLETED_ANALYSIS)
-      .mockResolvedValueOnce(reanalysis)
-    vi.mocked(analysesApi.createReanalysis).mockResolvedValue(reanalysis)
-
-    renderAt('/analyses/analysis-1/results/overview')
-    fireEvent.click(
-      await screen.findByRole('button', { name: /create reanalysis/i }),
-    )
-
-    expect(await screen.findByLabelText(/examination pdf/i)).toBeInTheDocument()
-    expect(screen.getByLabelText('Current route')).toHaveTextContent(
-      '/analyses/analysis-2/documents',
-    )
-    expect(analysesApi.getAnalysis).toHaveBeenNthCalledWith(1, 'analysis-1')
-    expect(analysesApi.getAnalysis).toHaveBeenNthCalledWith(2, 'analysis-2')
-  })
-
   it('guards results for a queued analysis and redirects to document upload', async () => {
     vi.mocked(analysesApi.getAnalysis).mockResolvedValue(QUEUED_ANALYSIS)
 
@@ -513,9 +567,11 @@ describe('AppRoutes', () => {
     expect(analysesApi.getAnalysis).toHaveBeenCalledTimes(2)
   })
 
-  it('shows a safe fallback for an unknown application route', () => {
+  it('shows a safe fallback for an unknown application route', async () => {
     renderAt('/not-a-route')
 
-    expect(screen.getByRole('heading', { name: 'Page not found' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'Page not found' }),
+    ).toBeInTheDocument()
   })
 })

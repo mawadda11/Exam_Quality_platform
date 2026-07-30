@@ -1,4 +1,4 @@
-import { getStoredDevUserEmail } from './identity'
+import { getStoredAccessToken } from './authToken'
 import type { ProblemDetail } from '../types/api'
 
 const DEFAULT_BASE_URL = 'http://localhost:8000/api/v1'
@@ -20,10 +20,11 @@ export class ApiError extends Error {
   }
 }
 
-function identityHeaders(): Record<string, string> {
-  const email = getStoredDevUserEmail()
-  return email ? { 'X-Dev-User-Email': email } : {}
+function authorizationHeaders(): Record<string, string> {
+  const token = getStoredAccessToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
 }
+
 
 async function parseErrorAndThrow(response: Response): Promise<never> {
   let detail = response.statusText || `Request failed with status ${response.status}`
@@ -38,7 +39,7 @@ async function parseErrorAndThrow(response: Response): Promise<never> {
 
 export async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(`${getApiBaseUrl()}${path}`, {
-    headers: { ...identityHeaders() },
+    headers: { ...authorizationHeaders() },
   })
   if (!response.ok) return parseErrorAndThrow(response)
   return (await response.json()) as T
@@ -47,7 +48,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 export async function apiPostJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${getApiBaseUrl()}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...identityHeaders() },
+    headers: { 'Content-Type': 'application/json', ...authorizationHeaders() },
     body: JSON.stringify(body),
   })
   if (!response.ok) return parseErrorAndThrow(response)
@@ -58,7 +59,7 @@ export async function apiPostJson<T>(path: string, body: unknown): Promise<T> {
 export async function apiPutJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${getApiBaseUrl()}${path}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...identityHeaders() },
+    headers: { 'Content-Type': 'application/json', ...authorizationHeaders() },
     body: JSON.stringify(body),
   })
   if (!response.ok) return parseErrorAndThrow(response)
@@ -68,21 +69,38 @@ export async function apiPutJson<T>(path: string, body: unknown): Promise<T> {
 export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
   const response = await fetch(`${getApiBaseUrl()}${path}`, {
     method: 'POST',
-    headers: { ...identityHeaders() },
+    headers: { ...authorizationHeaders() },
     body: form,
   })
   if (!response.ok) return parseErrorAndThrow(response)
   return (await response.json()) as T
 }
 
-/** Dev-identity auth is a custom header, not a cookie, so a plain
- * `<a href download>` navigation can't carry it - fetch the file with the
- * same header this client already uses everywhere else, and let the
- * caller turn the Blob into a download (see downloadBlob in analyses.ts). */
+/** Protected report downloads require the same bearer token as every other API request. */
 export async function apiGetBlob(path: string): Promise<Blob> {
   const response = await fetch(`${getApiBaseUrl()}${path}`, {
-    headers: { ...identityHeaders() },
+    headers: { ...authorizationHeaders() },
   })
   if (!response.ok) return parseErrorAndThrow(response)
   return response.blob()
+}
+
+
+export async function apiPostNoContent(path: string, body: unknown = {}): Promise<void> {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authorizationHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) return parseErrorAndThrow(response)
+}
+
+export async function apiPatchJson<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authorizationHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) return parseErrorAndThrow(response)
+  return (await response.json()) as T
 }
