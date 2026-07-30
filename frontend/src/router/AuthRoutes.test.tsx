@@ -52,6 +52,12 @@ describe('authentication routes', () => {
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
   })
 
+  it('redirects an anonymous faculty member from reports to sign in', async () => {
+    renderAt('/reports')
+    expect(await screen.findByRole('heading', { name: 'Sign in' }))
+      .toBeInTheDocument()
+  })
+
   it('signs in and opens the private dashboard', async () => {
     vi.mocked(authApi.loginFaculty).mockResolvedValue(SESSION)
     renderAt('/login')

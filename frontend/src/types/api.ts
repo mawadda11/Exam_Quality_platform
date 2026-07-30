@@ -366,6 +366,55 @@ export interface ReportResponse {
   created_at: string
 }
 
+export type ReportLibraryPersistedStatus =
+  | 'available'
+  | 'not_generated'
+  | 'outdated'
+  | 'insufficient_evidence'
+
+export type ReportLibraryStatus =
+  | ReportLibraryPersistedStatus
+  | 'generation_failed'
+
+export type ReportLibrarySort = 'newest' | 'oldest' | 'course' | 'score'
+
+export interface ReportLibraryAnalysisResponse {
+  id: string
+  course_code: string
+  course_name: string
+  exam_type: ExamType
+  term: string
+  state: ProcessingStage
+  capability_version: string | null
+  predecessor_analysis_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ReportLibraryItemResponse {
+  status: ReportLibraryPersistedStatus
+  analysis: ReportLibraryAnalysisResponse
+  report: ReportResponse | null
+}
+
+export interface ReportLibraryPageResponse {
+  items: ReportLibraryItemResponse[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+export interface ReportLibraryQuery {
+  q?: string
+  status?: ReportLibraryPersistedStatus
+  exam_type?: ExamType
+  language?: ReportLanguage
+  sort?: ReportLibrarySort
+  page?: number
+  page_size?: number
+}
+
 
 export interface ExtractionReviewGeometry {
   x0: number

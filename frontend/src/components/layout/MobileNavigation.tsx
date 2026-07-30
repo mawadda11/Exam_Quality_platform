@@ -5,6 +5,7 @@ import { PrimaryNavigation } from './PrimaryNavigation'
 import { UserAccountPanel } from './UserAccountPanel'
 import { LanguageSwitcher } from '../../i18n/LanguageSwitcher'
 import { useI18n } from '../../i18n/I18nProvider'
+import { SidebarIcon } from './SidebarIcon'
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -100,7 +101,7 @@ export function MobileNavigation() {
               to="/analyses/new"
               onClick={closeAndReturnFocus}
             >
-              <span aria-hidden="true">+</span>
+              <SidebarIcon name="new-analysis" />
               {t('New Analysis')}
             </Link>
             <PrimaryNavigation onNavigate={closeAndReturnFocus} />
