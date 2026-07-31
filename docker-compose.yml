@@ -37,7 +37,18 @@ services:
       UPLOAD_ROOT: /app/storage/uploads
       REPORT_ROOT: /app/storage/reports
       KB_SOURCE_DIR: /app/knowledge_base/source
+      # .env's native default (localhost) only resolves inside this
+      # container's own network namespace, not the host machine. Ollama is
+      # never a Compose service and is never published on any port here -
+      # it keeps running on the host only, and the backend container reaches
+      # it through Docker's host-gateway alias instead.
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
     ports: ["8000:8000"]
+    # host.docker.internal is automatic on Docker Desktop (Mac/Windows); this
+    # extra_hosts entry makes the same hostname resolve on native Linux
+    # Docker Engine too, without publishing Ollama's port anywhere.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./backend:/app/backend
       - ./knowledge_base:/app/knowledge_base:ro

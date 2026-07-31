@@ -19,6 +19,7 @@ from app.models.topic import Topic
 from app.models.user import User
 from app.services.ai.fake_provider import FakeAiProvider
 from app.services.ai.local_provider import LocalSemanticProvider
+from app.services.ai.provider import AiProvider
 from app.services.knowledge_base.runtime import KnowledgeBaseSnapshot, SemanticRuntime
 from app.services.knowledge_base.vector_store import EmbeddableRecord, InMemoryVectorStore
 from app.services.rules.semantic_evaluators import (
@@ -244,7 +245,7 @@ _RULES = (
 )
 
 
-def _runtime(provider: FakeAiProvider | LocalSemanticProvider) -> SemanticRuntime:
+def _runtime(provider: AiProvider) -> SemanticRuntime:
     records = tuple(_kb_record(*definition) for definition in _RULES)
     store = InMemoryVectorStore()
     snapshot = KnowledgeBaseSnapshot(
@@ -448,6 +449,53 @@ def test_invalid_provider_output_is_retried_then_rejected(db_engine: Engine) -> 
             )
 
     assert len(provider.calls) == 2
+
+
+def test_ollama_provider_integrates_with_the_shared_bounded_retry_loop(
+    db_engine: Engine,
+) -> None:
+    """The retry loop in _evaluate is provider-agnostic: it calls
+    generate_structured again on SemanticOutputValidationError, up to
+    validation_retries + 1 attempts, for whichever provider is configured.
+    Proves OllamaProvider participates in that same shared mechanism rather
+    than needing (or having) any retry logic of its own, using a fake HTTP
+    client so no real Ollama server is contacted."""
+    from app.services.ai.ollama_provider import OllamaProvider
+    from app.services.rules.semantic_evaluators import evaluate_clo_relevance
+
+    responses = iter(["not-json", "still-not-json", "also-not-json"])
+    calls: list[dict[str, object]] = []
+
+    def fake_http_client(
+        url: str, payload: dict[str, object], *, timeout: float
+    ) -> dict[str, object]:
+        calls.append({"url": url, "payload": payload, "timeout": timeout})
+        return {"message": {"role": "assistant", "content": next(responses)}}
+
+    provider = OllamaProvider(
+        base_url="http://localhost:11434",
+        model="qwen3.5:4b",
+        http_client=fake_http_client,
+    )
+    runtime = _runtime(provider)
+    with Session(db_engine) as session:
+        seeded = _seed_analysis(session)
+        analysis = session.get(Analysis, seeded.analysis_id)
+        assert analysis is not None
+        inputs = load_semantic_inputs(session, analysis.id)
+
+        with pytest.raises(SemanticOutputValidationError):
+            evaluate_clo_relevance(
+                analysis,
+                session,
+                runtime,
+                KB_SOURCE,
+                inputs,
+                validation_retries=2,
+            )
+
+    # Bounded: validation_retries=2 means exactly 3 attempts, never more.
+    assert len(calls) == 3
 
 
 def test_prompts_preserve_governance_boundaries(db_engine: Engine) -> None:

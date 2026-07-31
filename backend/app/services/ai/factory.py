@@ -13,6 +13,7 @@ from app.services.ai.provider import AiProvider
 # adapter is imported lazily so development/test installations that use the
 # local or fake provider do not require the external SDK at import time.
 AnthropicAiProvider: Any = None
+OllamaProvider: Any = None
 
 
 class AiProviderConfigurationError(RuntimeError):
@@ -45,5 +46,23 @@ def build_ai_provider(settings: Settings) -> AiProvider:
         return cast(
             AiProvider,
             provider_cls(api_key=settings.ai_api_key, model=settings.ai_model),
+        )
+    if provider == "ollama":
+        if not settings.ollama_base_url.strip():
+            raise AiProviderConfigurationError(
+                "OLLAMA_BASE_URL is required when AI_PROVIDER=ollama."
+            )
+        if not settings.ai_model.strip():
+            raise AiProviderConfigurationError("AI_MODEL is required when AI_PROVIDER=ollama.")
+        provider_cls = OllamaProvider
+        if provider_cls is None:
+            from app.services.ai.ollama_provider import OllamaProvider as provider_cls
+        return cast(
+            AiProvider,
+            provider_cls(
+                base_url=settings.ollama_base_url,
+                model=settings.ai_model,
+                timeout_seconds=settings.ollama_timeout_seconds,
+            ),
         )
     raise AiProviderConfigurationError(f"Unsupported AI_PROVIDER: {settings.ai_provider!r}.")
