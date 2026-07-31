@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     ai_provider: str = "local"
     ai_model: str = "local-governed-baseline-v1"
     ai_api_key: str = ""
+    # Fully local optional adapter: no credential, just a reachable Ollama
+    # server. Native default targets the host's own Ollama; docker-compose.yml
+    # overrides this to host.docker.internal so the backend container can
+    # reach an Ollama instance running on the host, without publishing Ollama
+    # itself on any public network interface.
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_timeout_seconds: int = Field(default=60, ge=1, le=300)
     ai_validation_retries: int = Field(default=1, ge=0, le=2)
 
     # First-party faculty authentication. Access tokens are short-lived signed

@@ -25,6 +25,20 @@ def _settings(**overrides: object) -> Settings:
     return Settings(**values)
 
 
+def test_local_is_the_safe_default_provider() -> None:
+    """AI_PROVIDER unset: the platform must default to the safe offline
+    provider, never to a live external or local-network adapter."""
+    values = {
+        "secret_key": "test-secret-key-not-for-production",
+        "database_url": "sqlite:///:memory:",
+    }
+    settings = Settings(**values)  # type: ignore[arg-type]
+    assert settings.ai_provider == "local"
+    assert settings.ollama_base_url == "http://localhost:11434"
+    provider = build_ai_provider(settings)
+    assert isinstance(provider, LocalSemanticProvider)
+
+
 def test_fake_provider_is_selected_without_network_io() -> None:
     provider = build_ai_provider(_settings())
     assert isinstance(provider, FakeAiProvider)
@@ -66,6 +80,11 @@ def test_fake_provider_is_rejected_in_production() -> None:
             {"ai_provider": "anthropic", "ai_api_key": "test-key", "ai_model": " "},
             "AI_MODEL",
         ),
+        ({"ai_provider": "ollama", "ollama_base_url": ""}, "OLLAMA_BASE_URL"),
+        (
+            {"ai_provider": "ollama", "ollama_base_url": "http://localhost:11434", "ai_model": " "},
+            "AI_MODEL",
+        ),
     ],
 )
 def test_invalid_provider_configuration_is_an_infrastructure_error(
@@ -105,6 +124,53 @@ def test_anthropic_adapter_is_constructed_through_the_factory(
     )
     assert provider.provider_name == "anthropic"
     assert captured == {"api_key": "test-key", "model": "claude-test"}
+
+
+def test_ollama_adapter_is_constructed_through_the_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class StubProvider:
+        provider_name = "ollama"
+        model_name = "model"
+
+        def __init__(self, *, base_url: str, model: str, timeout_seconds: int) -> None:
+            captured.update(base_url=base_url, model=model, timeout_seconds=timeout_seconds)
+
+        def generate_structured(
+            self, *, system: str, prompt: str, schema: dict[str, object]
+        ) -> str:
+            raise AssertionError("No live provider call is allowed in this test.")
+
+    monkeypatch.setattr(
+        "app.services.ai.factory.OllamaProvider",
+        StubProvider,
+    )
+    provider = build_ai_provider(
+        _settings(
+            ai_provider="ollama",
+            ollama_base_url="http://localhost:11434",
+            ai_model="qwen3.5:4b",
+        )
+    )
+    assert provider.provider_name == "ollama"
+    assert captured == {
+        "base_url": "http://localhost:11434",
+        "model": "qwen3.5:4b",
+        "timeout_seconds": 60,
+    }
+
+
+def test_ollama_is_never_selected_when_local_is_the_configured_default() -> None:
+    """Documents the safe-default guarantee: an unrelated OLLAMA_BASE_URL
+    being present in the environment must not change which provider a
+    default (unset AI_PROVIDER) configuration selects."""
+    provider = build_ai_provider(
+        _settings(ai_provider="local", ollama_base_url="http://localhost:11434")
+    )
+    assert isinstance(provider, LocalSemanticProvider)
+    assert provider.provider_name == "local"
 
 
 def test_memory_vector_store_is_selected_for_tests() -> None:

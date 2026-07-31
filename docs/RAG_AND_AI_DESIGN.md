@@ -146,8 +146,17 @@ no concentration threshold. It is not a semantic evaluator.
 `AI_PROVIDER=local` is the safe native-development default and performs no network calls. It is a
 transparent evidence-grounded demonstration baseline and is blocked in production.
 `AI_PROVIDER=fake` is reserved for scripted schema/failure tests. The provider
-factory also supports the Anthropic adapter for optional manual use. Evaluators depend only on the
-provider interface; no evaluator contains vendor-specific code.
+factory also supports the Anthropic and Ollama adapters for optional manual use. Anthropic is gated
+by a required `AI_API_KEY` and the approved `AI_MODEL` for that adapter. Ollama is fully local (a
+locally running Ollama server reachable at `OLLAMA_BASE_URL`, no API key, no data leaving the
+host/deployment network) and is gated only by `OLLAMA_BASE_URL` and `AI_MODEL`. Evaluators depend
+only on the provider interface; no evaluator contains vendor-specific code, and neither adapter
+changes what a semantic evaluator is permitted to decide - Ollama, like Anthropic, may only
+interpret governed relationships within the same validated, strictly-schema'd contract described
+above; the Ollama adapter disables model "thinking" output (`think=false`) and only ever reads the
+final response content, never any thinking/reasoning trace. There is no automatic fallback between
+providers on failure: a configured provider's errors propagate through the existing safe
+processing-failure path.
 
 ## Validation gates
 
