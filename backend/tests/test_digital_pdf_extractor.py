@@ -6,6 +6,7 @@ import pytest
 from helpers import corrupted_pdf_bytes
 from pdf_fixtures import (
     build_blank_pdf,
+    build_multiline_question_with_table_pdf,
     build_official_sample_format_exam_pdf,
     build_synthetic_exam_pdf,
 )
@@ -160,6 +161,27 @@ def test_extracts_bundled_sample_question_numbers_marks_and_total(tmp_path: Path
     totals = [e for e in result.evidence if e.evidence_type == "declared_total"]
     assert len(totals) == 1
     assert totals[0].extracted_text == "Total Marks: 30"
+
+
+def test_multiline_question_is_joined_without_absorbing_material_caption(
+    tmp_path: Path,
+) -> None:
+    pdf_path = _write(
+        tmp_path,
+        "multiline-table.pdf",
+        build_multiline_question_with_table_pdf(),
+    )
+
+    result = PdfPlumberExamExtractor().extract(pdf_path)
+
+    by_label = {question.number_label: question for question in result.questions}
+    assert by_label["Q3"].text == (
+        "Q3 (10): Refer to Table 1. Identify which Python data structure is mutable "
+        "and explain one suitable use for each structure."
+    )
+    assert "Comparison of Python Data Structures" not in by_label["Q3"].text
+    assert len(result.supporting_materials) == 1
+    assert result.supporting_materials[0].material_type.value == "table"
 
 
 def test_exam_without_a_total_line_yields_no_declared_total_evidence(tmp_path: Path) -> None:

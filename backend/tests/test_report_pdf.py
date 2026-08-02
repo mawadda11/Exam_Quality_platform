@@ -157,6 +157,125 @@ def test_render_report_pdf_handles_a_finding_with_evidence_and_recommendation() 
     assert pdf_bytes.startswith(b"%PDF")
 
 
+def test_recommendations_section_includes_all_supported_dimensions_and_deduplicates() -> None:
+    material_recommendation = RecommendationDisplay(
+        recommendation_id="REC016",
+        rule_id="RULE016",
+        title="Associate the Supporting Item Clearly",
+        text="Link the material to its intended question.",
+        target_user="Faculty",
+        recommendation_type="Corrective",
+    )
+    instruction_recommendation = RecommendationDisplay(
+        recommendation_id="REC021",
+        rule_id="RULE021",
+        title="Complete the Instructions",
+        text="Add the necessary exam-level instructions.",
+        target_user="Faculty",
+        recommendation_type="Corrective",
+    )
+    missing_topic_recommendation = RecommendationDisplay(
+        recommendation_id="REC032",
+        rule_id="RULE007",
+        title="Request Missing Topic Evidence",
+        text="Provide readable course-topic evidence.",
+        target_user="Faculty",
+        recommendation_type="Input Request",
+    )
+    findings = (
+        _finding_entry(
+            requirement_id="REQ016",
+            rule_id="RULE016",
+            requirement_name="Supporting Material Association",
+            dimension="Supporting Material",
+            status=AcademicStatus.NOT_SATISFIED,
+            recommendations=(material_recommendation,),
+        ),
+        _finding_entry(
+            requirement_id="REQ021",
+            rule_id="RULE021",
+            requirement_name="Complete Instructions",
+            dimension="Exam Instructions",
+            status=AcademicStatus.NOT_SATISFIED,
+            recommendations=(instruction_recommendation,),
+        ),
+        _finding_entry(
+            requirement_id="REQ007",
+            rule_id="RULE007",
+            requirement_name="Question-to-Topic Alignment",
+            dimension="Topic Alignment",
+            status=AcademicStatus.NOT_VERIFIED,
+            recommendations=(missing_topic_recommendation,),
+        ),
+        _finding_entry(
+            requirement_id="REQ021",
+            rule_id="RULE021",
+            requirement_name="Complete Instructions",
+            dimension="Exam Instructions",
+            status=AcademicStatus.PARTIALLY_SATISFIED,
+            recommendations=(instruction_recommendation,),
+        ),
+    )
+
+    text = _pdf_text(render_report_pdf(_content(findings=findings)))
+
+    assert "Associate the Supporting Item Clearly" in text
+    assert "Complete the Instructions" in text
+    assert "Request Missing Topic Evidence" in text
+    assert text.count("Complete the Instructions:") == 1
+
+
+def test_arabic_report_header_and_recommendation_groups_are_fully_localized(
+    monkeypatch,
+) -> None:
+    from app.services.reporting import pdf as report_pdf
+
+    entry = _finding_entry(
+        requirement_id="REQ021",
+        rule_id="RULE021",
+        requirement_name="Complete Instructions",
+        dimension="Exam Instructions",
+        status=AcademicStatus.NOT_SATISFIED,
+        recommendations=(
+            RecommendationDisplay(
+                recommendation_id="REC021",
+                rule_id="RULE021",
+                title="Complete the Instructions",
+                text="Add the necessary exam-level instructions.",
+                target_user="Faculty",
+                recommendation_type="Corrective",
+            ),
+        ),
+    )
+    captured: list[str] = []
+    original_paragraph = report_pdf._paragraph
+    original_subheading = report_pdf._subheading
+
+    def capture_paragraph(pdf, text: str, *args, **kwargs) -> None:
+        captured.append(text)
+        original_paragraph(pdf, text, *args, **kwargs)
+
+    def capture_subheading(pdf, text: str) -> None:
+        captured.append(text)
+        original_subheading(pdf, text)
+
+    monkeypatch.setattr(report_pdf, "_paragraph", capture_paragraph)
+    monkeypatch.setattr(report_pdf, "_subheading", capture_subheading)
+    report_pdf.render_report_pdf(
+        _content(findings=(entry,)),
+        language=ReportLanguage.ARABIC,
+    )
+    text = "\n".join(captured)
+
+    assert "اختبار نصفي، 2026 Spring" in text
+    assert "اختبار نصفي اختبار" not in text
+    assert "العربية" in text
+    assert "Arabic" not in text
+    assert "تعليمات الاختبار" in text
+    assert "Materials & References" not in text
+    assert "Exam Instructions" not in text
+
+
 def test_render_report_pdf_handles_a_finding_with_no_evidence() -> None:
     entry = _finding_entry(status=AcademicStatus.NOT_VERIFIED, evidence=())
     pdf_bytes = render_report_pdf(_content(findings=(entry,)))

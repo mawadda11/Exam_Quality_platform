@@ -1,0 +1,242 @@
+# Production/staging Compose stack. Separate from docker-compose.yml (which
+# stays development-only, unchanged) so neither file's assumptions leak into
+# the other: this file builds each service's *production* Dockerfile target,
+# publishes nothing except the reverse proxy, and reads all runtime
+# configuration through Compose variable substitution (${VAR} below) from an
+# explicitly supplied `--env-file .env.production` (never a real `.env`) -
+# see docs/DEPLOYMENT.md. Deliberately not a service-level `env_file:` rule:
+# that would name a literal path baked into this YAML, which would then have
+# to exist even just to run `docker compose config` for validation (e.g.
+# against .env.production.example, before a real .env.production exists).
+#
+# Ollama is intentionally never a service here: the approved deployment
+# model is a single Ollama installation already running on the deployment
+# host (see docs/DEPLOYMENT.md section D), reached from the backend
+# container through host.docker.internal, never published on any container
+# port and never given a Compose service of its own.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # No `ports:` - PostgreSQL is reachable only from other containers on
+    # this Compose network, never from the public internet.
+
+  chromadb:
+    # Must match backend/pyproject.toml's exact chromadb client pin. Do not
+    # bump without updating that pin and re-testing ingestion/retrieval.
+    image: chromadb/chroma:1.5.9
+    restart: unless-stopped
+    volumes:
+      - chroma_data:/chroma/chroma
+    # No `ports:` - the backend reaches this over the internal Compose
+    # network at the service name "chromadb", never a published port.
+
+  migrate:
+    image: exam-quality-backend:prod
+    build:
+      context: ./backend
+      target: production
+    # Every value substituted from whichever file `--env-file` points at
+    # (`.env.production.example` for validation, `.env.production` for a
+    # real run - see docs/DEPLOYMENT.md) - not a second, separately-named
+    # `env_file:` reference baked into this YAML, which would require a
+    # literally-named `.env.production` to exist even just to validate this
+    # file with `docker compose config`.
+    environment:
+      APP_ENV: ${APP_ENV}
+      SECRET_KEY: ${SECRET_KEY}
+      DATABASE_URL: ${DATABASE_URL}
+      # Not needed by `alembic upgrade head` itself, but harmless to pass
+      # through for consistency with the backend service's environment.
+      VECTOR_STORE_PROVIDER: ${VECTOR_STORE_PROVIDER}
+      CHROMA_HOST: ${CHROMA_HOST}
+      CHROMA_PORT: ${CHROMA_PORT}
+      UPLOAD_ROOT: /app/storage/uploads
+      REPORT_ROOT: /app/storage/reports
+      KB_SOURCE_DIR: /app/knowledge_base/source
+    working_dir: /app/backend
+    command: ["alembic", "upgrade", "head"]
+    volumes:
+      - ./knowledge_base:/app/knowledge_base:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # One-shot: applies pending migrations and exits. Must never restart-loop
+    # - a failed migration is a deploy-blocking error the operator must see
+    # and fix, not something to silently retry against.
+    restart: "no"
+
+  storage-init:
+    image: exam-quality-backend:prod
+    build:
+      context: ./backend
+      target: production
+    # Root only for this one-shot step - backend/migrate still run as the
+    # image's own non-root USER 10001:10001 (set in backend/Dockerfile).
+    # A freshly created Compose named volume starts out owned by root, so
+    # UID 10001 cannot create files under it (PermissionError: [Errno 13]
+    # Permission denied) until something chowns it once. This container
+    # exists solely to do that - it never runs the application, and this
+    # `user:` override applies only to this service, not to backend.
+    user: "0:0"
+    volumes:
+      - backend_uploads:/app/storage/uploads
+      - backend_reports:/app/storage/reports
+    # mkdir -p is a no-op if the directories already exist; chown -R/
+    # chmod -R on an already-populated volume only reset ownership/mode,
+    # they never touch file contents or delete anything - safe to re-run on
+    # every deploy, preserving existing uploads/reports. 0750 (not 0777):
+    # owner (10001) read/write/execute, group (10001) read/execute, no
+    # access for anyone else.
+    command:
+      - "sh"
+      - "-c"
+      - "mkdir -p /app/storage/uploads /app/storage/reports && chown -R 10001:10001 /app/storage/uploads /app/storage/reports && chmod -R 0750 /app/storage/uploads /app/storage/reports"
+    # One-shot: fixes volume ownership/permissions and exits. Never the
+    # application server, never restart-looped.
+    restart: "no"
+
+  backend:
+    image: exam-quality-backend:prod
+    build:
+      context: ./backend
+      target: production
+    # See migrate's `environment:` comment - every value comes from
+    # whichever file `--env-file` points at, not a second env_file: rule.
+    environment:
+      APP_ENV: ${APP_ENV}
+      APP_NAME: ${APP_NAME}
+      API_PREFIX: ${API_PREFIX}
+      SECRET_KEY: ${SECRET_KEY}
+      DATABASE_URL: ${DATABASE_URL}
+      VECTOR_STORE_PROVIDER: ${VECTOR_STORE_PROVIDER}
+      CHROMA_HOST: ${CHROMA_HOST}
+      CHROMA_PORT: ${CHROMA_PORT}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      PASSWORD_RESET_URL: ${PASSWORD_RESET_URL}
+      AI_PROVIDER: ${AI_PROVIDER}
+      AI_MODEL: ${AI_MODEL}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+      # Optional: only meaningful when AI_PROVIDER=gemini (see
+      # app.services.ai.factory); blank/unset otherwise. Deliberately not
+      # passed to migrate/storage-init - neither needs it, and the smaller
+      # its footprint the smaller the exposure surface for this secret.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      AI_VALIDATION_RETRIES: ${AI_VALIDATION_RETRIES}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB}
+      FILE_RETENTION_DAYS: ${FILE_RETENTION_DAYS}
+      LOG_LEVEL: ${LOG_LEVEL}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
+      SMTP_USE_TLS: ${SMTP_USE_TLS}
+      UPLOAD_ROOT: /app/storage/uploads
+      REPORT_ROOT: /app/storage/reports
+      KB_SOURCE_DIR: /app/knowledge_base/source
+    # host.docker.internal is automatic on Docker Desktop; this extra_hosts
+    # entry makes the same hostname resolve on native Linux Docker Engine,
+    # so the backend can reach the host's own Ollama install without Ollama
+    # ever being a Compose service or publishing a port.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - backend_uploads:/app/storage/uploads
+      - backend_reports:/app/storage/reports
+      - ./knowledge_base:/app/knowledge_base:ro
+    healthcheck:
+      # No curl/wget in the python:3.12-slim base image; urllib is always
+      # available, so the check has no extra tooling dependency.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request as u; import sys; sys.exit(0 if u.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3).status == 200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+      storage-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    # Long enough for an in-flight PDF-report request or analysis-pipeline
+    # step to finish cleanly before the container is force-killed.
+    stop_grace_period: 30s
+    # No `ports:` - only the reverse proxy is reachable from outside this
+    # Compose network; the backend is addressed internally as "backend:8000".
+
+  frontend:
+    image: exam-quality-frontend:prod
+    build:
+      context: ./frontend
+      target: production
+      args:
+        # Same-origin relative path: the built bundle never hardcodes a
+        # hostname/port, so it works behind whatever domain (or
+        # http://localhost, for the smoke test) the reverse proxy answers
+        # on. Vite inlines this at build time - it cannot be changed by a
+        # runtime `environment:` entry.
+        VITE_API_BASE_URL: /api/v1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      backend:
+        condition: service_started
+    # No `ports:` - only the reverse proxy is reachable from outside this
+    # Compose network; the frontend is addressed internally as
+    # "frontend:8080".
+
+  reverse-proxy:
+    image: caddy:2.8.4-alpine
+    restart: unless-stopped
+    environment:
+      # http://localhost for the local smoke test; a real https://domain in
+      # staging/production, which also switches Caddy into automatic-HTTPS
+      # mode. See deploy/Caddyfile and docs/DEPLOYMENT.md.
+      CADDY_SITE_ADDRESS: ${CADDY_SITE_ADDRESS:-http://localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      backend:
+        condition: service_started
+      frontend:
+        condition: service_started
+    # The only service in this stack with a `ports:` mapping - every other
+    # service is reachable only from inside this Compose network.
+
+volumes:
+  postgres_data:
+  chroma_data:
+  backend_uploads:
+  backend_reports:
+  caddy_data:
+  caddy_config:

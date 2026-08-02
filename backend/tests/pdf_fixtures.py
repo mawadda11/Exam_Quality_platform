@@ -127,3 +127,39 @@ def build_scanned_looking_exam_pdf() -> bytes:
     pdf.add_page()
     pdf.image(image_buffer, x=0, y=0, w=width, h=height)
     return bytes(pdf.output())
+
+
+def build_multiline_question_with_table_pdf() -> bytes:
+    """Digital exam where Q3 wraps before a clearly labelled table."""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=11)
+    _line(pdf, "CS101 Midterm Examination - Supporting Material Test")
+    _line(pdf, "Course: Introduction to Programming")
+    _line(pdf, "Total Marks: 30")
+    _line(
+        pdf,
+        "Instructions: Answer all questions. Show clear reasoning. "
+        "No external resources are permitted.",
+    )
+    _line(pdf, "Q1 (10): Define an algorithm and explain two characteristics.")
+    _line(pdf, "Q2 (10): Write a Python function to calculate the factorial of n.")
+    _line(
+        pdf,
+        "Q3 (10): Refer to Table 1. Identify which Python data structure is mutable "
+        "and explain one suitable use for each structure.",
+    )
+    _line(pdf, "Table 1: Comparison of Python Data Structures")
+
+    widths = (50, 55, 55)
+    for row in (
+        ("Feature", "List", "Tuple"),
+        ("Syntax", "[1, 2, 3]", "(1, 2, 3)"),
+        ("Mutable", "Yes", "No"),
+        ("Typical use", "Data that may change", "Fixed records"),
+    ):
+        for width, value in zip(widths, row, strict=True):
+            pdf.cell(width, 8, value, border=1)
+        pdf.ln(8)
+
+    return bytes(pdf.output())

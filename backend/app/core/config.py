@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     # itself on any public network interface.
     ollama_base_url: str = "http://localhost:11434"
     ollama_timeout_seconds: int = Field(default=60, ge=1, le=300)
+    # SecretStr (not plain str): never rendered by repr()/str()/logging of a
+    # Settings instance - an extra guard against accidental exposure on top
+    # of the existing rule that no provider ever logs its credential.
+    # Optional adapter, gated only by AI_PROVIDER=gemini (see
+    # app.services.ai.factory) - blank by default, like ai_api_key.
+    gemini_api_key: SecretStr = SecretStr("")
     ai_validation_retries: int = Field(default=1, ge=0, le=2)
 
     # First-party faculty authentication. Access tokens are short-lived signed
@@ -64,7 +70,7 @@ class Settings(BaseSettings):
 def validate_runtime_settings(settings: Settings) -> None:
     """Fail closed when a pilot/production environment lacks auth essentials."""
 
-    if settings.app_env.lower() not in {"staging", "production"}:
+    if settings.app_env.strip().casefold() not in {"staging", "production"}:
         return
     insecure_defaults = {
         "development-only-change-me",

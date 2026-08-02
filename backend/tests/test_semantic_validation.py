@@ -241,6 +241,26 @@ def test_complete_valid_output_derives_high_confidence(
     )
 
 
+def test_provider_aggregate_status_is_advisory(
+    db_engine: Engine,
+    validation_rows: ValidationRows,
+) -> None:
+    payload = _payload(
+        validation_rows,
+        status="Not Satisfied",
+    )
+
+    with Session(db_engine) as session:
+        result = _validate(
+            session,
+            validation_rows,
+            payload,
+        )
+
+    assert result.status is AcademicStatus.SATISFIED
+    assert result.items[0].status is AcademicStatus.SATISFIED
+
+
 def test_missing_required_source_forces_low_not_verified(
     db_engine: Engine, validation_rows: ValidationRows
 ) -> None:
@@ -330,28 +350,44 @@ def test_invalid_contract_claims_are_rejected(
             _validate(session, validation_rows, _payload(validation_rows, **overrides))
 
 
-def test_evidence_ids_must_equal_item_citations(
+def test_provider_evidence_ids_are_advisory(
     db_engine: Engine, validation_rows: ValidationRows
 ) -> None:
     with Session(db_engine) as session:
-        with pytest.raises(SemanticOutputValidationError, match="exactly match"):
-            _validate(
-                session,
+        result = _validate(
+            session,
+            validation_rows,
+            _payload(
                 validation_rows,
-                _payload(
-                    validation_rows,
-                    evidence_ids=[str(validation_rows.question_evidence.id)],
-                ),
-            )
+                evidence_ids=[str(validation_rows.question_evidence.id)],
+            ),
+        )
+
+    assert result.evidence_ids == sorted(
+        [
+            validation_rows.question_evidence.id,
+            validation_rows.clo_evidence.id,
+        ],
+        key=str,
+    )
 
 
-def test_positive_relationship_requires_controlled_target(
+def test_positive_relationship_without_target_is_not_verified(
     db_engine: Engine, validation_rows: ValidationRows
 ) -> None:
     item = _item(validation_rows, targets=[])
+
     with Session(db_engine) as session:
-        with pytest.raises(SemanticOutputValidationError, match="requires at least one"):
-            _validate(session, validation_rows, _payload(validation_rows, items=[item]))
+        result = _validate(
+            session,
+            validation_rows,
+            _payload(validation_rows, items=[item]),
+        )
+
+    assert result.status is AcademicStatus.NOT_VERIFIED
+    assert result.confidence_level is SemanticConfidenceLevel.LOW
+    assert result.items[0].status is AcademicStatus.NOT_VERIFIED
+    assert result.items[0].target_evidence_ids == []
 
 
 def test_target_outside_controlled_set_is_rejected(

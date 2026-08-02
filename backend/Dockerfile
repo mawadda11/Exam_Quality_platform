@@ -9,6 +9,18 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml ./
 COPY app ./app
+# Required for `alembic upgrade head` to run inside this image (the
+# docker-compose.prod.yml `migrate` service's command): alembic.ini sets
+# script_location = alembic, and alembic/ holds env.py plus every versioned
+# migration. Without these two, alembic has no config file at all and fails
+# immediately with "No 'script_location' key found in configuration."
+COPY alembic.ini ./
+COPY alembic ./alembic
+# Build-time regression guard: fail the image build immediately (not the
+# first `alembic upgrade head` at deploy time) if a future edit to the COPY
+# lines above, or to backend/.dockerignore, ever drops these again.
+RUN test -f alembic.ini && test -f alembic/env.py && test -d alembic/versions \
+    || (echo "ERROR: alembic.ini/alembic/ missing from the image - migrations would fail at container runtime." >&2 && exit 1)
 RUN pip install --no-cache-dir -e .
 
 # Local development target (unchanged from before this file had stages):

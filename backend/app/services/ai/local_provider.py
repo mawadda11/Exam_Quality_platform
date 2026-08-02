@@ -434,23 +434,37 @@ def _item_for_rule(
     if rule_id == "RULE013":
         lowered = normalize_arabic_for_matching(source_text).casefold()
         references = sorted(marker for marker in _REFERENCE_MARKERS if marker in lowered)
-        instruction_ids = [
-            str(item["id"]) for item in context if item.get("evidence_type") == "instructions"
+        material_types = {"figure", "table", "code_block"}
+        material_ids = [
+            str(item["id"]) for item in context if item.get("evidence_type") in material_types
         ]
+        reference_context_ids = [
+            str(item["id"])
+            for item in context
+            if item.get("evidence_type") in {"explicit_reference", "label", "caption"}
+        ]
+        supplied_context_ids = [*reference_context_ids, *material_ids]
         if len(_tokens(source_text)) < 3:
             status = "Not Satisfied"
             reasoning = "The question lacks enough task or context information to be answerable."
-        elif references and not instruction_ids:
-            status = "Partially Satisfied"
+        elif references and not material_ids:
+            status = "Not Satisfied"
             reasoning = (
-                "The question refers to context or material that is not separately available."
+                "The question clearly refers to supporting material, but no matching material "
+                "content is available in the supplied confirmed context."
+            )
+        elif references:
+            status = "Satisfied"
+            reasoning = (
+                "The referenced supporting material and its confirmed context are available for "
+                "the stated task."
             )
         else:
             status = "Satisfied"
             reasoning = "The supplied question contains the information needed for its stated task."
         return {
             "source_evidence_id": source_id,
-            "target_evidence_ids": instruction_ids,
+            "target_evidence_ids": supplied_context_ids,
             "status": status,
             "reasoning": reasoning,
         }
@@ -459,19 +473,15 @@ def _item_for_rule(
         instruction_ids = [
             str(item["id"]) for item in context if item.get("evidence_type") == "instructions"
         ]
-        lowered = normalize_arabic_for_matching(source_text).casefold()
-        unresolved = any(marker in lowered for marker in _REFERENCE_MARKERS)
         if instruction_ids:
             status = "Satisfied"
-            reasoning = "General instruction evidence is present and the question states its task."
-        elif unresolved:
-            status = "Not Satisfied"
-            reasoning = (
-                "The question depends on referenced material or directions that are unavailable."
-            )
+            reasoning = "Confirmed exam-level general instruction evidence is present."
         else:
             status = "Not Applicable"
-            reasoning = "The question is self-contained and no special instruction is required."
+            reasoning = (
+                "No additional exam-level general instruction was identified as necessary from "
+                "the supplied confirmed evidence."
+            )
         return {
             "source_evidence_id": source_id,
             "target_evidence_ids": instruction_ids,

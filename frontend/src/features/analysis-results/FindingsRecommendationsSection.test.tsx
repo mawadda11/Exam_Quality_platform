@@ -270,7 +270,7 @@ describe('FindingsRecommendationsSection', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('hides a satisfied assessment-method check and keeps a non-satisfied one', () => {
+  it('shows satisfied and non-satisfied assessment-method checks', () => {
     renderSection([
       finding({
         id: 'assessment-ok',
@@ -290,7 +290,7 @@ describe('FindingsRecommendationsSection', () => {
       }),
     ])
 
-    expect(screen.queryByText('Satisfied assessment check')).not.toBeInTheDocument()
+    expect(screen.getByText('Satisfied assessment check')).toBeInTheDocument()
     expect(screen.getByText('Assessment method requires review')).toBeInTheDocument()
   })
 

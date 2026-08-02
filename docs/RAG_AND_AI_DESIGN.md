@@ -158,6 +158,31 @@ final response content, never any thinking/reasoning trace. There is no automati
 providers on failure: a configured provider's errors propagate through the existing safe
 processing-failure path.
 
+### Ollama JSON-mode compatibility fallback
+
+This is a transport-compatibility workaround, not a governance exception, and it does not weaken
+any validation gate below. Some confirmed Ollama/model combinations (observed: Ollama 0.32.5 with
+`qwen3.5:4b`) cannot compile the full JSON Schema passed in `/api/chat`'s `format` field into their
+sampling grammar and reject the request with HTTP 400 ("Failed to initialize samplers: failed to
+parse grammar"). `app.services.ai.ollama_provider` detects this one *confirmed* condition only -
+HTTP 400 plus a sanitized error message containing `"failed to parse grammar"` or `"failed to
+initialize samplers"` - by inspecting a bounded slice of the error body (never logged, stored, or
+included in any exception; the classification result is the only thing that leaves that function).
+On that specific condition, and only that condition, it retries **exactly once** with
+`format="json"` (Ollama's simpler, non-grammar-compiled JSON mode) instead, restating the same
+schema as compact text inside the system instruction and requiring one JSON object only, no
+Markdown, no prose outside the JSON. `stream=false`, `think=false`, and `options.temperature=0` are
+unchanged between the two attempts. Every other failure - timeout, connection failure, an
+unavailable model, an unrelated HTTP 400, HTTP 404/500, or a malformed response envelope - is not
+retried by this fallback.
+
+The fallback's output is still just an untrusted string returned from `generate_structured`, like
+every other provider call: `app.services.rules.semantic_validation`'s strict, `extra="forbid"`
+Pydantic schema and the evaluator's own bounded `validation_retries` loop are exactly as
+authoritative for JSON-mode output as they are for schema-mode output. Invalid or malformed
+fallback output is rejected the same way any other malformed provider output is - it never becomes
+an academic finding.
+
 ## Validation gates
 
 - JSON/schema validation with exactly one output object and no unknown fields.

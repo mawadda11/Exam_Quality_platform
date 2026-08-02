@@ -72,6 +72,7 @@ _EN = {
     "report_id": "Report ID",
     "generated": "Generated",
     "language_label": "Report language",
+    "language_name": "English",
     "scope": "Scope Disclaimer",
     "scope_text": (
         "This report applies only to the uploaded examination and the corresponding Course "
@@ -180,6 +181,7 @@ _AR = {
     "report_id": "معرّف التقرير",
     "generated": "تاريخ الإنشاء",
     "language_label": "لغة التقرير",
+    "language_name": "العربية",
     "scope": "إخلاء مسؤولية النطاق",
     "scope_text": (
         "يقتصر هذا التقرير على الاختبار المرفوع وتوصيف المقرر المطابق له. لا تصدر المنصة قرارات "
@@ -676,60 +678,46 @@ def _missing_evidence_section(pdf: FPDF, content: ReportContent, language: Repor
         _render_concise_finding(pdf, entry, language)
 
 
-_RECOMMENDATION_SECTION_DIMENSIONS: tuple[tuple[str, set[str]], ...] = (
-    ("Questions", {"Question Clarity", "Question Completeness"}),
-    (
-        "Alignment & Coverage",
-        {"CLO Alignment", "CLO Coverage", "Topic Alignment", "Topic Coverage"},
-    ),
-    ("Marks & Structure", {"Marks and Totals", "Numbering and Structure"}),
-)
-_RECOMMENDATION_SECTION_RULES: dict[str, set[str]] = {
-    "Materials & References": {"RULE014", "RULE016", "RULE022"},
+_RECOMMENDATION_STATUSES = {
+    AcademicStatus.PARTIALLY_SATISFIED,
+    AcademicStatus.NOT_SATISFIED,
+    AcademicStatus.NOT_VERIFIED,
 }
-
-
-def _recommendation_section_label(entry: ReportFindingEntry) -> str | None:
-    for label, dimensions in _RECOMMENDATION_SECTION_DIMENSIONS:
-        if entry.dimension in dimensions:
-            return label
-    for label, rule_ids in _RECOMMENDATION_SECTION_RULES.items():
-        if entry.rule_id in rule_ids:
-            return label
-    return None
 
 
 def _recommendations_section(pdf: FPDF, content: ReportContent, language: ReportLanguage) -> None:
     strings = _strings(language)
-    grouped: dict[str, list[ReportFindingEntry]] = {}
-    seen: set[tuple[str, str]] = set()
+    grouped: dict[str, list[tuple[str, str]]] = {}
+    seen_recommendations: set[str] = set()
+
     for entry in content.findings:
-        if entry.status not in _ATTENTION_STATUSES or not entry.recommendations:
+        if entry.status not in _RECOMMENDATION_STATUSES:
             continue
-        label = _recommendation_section_label(entry)
-        if label is None:
-            continue
-        key = (label, entry.requirement_id)
-        if key in seen:
-            continue
-        seen.add(key)
-        grouped.setdefault(label, []).append(entry)
+        label = governed_label(entry.dimension, language)
+        for recommendation in entry.recommendations:
+            key = recommendation.recommendation_id or (
+                f"{recommendation.title}\n{recommendation.text}"
+            )
+            if key in seen_recommendations:
+                continue
+            seen_recommendations.add(key)
+            grouped.setdefault(label, []).append(
+                recommendation_text(
+                    recommendation.recommendation_id,
+                    recommendation.title,
+                    recommendation.text,
+                    language,
+                )
+            )
 
     if not grouped:
         _paragraph(pdf, strings["no_recommendations"], style="I")
         return
 
-    for label, entries in grouped.items():
+    for label, recommendations in grouped.items():
         _subheading(pdf, label)
-        for entry in entries:
-            recommendation = entry.recommendations[0]
-            title, text = recommendation_text(
-                recommendation.recommendation_id,
-                recommendation.title,
-                recommendation.text,
-                language,
-            )
-            _paragraph(pdf, f"{title}: {text}", size=10)
+        for title, recommendation_body in recommendations:
+            _paragraph(pdf, f"{title}: {recommendation_body}", size=10)
         pdf.ln(1)
 
 
@@ -854,18 +842,17 @@ def render_report_pdf(
     _section_heading(pdf, strings["s1_header"], language)
     _paragraph(pdf, strings["title"], style="B", size=16)
     _paragraph(pdf, f"{content.course_code} - {content.course_name}")
-    exam_type = (
-        ("اختبار نصفي" if content.exam_type.value == "Midterm" else "اختبار نهائي")
-        if language is ReportLanguage.ARABIC
-        else content.exam_type.value
-    )
-    _paragraph(pdf, f"{exam_type} {strings['exam']}، {content.term}")
+    if language is ReportLanguage.ARABIC:
+        exam_type = "اختبار نصفي" if content.exam_type.value == "Midterm" else "اختبار نهائي"
+        exam_line = f"{exam_type}، {content.term}"
+    else:
+        exam_line = f"{content.exam_type.value} exam, {content.term}"
+    _paragraph(pdf, exam_line)
     _paragraph(
         pdf,
         f"{strings['report_id']}: {content.analysis_id} | {strings['generated']}: "
         f"{content.generated_at.isoformat(timespec='seconds')} | "
-        f"{strings['language_label']}: "
-        f"{('Arabic' if language is ReportLanguage.ARABIC else 'English')}",
+        f"{strings['language_label']}: {strings['language_name']}",
         size=9,
     )
 

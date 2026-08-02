@@ -1,0 +1,48 @@
+# Caddy reverse proxy for the production/staging stack (docker-compose.prod.yml).
+#
+# {$CADDY_SITE_ADDRESS} is supplied by the environment (.env.production's
+# CADDY_SITE_ADDRESS, defaulted to http://localhost by docker-compose.prod.yml
+# if unset). Caddy's automatic-HTTPS behavior is driven entirely by this one
+# address:
+#   - "https://your-domain" (or a bare domain) -> Caddy provisions and
+#     renews a real certificate automatically and terminates HTTPS here.
+#   - "http://localhost" -> Caddy serves plain HTTP with no certificate
+#     attempt, for the local production smoke test (see docs/DEPLOYMENT.md).
+#
+# This is the only place in the stack that binds a public port
+# (docker-compose.prod.yml publishes 80/443 on this service alone); every
+# other service (frontend, backend, postgres, chromadb) is reachable only
+# from inside the Compose network.
+{$CADDY_SITE_ADDRESS} {
+	encode zstd gzip
+
+	# Sensible baseline security headers for every response. HSTS is inert
+	# (ignored by browsers) when served over plain HTTP, so it is safe to
+	# always send even for the http://localhost smoke test.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		-Server
+	}
+
+	# `handle` (not `handle_path`) preserves the full matched path -
+	# including the /api prefix - when proxying, because the backend's
+	# routes are themselves mounted under /api/v1 (see
+	# backend/app/core/config.py's api_prefix and backend/app/main.py).
+	# `handle_path` would strip /api before forwarding, which would break
+	# every backend route.
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	# Everything else goes to the built frontend. Deep React Router links
+	# (e.g. /analyses/<id>/results) are preserved by the frontend's own
+	# nginx config (frontend/nginx.conf's `try_files ... /index.html`
+	# fallback) - Caddy does not need its own rewrite rule for this.
+	handle {
+		reverse_proxy frontend:8080
+	}
+}

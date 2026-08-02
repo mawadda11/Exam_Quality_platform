@@ -37,6 +37,7 @@ from app.services.extraction.pdf_layout import PdfLayoutLine, extract_layout_lin
 from app.services.extraction.structured_evidence import (
     extract_page_materials,
     extract_question_references,
+    normalize_annotation_label,
 )
 from app.services.extraction.text_quality import assess_text_quality
 from app.services.extraction.types import (
@@ -66,6 +67,51 @@ class _QuestionDraft:
     raw_parts: list[str]
     geometries: list[Geometry]
     marks_geometry: Geometry | None
+    source_mode: str
+
+
+
+
+def _classification_priority(classified: ClassifiedLine) -> int:
+    """Rank structural classifications for layout-orientation selection."""
+
+    if classified.kind in {LineKind.QUESTION, LineKind.SUBQUESTION}:
+        return 3
+    if classified.kind in {LineKind.INSTRUCTIONS, LineKind.TOTAL_MARKS}:
+        return 2
+    return 0
+
+
+def _select_layout_line_text(
+    line: PdfLayoutLine,
+    current_parent_label: str | None,
+    preferred_source: str | None = None,
+) -> tuple[str, ClassifiedLine, str]:
+    """Choose the parseable reading orientation without rewriting evidence.
+
+    Some Arabic digital PDFs expose already-logical text through the default
+    extraction path while the geometry-derived RTL representation reverses the
+    line. Other producers need the RTL representation. We classify both source-
+    faithful candidates and select the one that carries stronger structural
+    evidence. Continuation lines inherit the orientation of their question.
+    """
+
+    reading = classify_line(line.reading_text, current_parent_label)
+    if line.raw_text == line.reading_text:
+        return line.reading_text, reading, "reading"
+
+    raw = classify_line(line.raw_text, current_parent_label)
+    reading_priority = _classification_priority(reading)
+    raw_priority = _classification_priority(raw)
+
+    if raw_priority > reading_priority:
+        return line.raw_text, raw, "raw"
+    if reading_priority > raw_priority:
+        return line.reading_text, reading, "reading"
+
+    if preferred_source == "raw":
+        return line.raw_text, raw, "raw"
+    return line.reading_text, reading, "reading"
 
 
 def _union_geometry(geometries: list[Geometry]) -> Geometry | None:
@@ -207,22 +253,11 @@ class PdfPlumberExamExtractor:
                     )
                     supporting_materials.extend(structured.materials)
                     supporting_annotations.extend(structured.annotations)
-                    if any(
-                        classify_line(line, current_parent_label).kind
-                        in {LineKind.QUESTION, LineKind.SUBQUESTION}
-                        for line in lines
-                    ):
-                        sequence, current_parent_label = self._process_digital_page(
-                            page,
-                            lines,
-                            page_number,
-                            sequence,
-                            current_parent_label,
-                            questions,
-                            evidence,
-                            declared_total_found,
-                        )
-                    else:
+                    # Prefer layout-aware extraction whenever positional lines are
+                    # available. It preserves wrapped question stems and stops before
+                    # real supporting materials. The plain-text path remains as a
+                    # fallback for PDFs where layout extraction yields no usable lines.
+                    if layout_lines:
                         sequence, current_parent_label = self._process_layout_page(
                             page,
                             layout_lines,
@@ -232,6 +267,17 @@ class PdfPlumberExamExtractor:
                             questions,
                             evidence,
                             structured.materials,
+                            declared_total_found,
+                        )
+                    else:
+                        sequence, current_parent_label = self._process_digital_page(
+                            page,
+                            lines,
+                            page_number,
+                            sequence,
+                            current_parent_label,
+                            questions,
+                            evidence,
                             declared_total_found,
                         )
                     declared_total_found = declared_total_found or any(
@@ -413,7 +459,11 @@ class PdfPlumberExamExtractor:
             draft = None
 
         for line in lines:
-            classified = classify_line(line.reading_text, current_parent_label)
+            line_text, classified, source_mode = _select_layout_line_text(
+                line,
+                current_parent_label,
+                draft.source_mode if draft is not None else None,
+            )
             if classified.kind in {LineKind.QUESTION, LineKind.SUBQUESTION}:
                 flush()
                 parent_label = (
@@ -425,10 +475,11 @@ class PdfPlumberExamExtractor:
                     classified=classified,
                     page_number=page_number,
                     parent_number_label=parent_label,
-                    reading_parts=[line.reading_text],
+                    reading_parts=[line_text],
                     raw_parts=[line.raw_text],
                     geometries=[line.geometry],
                     marks_geometry=line.geometry if classified.marks is not None else None,
+                    source_mode=source_mode,
                 )
                 stopped = False
                 continue
@@ -447,7 +498,7 @@ class PdfPlumberExamExtractor:
                         item_reference=(
                             "instructions" if evidence_type == "instructions" else "total"
                         ),
-                        extracted_text=line.reading_text,
+                        extracted_text=line_text,
                         confidence=_confidence_for(geometry),
                         geometry=geometry,
                         question_number_label=None,
@@ -456,6 +507,11 @@ class PdfPlumberExamExtractor:
                 continue
 
             if draft is None or stopped:
+                continue
+            # A standalone material label/caption starts the supporting
+            # material region and is not part of the question stem.
+            if normalize_annotation_label(line_text) is not None:
+                stopped = True
                 continue
             previous_bottom = draft.geometries[-1].bottom
             crosses_material = any(
@@ -469,7 +525,7 @@ class PdfPlumberExamExtractor:
                 and line.geometry.bottom <= item.geometry.bottom
                 for item in materials
             )
-            looks_like_footer = "Batch" in line.reading_text and "/" in line.reading_text
+            looks_like_footer = "Batch" in line_text and "/" in line_text
             if (
                 line.geometry.top - previous_bottom > _STEM_VERTICAL_GAP
                 or crosses_material
@@ -478,7 +534,7 @@ class PdfPlumberExamExtractor:
             ):
                 stopped = True
                 continue
-            draft.reading_parts.append(line.reading_text)
+            draft.reading_parts.append(line_text)
             draft.raw_parts.append(line.raw_text)
             draft.geometries.append(line.geometry)
 

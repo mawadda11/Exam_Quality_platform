@@ -25,6 +25,7 @@ dependencies = [
   "openpyxl>=3.1,<4",
   "chromadb==1.5.9",
   "anthropic>=0.68,<1",
+  "google-genai>=1.0,<2",
 ]
 
 [project.optional-dependencies]

@@ -54,10 +54,10 @@ def test_manifest_generation_is_byte_for_byte_deterministic(tmp_path: Path) -> N
 
 def test_real_kb_manifest_counts_match_known_totals() -> None:
     manifest = _manifest_for(REAL_KB_SOURCE)
-    assert manifest["total_normalized_records"] == 437
+    assert manifest["total_normalized_records"] == 441
     assert manifest["status"] == "valid"
-    assert sum(manifest["record_counts_by_workbook"].values()) == 437
-    assert sum(manifest["provenance_category_counts"].values()) == 437
+    assert sum(manifest["record_counts_by_workbook"].values()) == 441
+    assert sum(manifest["provenance_category_counts"].values()) == 441
     assert manifest["provenance_category_counts"]["system rule"] == 30
     assert manifest["provenance_category_counts"]["official reference"] == 3
 

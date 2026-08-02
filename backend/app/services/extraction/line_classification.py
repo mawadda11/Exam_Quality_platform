@@ -25,7 +25,11 @@ TOTAL_MARKS_PATTERN = re.compile(
 )
 
 _ENGLISH_QUESTION = re.compile(
-    r"^Q\s*(\d+)(?:\.\s*|\s+\(\d+(?:\.\d+)?\)\s*:\s*|\s*:\s*)(.*)$",
+    r"^Q\s*(\d+)\s*(?:"
+    r"[\.\:\-–—]\s*"
+    r"|[\(\[]\s*\d+(?:\.\d+)?\s*(?:marks?)?\s*[\)\]]\s*"
+    r"(?:[\.\:\-–—]\s*)?"
+    r")(.*)$",
     re.I,
 )
 _ARABIC_Q_QUESTION = re.compile(r"^س\s*(\d+)\s*(?:[\.:\-]\s*)?(.*)$")

@@ -225,6 +225,16 @@ def _line_geometry(page: Page, line: str | PdfLayoutLine) -> Geometry | None:
 
 
 def is_code_line(value: str) -> bool:
+    # Question headers such as ``Q1 (8 marks).`` superficially resemble a
+    # function call (identifier followed by parentheses). They must remain
+    # question text and must never create a synthetic code-block material.
+    normalized = normalize_arabic_for_matching(value).strip()
+    if re.match(
+        r"^(?:Q\s*\d+|Question\s+(?:No\.?\s*)?\d+|س\s*\d+|السؤال\s+)",
+        normalized,
+        re.IGNORECASE,
+    ):
+        return False
     return _CODE_LINE.match(value) is not None
 
 

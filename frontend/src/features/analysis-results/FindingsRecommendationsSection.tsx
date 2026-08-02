@@ -51,10 +51,7 @@ export function FindingsRecommendationsSection({
   const [filters, setFilters] = useState<FindingFilterValues>(
     EMPTY_FINDING_FILTERS,
   )
-  const visibleFindings = findings.filter(
-    (finding) =>
-      finding.rule_id !== 'RULE003' || finding.status !== 'Satisfied',
-  )
+  const visibleFindings = findings
   const filteredFindings = filterFindings(visibleFindings, filters)
   const counts = countFindingStatuses(visibleFindings)
   const missingEvidenceCount = counts.get('Not Verified') ?? 0

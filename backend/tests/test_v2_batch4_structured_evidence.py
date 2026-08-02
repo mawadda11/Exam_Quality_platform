@@ -479,6 +479,38 @@ def test_persistence_keeps_page_geometry_confidence_and_extraction_method(
         assert material.extraction_method == "direct_text"
 
 
+def test_plain_exam_questions_do_not_create_code_block(
+    tmp_path: Path,
+) -> None:
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=12)
+
+    lines = (
+        "CS101 Midterm Examination (Sample)",
+        "Course: Introduction to Programming",
+        "Total Marks: 30",
+        "Q1 (10): Define an algorithm and explain two characteristics.",
+        "Q2 (10): Write a Python function to calculate the factorial of n.",
+        "Q3 (10): Compare lists and tuples with two examples.",
+    )
+
+    for line in lines:
+        pdf.cell(text=line)
+        pdf.ln(8)
+
+    pdf_path = tmp_path / "plain-question-exam.pdf"
+    pdf.output(pdf_path)
+
+    extracted = PdfPlumberExamExtractor().extract(pdf_path)
+
+    assert not any(
+        item.material_type is SupportingMaterialType.CODE_BLOCK
+        for item in extracted.supporting_materials
+    )
+    assert extracted.supporting_materials == []
+
+
 def test_real_pdf_pipeline_extracts_persists_and_verifies_unique_table(
     db_engine: Engine,
     tmp_path: Path,
