@@ -81,6 +81,7 @@ def _cached_runtime(
     ai_provider: str,
     ai_model: str,
     ai_api_key: str,
+    gemini_api_key: str,
     ai_validation_retries: int,
 ) -> SemanticRuntime:
     settings = Settings(
@@ -92,6 +93,7 @@ def _cached_runtime(
         ai_provider=ai_provider,
         ai_model=ai_model,
         ai_api_key=ai_api_key,
+        gemini_api_key=gemini_api_key,
         ai_validation_retries=ai_validation_retries,
     )
     return SemanticRuntime(
@@ -111,6 +113,7 @@ def get_semantic_runtime(settings: Settings) -> SemanticRuntime:
         settings.ai_provider,
         settings.ai_model,
         settings.ai_api_key,
+        settings.gemini_api_key.get_secret_value(),
         settings.ai_validation_retries,
     )
 
