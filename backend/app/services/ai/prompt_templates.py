@@ -25,13 +25,15 @@ accreditation, faculty-performance, Bloom-level, difficulty, or student-performa
 
 PROMPT_TEMPLATES: dict[str, PromptTemplate] = {
     "RULE001": PromptTemplate(
-        version="semantic-rule001-v2",
+        version="semantic-rule001-v3",
         system=_COMMON_SYSTEM,
         rule_instruction=(
             "Map each scorable question to one or more supplied CLO evidence rows when the "
             "question "
             "meaningfully supports that CLO. A code citation is supporting evidence but is not "
-            "required and is not sufficient by itself."
+            "required and is not sufficient by itself. Select a target only when the confirmed "
+            "question and that exact supplied CLO statement share specific assessed concepts; "
+            "otherwise return Not Verified with no target IDs."
         ),
     ),
     "RULE002": PromptTemplate(
@@ -62,12 +64,14 @@ PROMPT_TEMPLATES: dict[str, PromptTemplate] = {
         ),
     ),
     "RULE007": PromptTemplate(
-        version="semantic-rule007-v1",
+        version="semantic-rule007-v2",
         system=_COMMON_SYSTEM,
         rule_instruction=(
             "Map each substantive question to one or more supplied documented course topics. "
             "Do not "
-            "require explicit topic codes and do not create topics absent from TP-153."
+            "require explicit topic codes and do not create topics absent from TP-153. Select a "
+            "target only when the confirmed question and that exact supplied topic share specific "
+            "assessed concepts; otherwise return Not Verified with no target IDs."
         ),
     ),
     "RULE008": PromptTemplate(
@@ -82,38 +86,48 @@ PROMPT_TEMPLATES: dict[str, PromptTemplate] = {
         ),
     ),
     "RULE011": PromptTemplate(
-        version="semantic-rule011-v1",
+        version="semantic-rule011-v2",
         system=_COMMON_SYSTEM,
         rule_instruction=(
-            "Evaluate whether each question states a recognizable action and expected response. "
+            "Evaluate only whether each question states a recognizable action and expected "
+            "response. Do not treat missing supporting material, absent references, or exam-level "
+            "instructions as task-clarity defects; those belong to separate controlled rules. "
             "Ignore stylistic preferences that do not affect task clarity."
         ),
     ),
     "RULE012": PromptTemplate(
-        version="semantic-rule012-v1",
+        version="semantic-rule012-v2",
         system=_COMMON_SYSTEM,
         rule_instruction=(
-            "Evaluate only material ambiguity, contradiction, or missing conditions that affect "
-            "consistent interpretation. Do not penalize harmless wording preferences."
+            "Evaluate only linguistic ambiguity, contradiction, unclear terminology, or wording "
+            "that permits materially different interpretations. Do not classify an unavailable "
+            "table, figure, code block, or other supporting item as wording ambiguity when the "
+            "reference itself is clear; material availability and information completeness are "
+            "handled by separate controlled rules. Do not penalize harmless wording preferences."
         ),
     ),
     "RULE013": PromptTemplate(
-        version="semantic-rule013-v1",
+        version="semantic-rule013-v2",
         system=_COMMON_SYSTEM,
         rule_instruction=(
-            "Evaluate whether each question and its supplied context contain the information "
-            "needed "
-            "to produce the expected response. Do not assess answer-key correctness."
+            "Evaluate whether each question and its supplied question-specific context contain "
+            "the information needed to produce the expected response. Treat supplied confirmed "
+            "tables, figures, code blocks, labels, captions, and explicit references as available "
+            "context. Do not claim that a referenced item is missing when matching confirmed "
+            "supporting evidence is supplied. General exam instructions are not a substitute for "
+            "missing question data. Do not assess answer-key correctness."
         ),
     ),
     "RULE021": PromptTemplate(
-        version="semantic-rule021-v1",
+        version="semantic-rule021-v2",
         system=_COMMON_SYSTEM,
         rule_instruction=(
-            "Evaluate whether necessary general and question-specific instructions are present. "
-            "Use "
-            "Not Applicable only when no special instruction is needed; do not invent local exam "
-            "policies."
+            "Evaluate the exam-level general instructions only, such as answer requirements, "
+            "allowed resources or tools, general constraints, and submission or formatting "
+            "directions when applicable. Do not judge the completeness of an individual question "
+            "or the availability of a referenced table, figure, or code block under this rule. "
+            "Use Not Applicable only when no additional exam-level instruction is needed; do not "
+            "invent local exam policies."
         ),
     ),
 }

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from collections.abc import Sequence
 from pathlib import Path
+from uuid import UUID
 
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -31,6 +34,127 @@ from app.services.rules.semantic_types import (
 
 class SemanticOutputValidationError(RuntimeError):
     """Invalid model output is never released as an academic finding."""
+
+
+_GROUNDED_RELATIONSHIP_RULES = frozenset({"RULE001", "RULE007"})
+_GROUNDING_STOPWORDS = frozenset(
+    {
+        "answer",
+        "analyze",
+        "and",
+        "apply",
+        "calculate",
+        "compare",
+        "describe",
+        "discuss",
+        "explain",
+        "for",
+        "from",
+        "identify",
+        "into",
+        "of",
+        "or",
+        "question",
+        "state",
+        "student",
+        "students",
+        "the",
+        "this",
+        "to",
+        "use",
+        "using",
+        "with",
+        "what",
+        "which",
+        "اذكر",
+        "اشرح",
+        "السؤال",
+        "الطالب",
+        "قارن",
+        "هذا",
+    }
+)
+
+
+def _grounding_tokens(value: str) -> set[str]:
+    normalized = unicodedata.normalize("NFKC", value).casefold()
+    normalized = re.sub(r"[\u0640\u064b-\u065f\u0670\u06d6-\u06ed]", "", normalized)
+    return {
+        token
+        for token in re.findall(r"[^\W_]+", normalized, flags=re.UNICODE)
+        if len(token) >= 3 and token not in _GROUNDING_STOPWORDS and not token.isdigit()
+    }
+
+
+def _explicitly_cites_target(source_text: str, target: Evidence) -> bool:
+    reference = unicodedata.normalize("NFKC", target.item_reference).casefold()
+    compact_reference = re.sub(r"[^\w]+", "", reference, flags=re.UNICODE)
+    if (
+        len(compact_reference) < 2
+        or not any(character.isalpha() for character in compact_reference)
+        or not any(character.isdigit() for character in compact_reference)
+    ):
+        return False
+    compact_source = re.sub(
+        r"[^\w]+",
+        "",
+        unicodedata.normalize("NFKC", source_text).casefold(),
+        flags=re.UNICODE,
+    )
+    return compact_reference in compact_source
+
+
+def _ground_relationship_items(
+    items: tuple[SemanticItemJudgment, ...],
+    *,
+    evidence_by_id: dict[UUID, Evidence],
+    rule_id: str,
+) -> tuple[tuple[SemanticItemJudgment, ...], bool]:
+    if rule_id not in _GROUNDED_RELATIONSHIP_RULES:
+        return items, False
+
+    grounded_items: list[SemanticItemJudgment] = []
+    downgraded = False
+    for item in items:
+        if item.status not in {
+            AcademicStatus.SATISFIED,
+            AcademicStatus.PARTIALLY_SATISFIED,
+        }:
+            grounded_items.append(item)
+            continue
+        source = evidence_by_id[item.source_evidence_id]
+        source_tokens = _grounding_tokens(source.extracted_text)
+        grounded_targets = [
+            target_id
+            for target_id in item.target_evidence_ids
+            if _explicitly_cites_target(source.extracted_text, evidence_by_id[target_id])
+            or source_tokens
+            & _grounding_tokens(evidence_by_id[target_id].extracted_text)
+        ]
+        if not grounded_targets:
+            downgraded = True
+            grounded_items.append(
+                item.model_copy(
+                    update={
+                        "status": AcademicStatus.NOT_VERIFIED,
+                        "target_evidence_ids": [],
+                        "reasoning": (
+                            "Not verified because the proposed relationship was not grounded "
+                            "in shared assessed concepts from the confirmed question and the "
+                            "cited Course Specification record."
+                        ),
+                    }
+                )
+            )
+            continue
+        if grounded_targets != item.target_evidence_ids:
+            downgraded = True
+            grounded_items.append(
+                item.model_copy(update={"target_evidence_ids": grounded_targets})
+            )
+            continue
+        grounded_items.append(item)
+    return tuple(grounded_items), downgraded
 
 
 def semantic_output_schema() -> dict[str, object]:
@@ -248,38 +372,52 @@ def validate_semantic_output(
     if output.kb_version != context.kb_version:
         raise SemanticOutputValidationError("Knowledge-base version does not match.")
 
-    output_ids = set(output.evidence_ids)
-    if not output_ids:
-        raise SemanticOutputValidationError("Semantic findings require at least one evidence ID.")
-    if not output_ids.issubset(context.allowed_evidence_ids):
-        raise SemanticOutputValidationError("Provider output cites evidence outside its context.")
+    items = tuple(
+        item.model_copy(
+            update={
+                "status": AcademicStatus.NOT_VERIFIED,
+                "reasoning": (
+                    "Not verified because the provider returned a positive "
+                    "relationship without a controlled target."
+                ),
+            }
+        )
+        if (
+            context.relationship_required
+            and item.status
+            in (
+                AcademicStatus.SATISFIED,
+                AcademicStatus.PARTIALLY_SATISFIED,
+            )
+            and not item.target_evidence_ids
+        )
+        else item
+        for item in output.items
+    )
 
-    item_ids: set[object] = set()
-    for item in output.items:
+    item_ids: set[UUID] = set()
+    for item in items:
         item_ids.add(item.source_evidence_id)
         target_ids = set(item.target_evidence_ids)
         if not target_ids.issubset(context.allowed_target_evidence_ids):
             raise SemanticOutputValidationError(
                 "Provider output cites a target outside the governed target set."
             )
-        if (
-            context.relationship_required
-            and item.status in (AcademicStatus.SATISFIED, AcademicStatus.PARTIALLY_SATISFIED)
-            and not target_ids
-        ):
-            raise SemanticOutputValidationError(
-                "A positive semantic relationship requires at least one controlled target."
-            )
         item_ids.update(target_ids)
-    if output_ids != item_ids:
-        raise SemanticOutputValidationError(
-            "evidence_ids must exactly match the evidence cited by item judgments."
-        )
+
+    if not item_ids:
+        raise SemanticOutputValidationError("Semantic findings require at least one evidence ID.")
+    if not item_ids.issubset(context.allowed_evidence_ids):
+        raise SemanticOutputValidationError("Provider output cites evidence outside its context.")
+
+    # The authoritative evidence list is derived from the validated item
+    # judgments. The provider top-level evidence_ids field is advisory.
+    evidence_ids = sorted(item_ids, key=str)
 
     evidence_rows = list(
-        session.execute(select(Evidence).where(Evidence.id.in_(output_ids))).scalars().all()
+        session.execute(select(Evidence).where(Evidence.id.in_(item_ids))).scalars().all()
     )
-    if len(evidence_rows) != len(output_ids):
+    if len(evidence_rows) != len(item_ids):
         raise SemanticOutputValidationError("Provider output cites unknown evidence.")
     if any(row.analysis_id != context.analysis_id for row in evidence_rows):
         raise SemanticOutputValidationError(
@@ -291,8 +429,20 @@ def validate_semantic_output(
         )
     _validate_extraction_provenance(evidence_rows, session=session, context=context)
 
-    confidence_level, confidence_basis = _derive_confidence(items=output.items, context=context)
-    aggregate_status = aggregate_item_statuses(output.items)
+    items, grounding_downgraded = _ground_relationship_items(
+        items,
+        evidence_by_id={row.id: row for row in evidence_rows},
+        rule_id=spec.identifier.rule_id,
+    )
+    item_ids = {
+        evidence_id
+        for item in items
+        for evidence_id in (item.source_evidence_id, *item.target_evidence_ids)
+    }
+    evidence_ids = sorted(item_ids, key=str)
+
+    confidence_level, confidence_basis = _derive_confidence(items=items, context=context)
+    aggregate_status = aggregate_item_statuses(items)
     final_status = (
         AcademicStatus.NOT_VERIFIED
         if confidence_level is SemanticConfidenceLevel.LOW
@@ -302,23 +452,23 @@ def validate_semantic_output(
         raise SemanticOutputValidationError(
             "The deterministically aggregated status is not allowed for this rule."
         )
-    if confidence_level is not SemanticConfidenceLevel.LOW and output.status is not final_status:
-        raise SemanticOutputValidationError(
-            "Provider aggregate status does not match its item judgments."
-        )
+    # The final status is derived deterministically from the validated
+    # item judgments. The provider top-level status is advisory and must
+    # not override or block the backend-attested result.
 
+    recommendation_id = None if grounding_downgraded else output.recommendation_id
     eligible = {
         item.recommendation_id
         for item in get_recommendations_for(
             kb_source_dir.resolve(), spec.identifier.rule_id, final_status
         )
     }
-    if output.recommendation_id is not None and output.recommendation_id not in eligible:
+    if recommendation_id is not None and recommendation_id not in eligible:
         raise SemanticOutputValidationError(
             "Provider output cites a recommendation that does not apply to the final status."
         )
-    if output.recommendation_id is not None:
-        recommendation = get_recommendation_by_id(kb_source_dir.resolve(), output.recommendation_id)
+    if recommendation_id is not None:
+        recommendation = get_recommendation_by_id(kb_source_dir.resolve(), recommendation_id)
         if recommendation is None or recommendation.rule_id != spec.identifier.rule_id:
             raise SemanticOutputValidationError("Provider output cites an invalid recommendation.")
 
@@ -326,13 +476,18 @@ def validate_semantic_output(
         status=final_status,
         confidence_level=confidence_level,
         legacy_confidence=_legacy_confidence(confidence_level),
-        evidence_ids=output.evidence_ids,
-        explanation=output.explanation,
-        recommendation_id=output.recommendation_id,
+        evidence_ids=evidence_ids,
+        explanation=(
+            "One or more proposed CLO/topic relationships could not be grounded in the "
+            "confirmed question and Course Specification text."
+            if grounding_downgraded
+            else output.explanation
+        ),
+        recommendation_id=recommendation_id,
         provider=output.provider,
         model=output.model,
         prompt_template_version=output.prompt_template_version,
         kb_version=output.kb_version,
-        items=tuple(output.items),
+        items=items,
         confidence_basis=confidence_basis,
     )

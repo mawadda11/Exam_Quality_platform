@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as analysesApi from '../../api/analyses'
 import { I18nProvider } from '../../i18n/I18nProvider'
@@ -192,7 +192,7 @@ describe('StructuredEvidenceSection', () => {
     expect(within(table).getAllByText('Linked')).toHaveLength(3)
     expect(within(table).getByText('Missing reference')).toBeInTheDocument()
     expect(within(table).getByText('Ambiguous reference')).toBeInTheDocument()
-    expect(within(table).getByText('Suggested nearby material')).toBeInTheDocument()
+    expect(within(table).getByText('Proximity-based link')).toBeInTheDocument()
     expect(within(table).getAllByText('Relational Database Schema').length)
       .toBeGreaterThan(0)
     expect(within(table).getAllByText('Sample Student Scores').length)
@@ -210,19 +210,18 @@ describe('StructuredEvidenceSection', () => {
       name: 'Question-to-material relationships',
     })
     const q6Row = within(table).getByRole('rowheader', { name: 'Q6' }).closest('tr')!
-    fireEvent.click(within(q6Row).getByText('View details'))
+    const trigger = within(q6Row).getByRole('button', { name: 'View details' })
+    fireEvent.click(trigger)
 
-    expect(within(q6Row).getByText('Question 6 source text')).toHaveAttribute(
-      'dir',
-      'auto',
-    )
-    expect(within(q6Row).getByText('Network Structure')).toBeInTheDocument()
-    expect(within(q6Row).getByText('Validation Flowchart')).toBeInTheDocument()
-    expect(
-      within(q6Row).getByText(
-        'Q6 refers to Figure 2, but 2 distinct materials use that label.',
-      ),
-    ).toBeInTheDocument()
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Question 6 source text')).toHaveAttribute('dir', 'auto')
+    expect(within(dialog).getByText('Network Structure')).toBeInTheDocument()
+    expect(within(dialog).getByText('Validation Flowchart')).toBeInTheDocument()
+    expect(within(dialog).getByText(
+      'Q6 refers to Figure 2, but 2 distinct materials use that label.',
+    )).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(trigger).toHaveFocus())
   })
 
   it('keeps the relationship table and omits the duplicate physical inventory', async () => {
@@ -260,7 +259,7 @@ describe('StructuredEvidenceSection', () => {
     expect(within(table).getAllByText('مرتبط')).toHaveLength(3)
     expect(within(table).getByText('مرجع مفقود')).toBeInTheDocument()
     expect(within(table).getByText('مرجع غامض')).toBeInTheDocument()
-    expect(within(table).getByText('ارتباط مقترح بعنصر قريب')).toBeInTheDocument()
+    expect(within(table).getByText('ارتباط قائم على القرب')).toBeInTheDocument()
   })
 
   it('keeps historical analyses compatible with empty collections', async () => {
@@ -274,4 +273,25 @@ describe('StructuredEvidenceSection', () => {
     expect(await screen.findByText('No structured supporting material'))
       .toBeInTheDocument()
   })
+
+  it('shows a confirmed direct question-to-context link without an explicit reference phrase', async () => {
+    vi.mocked(analysesApi.listSupportingMaterials).mockResolvedValue([
+      { ...material('code-direct', 'code_block', 4, 10), question_id: 'question-4' },
+    ])
+    vi.mocked(analysesApi.listSupportingMaterialAnnotations).mockResolvedValue([])
+    vi.mocked(analysesApi.listDocumentReferences).mockResolvedValue([])
+    vi.mocked(analysesApi.listQuestions).mockResolvedValue([question(4, 4)])
+
+    render(<StructuredEvidenceSection analysisId="analysis-direct" />)
+
+    const table = await screen.findByRole('table', {
+      name: 'Question-to-material relationships',
+    })
+    const q4Row = within(table).getByRole('rowheader', { name: 'Q4' }).closest('tr')!
+    expect(q4Row).toHaveTextContent('Linked')
+    expect(q4Row).toHaveTextContent('def add_student():')
+    expect(screen.queryByText('No question-to-material references were identified.'))
+      .not.toBeInTheDocument()
+  })
+
 })

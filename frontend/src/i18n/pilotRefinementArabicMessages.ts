@@ -12,6 +12,10 @@ export const PILOT_REFINEMENT_ARABIC_MESSAGES: Readonly<
   'Possible matching material': 'عنصر مطابق محتمل',
   'Review how each question reference relates to the physical materials identified in the exam.':
     'راجع علاقة كل إحالة في السؤال بالمواد الداعمة المحددة في الاختبار.',
+  'Review how each question is linked to the supporting figures, tables, diagrams, or code identified in the exam.':
+    'راجع كيفية ارتباط كل سؤال بالأشكال أو الجداول أو الرسومات أو المقاطع البرمجية الداعمة المحددة في الاختبار.',
+  'This supporting context is directly associated with the confirmed question evidence.':
+    'هذا السياق المساند مرتبط مباشرة بأدلة السؤال المؤكدة.',
   'Question-to-material relationships': 'علاقات الأسئلة بالمواد الداعمة',
   'Referenced item': 'العنصر المشار إليه',
   'Matched material': 'العنصر المطابق',
@@ -22,6 +26,7 @@ export const PILOT_REFINEMENT_ARABIC_MESSAGES: Readonly<
   'Missing reference': 'مرجع مفقود',
   'Ambiguous reference': 'مرجع غامض',
   'Suggested nearby material': 'ارتباط مقترح بعنصر قريب',
+  'Proximity-based link': 'ارتباط قائم على القرب',
   'Original reference phrase': 'عبارة الإحالة الأصلية',
   'Candidate materials': 'العناصر المرشحة',
   'Relationship reason': 'سبب الارتباط',

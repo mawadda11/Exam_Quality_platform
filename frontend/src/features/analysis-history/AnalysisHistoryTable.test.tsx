@@ -45,6 +45,8 @@ describe('AnalysisHistoryTable', () => {
     expect(screen.getByRole('rowheader', { name: 'CPIT-450' })).toBeInTheDocument()
     expect(screen.getByText('Software Engineering')).toHaveAttribute('dir', 'auto')
     expect(screen.getByLabelText('Processing state: completed')).toHaveTextContent('completed')
+    expect(screen.getByRole('link', { name: 'Open analysis' }).querySelector('svg')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Delete analysis' }).querySelector('svg')).toBeInTheDocument()
   })
 
   it('uses record cards instead of a table at the mobile breakpoint', () => {

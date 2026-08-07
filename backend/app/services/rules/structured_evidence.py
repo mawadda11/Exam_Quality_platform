@@ -266,6 +266,39 @@ def evaluate_supporting_material_association(
     material_references = [
         item for item in references if item.target_type is not ReferenceTargetType.QUESTION
     ]
+    directly_linked = [item for item in materials if item.question_id is not None]
+    if not material_references:
+        if not materials:
+            return RuleFindingResult(
+                status=AcademicStatus.NOT_APPLICABLE,
+                explanation=(
+                    "No question explicitly depends on a supporting figure, table, or code item. "
+                    "Decorative or layout-detected material therefore does not require an "
+                    "association finding."
+                ),
+                confidence=1.0,
+                evidence_ids=[],
+            )
+        if len(directly_linked) == len(materials):
+            return RuleFindingResult(
+                status=AcademicStatus.SATISFIED,
+                explanation=(
+                    "Every confirmed supporting item is directly linked to its intended "
+                    "question through a reviewed contextual cue."
+                ),
+                confidence=_confidence([], materials),
+                evidence_ids=_evidence_ids(session, analysis_id, [], materials),
+            )
+        return RuleFindingResult(
+            status=AcademicStatus.NOT_VERIFIED,
+            explanation=(
+                "Supporting context is present, but one or more items are not yet linked to "
+                "an intended question. Confirm or exclude the suggested item in extraction "
+                "review."
+            ),
+            confidence=_confidence([], materials),
+            evidence_ids=_evidence_ids(session, analysis_id, [], materials),
+        )
     reviewed = {
         item.source_record_id: item for item in snapshot.document_references if item.included
     }
@@ -293,6 +326,7 @@ def evaluate_supporting_material_association(
         ).question_id
         is not None
     }
+    associated_material_ids.update(item.id for item in directly_linked)
     unassociated = [item for item in materials if item.id not in associated_material_ids]
     if unassociated:
         return RuleFindingResult(

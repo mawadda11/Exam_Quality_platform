@@ -292,9 +292,13 @@ def _best_targets(source_text: str, targets: list[dict[str, object]]) -> tuple[s
         )
 
     return (
-        "Not Satisfied",
+        "Not Verified",
         [],
-        "No shared normalized assessed concept or explicit controlled identifier was found.",
+        (
+            "The local-only baseline found no explicit controlled identifier or shared "
+            "normalized concept. Absence of lexical overlap is not sufficient proof of a "
+            "negative academic relationship."
+        ),
     )
 
 
@@ -315,9 +319,11 @@ def _item_for_rule(
     if rule_id in {"RULE001", "RULE002", "RULE007", "RULE008"}:
         status, target_ids, reasoning = _best_targets(source_text, targets)
         if rule_id == "RULE008":
-            if status == "Not Satisfied":
+            if status == "Not Verified":
                 reasoning = (
-                    "The assessed content could not be supported by any supplied documented topic."
+                    "The local-only baseline could not verify whether the assessed content is "
+                    "supported by a documented topic. Lack of lexical overlap alone is not proof "
+                    "that the content is outside the course scope."
                 )
             elif status == "Partially Satisfied":
                 reasoning = (
@@ -335,9 +341,12 @@ def _item_for_rule(
     if rule_id == "RULE004":
         relation_status, target_ids, _ = _best_targets(source_text, targets)
         clear_action, weak_action = _has_action(source_text)
-        if relation_status == "Not Satisfied":
-            status = "Not Satisfied"
-            reasoning = "The format cannot be tied to an intended CLO using supplied evidence."
+        if relation_status == "Not Verified":
+            status = "Not Verified"
+            reasoning = (
+                "Question-format suitability cannot be verified locally because no intended CLO "
+                "relationship was established from the controlled evidence."
+            )
         elif clear_action:
             status = "Satisfied"
             reasoning = "The question states an observable response task suitable for the target."
@@ -434,23 +443,37 @@ def _item_for_rule(
     if rule_id == "RULE013":
         lowered = normalize_arabic_for_matching(source_text).casefold()
         references = sorted(marker for marker in _REFERENCE_MARKERS if marker in lowered)
-        instruction_ids = [
-            str(item["id"]) for item in context if item.get("evidence_type") == "instructions"
+        material_types = {"figure", "table", "code_block"}
+        material_ids = [
+            str(item["id"]) for item in context if item.get("evidence_type") in material_types
         ]
+        reference_context_ids = [
+            str(item["id"])
+            for item in context
+            if item.get("evidence_type") in {"explicit_reference", "label", "caption"}
+        ]
+        supplied_context_ids = [*reference_context_ids, *material_ids]
         if len(_tokens(source_text)) < 3:
             status = "Not Satisfied"
             reasoning = "The question lacks enough task or context information to be answerable."
-        elif references and not instruction_ids:
-            status = "Partially Satisfied"
+        elif references and not material_ids:
+            status = "Not Satisfied"
             reasoning = (
-                "The question refers to context or material that is not separately available."
+                "The question clearly refers to supporting material, but no matching material "
+                "content is available in the supplied confirmed context."
+            )
+        elif references:
+            status = "Satisfied"
+            reasoning = (
+                "The referenced supporting material and its confirmed context are available for "
+                "the stated task."
             )
         else:
             status = "Satisfied"
             reasoning = "The supplied question contains the information needed for its stated task."
         return {
             "source_evidence_id": source_id,
-            "target_evidence_ids": instruction_ids,
+            "target_evidence_ids": supplied_context_ids,
             "status": status,
             "reasoning": reasoning,
         }
@@ -459,19 +482,15 @@ def _item_for_rule(
         instruction_ids = [
             str(item["id"]) for item in context if item.get("evidence_type") == "instructions"
         ]
-        lowered = normalize_arabic_for_matching(source_text).casefold()
-        unresolved = any(marker in lowered for marker in _REFERENCE_MARKERS)
         if instruction_ids:
             status = "Satisfied"
-            reasoning = "General instruction evidence is present and the question states its task."
-        elif unresolved:
-            status = "Not Satisfied"
-            reasoning = (
-                "The question depends on referenced material or directions that are unavailable."
-            )
+            reasoning = "Confirmed exam-level general instruction evidence is present."
         else:
             status = "Not Applicable"
-            reasoning = "The question is self-contained and no special instruction is required."
+            reasoning = (
+                "No additional exam-level general instruction was identified as necessary from "
+                "the supplied confirmed evidence."
+            )
         return {
             "source_evidence_id": source_id,
             "target_evidence_ids": instruction_ids,
@@ -482,8 +501,61 @@ def _item_for_rule(
     raise AiProviderError(f"Local provider does not support {rule_id}.")
 
 
+def _specific_explanation(
+    items: list[dict[str, object]],
+    evidence: dict[str, dict[str, object]],
+) -> str:
+    counts: dict[str, int] = {}
+    for item in items:
+        status = str(item["status"])
+        counts[status] = counts.get(status, 0) + 1
+
+    ordered_statuses = (
+        "Satisfied",
+        "Partially Satisfied",
+        "Not Satisfied",
+        "Not Verified",
+        "Not Applicable",
+    )
+    distribution = ", ".join(
+        f"{counts[status]} {status}" for status in ordered_statuses if counts.get(status)
+    )
+    summary = f"{len(items)} confirmed source item(s) were evaluated"
+    if distribution:
+        summary += f": {distribution}."
+    else:
+        summary += "."
+
+    attention = [
+        item
+        for item in items
+        if str(item["status"]) in {"Partially Satisfied", "Not Satisfied", "Not Verified"}
+    ][:3]
+    if not attention:
+        return summary
+
+    details: list[str] = []
+    for item in attention:
+        source = evidence.get(str(item["source_evidence_id"]), {})
+        label = str(source.get("item_reference") or "source item")
+        reasoning = str(item.get("reasoning") or "Review is required.")
+        details.append(f"{label}: {reasoning}")
+    remaining = sum(
+        1
+        for item in items
+        if str(item["status"]) in {"Partially Satisfied", "Not Satisfied", "Not Verified"}
+    ) - len(attention)
+    suffix = f" {remaining} additional item(s) require attention." if remaining > 0 else ""
+    return f"{summary} Attention: {'; '.join(details)}.{suffix}".replace("..", ".")
+
+
 class LocalSemanticProvider:
-    """Offline, evidence-grounded baseline blocked outside development/test."""
+    """Offline, evidence-grounded baseline.
+
+    The provider factory still blocks selecting it as the configured production
+    primary. The per-analysis Gemini router may use it as the final governed
+    availability fallback so a quota outage does not abort the user journey.
+    """
 
     def __init__(self, *, model: str = "local-governed-baseline-v1") -> None:
         self._model = model
@@ -532,10 +604,7 @@ class LocalSemanticProvider:
                     "requirement_id": envelope["requirement_id"],
                     "status": status,
                     "evidence_ids": evidence_ids,
-                    "explanation": (
-                        f"{len(items)} confirmed source item(s) were evaluated against the "
-                        "controlled rule conditions and supplied knowledge-base context."
-                    ),
+                    "explanation": _specific_explanation(items, evidence),
                     "recommendation_id": recommendation_id,
                     "items": items,
                     "provider": self.provider_name,

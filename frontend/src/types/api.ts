@@ -1,5 +1,10 @@
 export type ExamType = 'Midterm' | 'Final'
 
+export type QuestionPreparationMode =
+  | 'assisted_pdf'
+  | 'manual_pdf'
+  | 'structured_template'
+
 export type UploadedFileType = 'exam' | 'tp153'
 
 export type Locale = 'ar' | 'en'
@@ -87,6 +92,20 @@ export interface ProgressResponse {
 }
 
 export type SemanticConfidenceLevel = 'High' | 'Medium' | 'Low'
+export type QuestionType =
+  | 'multiple_choice'
+  | 'true_false'
+  | 'fill_in_blank'
+  | 'matching'
+  | 'short_answer'
+  | 'essay'
+  | 'calculation'
+  | 'code_question'
+  | 'table_based'
+  | 'figure_based'
+  | 'mixed'
+  | 'unknown'
+export type QuestionReviewStatus = 'machine_extracted' | 'needs_review' | 'reviewed'
 
 export type AcademicStatus =
   | 'Satisfied'
@@ -101,12 +120,51 @@ export interface QuestionResponse {
   parent_question_id: string | null
   number_label: string
   question_text: string
+  question_type?: QuestionType
+  instructions?: string | null
   page_number: number
   marks: number | null
   sequence: number
   confidence: number
   geometry: Record<string, unknown> | null
+  extraction_method?: string
+  review_status?: QuestionReviewStatus
+  options?: QuestionOptionResponse[]
+  blanks?: QuestionBlankResponse[]
+  source_spans?: QuestionSourceSpanResponse[]
   created_at: string
+}
+
+export interface QuestionSourceSpanResponse {
+  id: string
+  option_id: string | null
+  provider: string
+  provider_version: string | null
+  source_line_id: string
+  original_text: string
+  page_number: number
+  geometry: Record<string, unknown> | null
+  confidence: number | null
+  extraction_method: string
+}
+
+export interface QuestionOptionResponse {
+  id: string
+  option_label: string
+  option_text: string
+  sequence: number
+  page_number: number
+  confidence: number
+  geometry: Record<string, unknown> | null
+  source_spans: QuestionSourceSpanResponse[]
+}
+
+export interface QuestionBlankResponse {
+  id: string
+  blank_index: number
+  source_text: string | null
+  page_number: number
+  geometry: Record<string, unknown> | null
 }
 
 export interface CloResponse {
@@ -327,6 +385,8 @@ export interface AnalysisScoreResponse {
   not_satisfied_count: number
   not_verified_count: number
   not_applicable_count: number
+  score_mode?: 'governed' | 'local_preliminary'
+  excluded_local_semantic_count?: number
 }
 
 export interface RecommendationResponse {
@@ -430,6 +490,57 @@ export interface ExtractionReviewQuestion {
   sequence: number
   extraction_confidence: number
   geometry: ExtractionReviewGeometry | null
+  question_type?: QuestionType
+  instructions?: string | null
+  extraction_method?: string
+  review_status?: QuestionReviewStatus
+}
+
+export interface ExtractionReviewQuestionOption {
+  source_record_id: string
+  included: boolean
+  question_source_record_id: string
+  option_label: string
+  option_text: string
+  sequence: number
+  page_number: number
+  extraction_confidence: number
+  geometry: ExtractionReviewGeometry | null
+}
+
+export interface ExtractionReviewQuestionBlank {
+  source_record_id: string
+  included: boolean
+  question_source_record_id: string
+  blank_index: number
+  source_text: string | null
+  page_number: number
+  geometry: ExtractionReviewGeometry | null
+}
+
+export interface ExtractionReviewQuestionSourceSpan {
+  source_record_id: string
+  question_source_record_id: string
+  option_source_record_id: string | null
+  provider: string
+  provider_version: string | null
+  source_line_id: string
+  original_text: string
+  page_number: number
+  geometry: ExtractionReviewGeometry | null
+  extraction_confidence: number | null
+  extraction_method: string
+}
+
+export interface ExtractionReviewExtractionWarning {
+  source_record_id: string
+  code: string
+  severity: 'info' | 'warning' | 'critical'
+  page_number: number | null
+  source_line_ids: string[]
+  message: string
+  geometry: ExtractionReviewGeometry | null
+  resolved: boolean
 }
 
 export interface ExtractionReviewEvidence {
@@ -535,8 +646,13 @@ export interface ExtractionReviewReferenceAssociation {
 }
 
 export interface ExtractionReviewSnapshot {
-  schema_version: 1
+  schema_version: 1 | 2
+  preparation_mode?: QuestionPreparationMode
   questions: ExtractionReviewQuestion[]
+  question_options?: ExtractionReviewQuestionOption[]
+  question_blanks?: ExtractionReviewQuestionBlank[]
+  question_source_spans?: ExtractionReviewQuestionSourceSpan[]
+  extraction_warnings?: ExtractionReviewExtractionWarning[]
   evidence: ExtractionReviewEvidence[]
   clos: ExtractionReviewClo[]
   topics: ExtractionReviewTopic[]
@@ -549,6 +665,9 @@ export interface ExtractionReviewSnapshot {
 
 export type ExtractionReviewCollection =
   | 'questions'
+  | 'question_options'
+  | 'question_blanks'
+  | 'extraction_warnings'
   | 'evidence'
   | 'clos'
   | 'topics'
@@ -561,7 +680,7 @@ export type ExtractionReviewCollection =
 
 export interface ExtractionReviewWarning {
   code: string
-  severity: 'info' | 'warning'
+  severity: 'info' | 'warning' | 'critical'
   collection: ExtractionReviewCollection
   source_record_id: string | null
   message: string
@@ -580,6 +699,7 @@ export interface ExtractionReviewResponse {
   can_confirm: boolean
   warnings: ExtractionReviewWarning[]
   confirmation_blockers: string[]
+  blocking_extraction_warning_ids: string[]
 }
 
 export interface ExtractionReviewConfirmResponse {

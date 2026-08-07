@@ -5,7 +5,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Body,
+    Depends,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
@@ -28,13 +39,14 @@ from app.models.document_reference import DocumentReference
 from app.models.finding import Finding, FindingEvidence
 from app.models.processing_event import ProcessingEvent
 from app.models.question import Question
+from app.models.question_option import QuestionOption
 from app.models.report import Report
 from app.models.supporting_material import SupportingMaterial
 from app.models.supporting_material_annotation import SupportingMaterialAnnotation
 from app.models.topic import Topic
 from app.models.uploaded_file import UploadedFile
 from app.models.user import User
-from app.schemas.analysis import AnalysisCreateRequest, AnalysisResponse
+from app.schemas.analysis import AnalysisCreateRequest, AnalysisResponse, AnalysisRunRequest
 from app.schemas.assessment_record import AssessmentRecordResponse
 from app.schemas.clo import CloResponse
 from app.schemas.course import CourseInput
@@ -59,6 +71,9 @@ from app.schemas.structured_evidence import (
 )
 from app.schemas.topic import TopicResponse
 from app.schemas.uploaded_file import UploadedFileResponse
+from app.services.analysis_deletion import AnalysisDeletionConflictError, delete_analysis
+from app.services.extraction.pdf_preview import PdfPreviewError, render_pdf_page_preview
+from app.services.extraction.preparation_mode import encode_question_preparation_mode
 from app.services.extraction.review_workflow import (
     ExtractionReviewClosedError,
     ExtractionReviewNotReadyError,
@@ -71,6 +86,7 @@ from app.services.extraction.review_workflow import (
     get_extraction_review,
 )
 from app.services.extraction.structured_evidence import logical_annotation_text
+from app.services.extraction.types import Geometry
 from app.services.knowledge_base.reference_data import (
     get_controlled_recommendations,
     get_requirement_display,
@@ -81,6 +97,7 @@ from app.services.processing.runner import (
     run_retry_pipeline,
 )
 from app.services.processing.stages import POST_CONFIRMATION_STAGES
+from app.services.question_ordering import sort_question_records
 from app.services.reporting.content import assemble_report_content
 from app.services.reporting.pdf import render_report_pdf
 from app.services.reporting.storage import store_report_pdf
@@ -166,6 +183,113 @@ def get_analysis(
     return AnalysisResponse.from_model(_load_with_relations(db, analysis.id))
 
 
+def _exam_pdf_path(analysis: Analysis, db: Session, settings: Settings) -> Path:
+    uploaded = db.execute(
+        select(UploadedFile).where(
+            UploadedFile.analysis_id == analysis.id,
+            UploadedFile.file_type == UploadedFileType.EXAM,
+        )
+    ).scalar_one_or_none()
+    if uploaded is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exam PDF not found.")
+    path = resolve_storage_path(settings.upload_root, uploaded.storage_key)
+    if not path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exam PDF not found.")
+    return path
+
+
+@router.get("/{analysis_id}/files/exam/content", response_class=FileResponse)
+def get_exam_pdf_content(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> FileResponse:
+    path = _exam_pdf_path(analysis, db, settings)
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": "inline",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get("/{analysis_id}/files/exam/pages/{page_number}/image")
+def get_exam_pdf_page_image(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    page_number: int,
+    x0: Annotated[float | None, Query()] = None,
+    top: Annotated[float | None, Query()] = None,
+    x1: Annotated[float | None, Query()] = None,
+    bottom: Annotated[float | None, Query()] = None,
+    crop: Annotated[bool, Query()] = False,
+    padding: Annotated[float, Query(ge=0, le=72)] = 10,
+    dpi: Annotated[int, Query(ge=72, le=180)] = 120,
+) -> Response:
+    coordinates = (x0, top, x1, bottom)
+    if any(value is not None for value in coordinates) and not all(
+        value is not None for value in coordinates
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="All geometry coordinates are required together.",
+        )
+    geometry = (
+        None
+        if all(value is None for value in coordinates)
+        else Geometry(
+            x0=cast(float, x0),
+            top=cast(float, top),
+            x1=cast(float, x1),
+            bottom=cast(float, bottom),
+        )
+    )
+    path = _exam_pdf_path(analysis, db, settings)
+    try:
+        rendered = render_pdf_page_preview(
+            path,
+            page_number=page_number,
+            geometry=geometry,
+            crop=crop,
+            padding_points=padding,
+            dpi=dpi,
+        )
+    except PdfPreviewError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return Response(
+        content=rendered.content,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+            "X-PDF-Page-Width": str(rendered.page_width),
+            "X-PDF-Page-Height": str(rendered.page_height),
+        },
+    )
+
+
+@router.delete("/{analysis_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_analysis_endpoint(
+    analysis: Annotated[Analysis, Depends(get_owned_analysis)],
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Response:
+    try:
+        delete_analysis(db, analysis, settings)
+    except AnalysisDeletionConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This analysis cannot be deleted because retained history references it.",
+        ) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post(
     "/{analysis_id}/files",
     response_model=UploadedFileResponse,
@@ -236,6 +360,7 @@ def run_analysis(
     analysis: Annotated[Analysis, Depends(get_owned_analysis)],
     db: Annotated[Session, Depends(get_db)],
     background_tasks: BackgroundTasks,
+    payload: Annotated[AnalysisRunRequest, Body(default_factory=AnalysisRunRequest)],
 ) -> AnalysisResponse:
     if analysis.state != ProcessingStage.QUEUED:
         raise HTTPException(
@@ -268,11 +393,27 @@ def run_analysis(
             status_code=status.HTTP_409_CONFLICT,
             detail="This analysis has already been started.",
         )
+    db.execute(
+        update(UploadedFile)
+        .where(
+            UploadedFile.analysis_id == analysis.id,
+            UploadedFile.file_type == UploadedFileType.EXAM,
+        )
+        .values(
+            parser_layout=encode_question_preparation_mode(
+                payload.question_preparation_mode
+            )
+        )
+        .execution_options(synchronize_session=False)
+    )
     # The background task opens a separate session and must see the atomic
     # claim before it starts. A second commit by get_db's normal lifecycle is
     # harmless; this explicit one closes the scheduling race.
     db.commit()
     db.expire_all()
+    # Keep the background worker call compatible with the original one-argument
+    # contract. The selected mode was persisted atomically above, and the worker
+    # derives it from the stored exam-file metadata.
     background_tasks.add_task(run_analysis_pipeline, analysis.id)
     return AnalysisResponse.from_model(_load_with_relations(db, analysis.id))
 
@@ -484,10 +625,20 @@ def list_analysis_questions(
     analysis: Annotated[Analysis, Depends(get_owned_analysis)],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[QuestionResponse]:
-    questions = db.execute(
-        select(Question).where(Question.analysis_id == analysis.id).order_by(Question.sequence)
-    ).scalars()
-    return [QuestionResponse.model_validate(question) for question in questions]
+    questions = list(db.execute(
+        select(Question)
+        .where(Question.analysis_id == analysis.id)
+        .options(
+            selectinload(Question.options).selectinload(QuestionOption.source_spans),
+            selectinload(Question.blanks),
+            selectinload(Question.source_spans),
+        )
+        .order_by(Question.page_number, Question.sequence, Question.id)
+    ).scalars())
+    return [
+        QuestionResponse.model_validate(question)
+        for question in sort_question_records(questions)
+    ]
 
 
 @router.get("/{analysis_id}/clos", response_model=list[CloResponse])

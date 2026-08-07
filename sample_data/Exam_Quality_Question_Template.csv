@@ -1,0 +1,4 @@
+question_number,question_text,marks,question_type,options
+Q1,Which pattern constructs a complex object step by step?,1,,Singleton|Builder|Prototype|Adapter
+Q2,Explain why collisions are undesirable in cryptographic hash functions.,2,short_answer,
+Q3,A secure hash function should resist __________ attacks.,,fill_in_blank,

@@ -6,6 +6,7 @@ interface ScoreRingProps {
   denominator: number
   label?: string
   emptyLabel?: string
+  denominatorKind?: 'verified' | 'applicable'
 }
 
 function numericScore(score: number | string): number {
@@ -14,18 +15,30 @@ function numericScore(score: number | string): number {
   return Math.min(100, Math.max(0, parsed))
 }
 
-export function ScoreRing({ score, denominator, label, emptyLabel }: ScoreRingProps) {
+export function ScoreRing({
+  score,
+  denominator,
+  label,
+  emptyLabel,
+  denominatorKind = 'verified',
+}: ScoreRingProps) {
   const { t } = useI18n()
   const translatedLabel = label ?? t('Overall Exam Quality Score')
   const translatedEmptyLabel = emptyLabel ?? t('Insufficient Evidence')
   const empty = score === null
   const scoreText = empty ? translatedEmptyLabel : `${score}%`
   const denominatorText =
-    denominator === 0
-      ? t('No verified checks were available')
-      : denominator === 1
-        ? t('Based on 1 verified check')
-        : t('Based on {count} verified checks', { count: denominator })
+    denominatorKind === 'applicable'
+      ? denominator === 0
+        ? t('No applicable checks were available')
+        : denominator === 1
+          ? t('Based on 1 applicable check')
+          : t('Based on {count} applicable checks', { count: denominator })
+      : denominator === 0
+        ? t('No verified checks were available')
+        : denominator === 1
+          ? t('Based on 1 verified check')
+          : t('Based on {count} verified checks', { count: denominator })
   const angle = empty ? 0 : numericScore(score) * 3.6
   const style = { '--score-angle': `${angle}deg` } as CSSProperties
 

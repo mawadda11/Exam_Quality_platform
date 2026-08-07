@@ -9,7 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.core.domain import (
     AssociationBasis,
+    ExtractionWarningSeverity,
     ProcessingStage,
+    QuestionPreparationMode,
+    QuestionReviewStatus,
+    QuestionType,
     ReferenceResolutionStatus,
     ReferenceTargetType,
     SupportingAnnotationType,
@@ -45,6 +49,57 @@ class ExtractionReviewQuestion(_StrictReviewModel):
     sequence: int = Field(ge=0)
     extraction_confidence: float = Field(ge=0, le=1)
     geometry: ExtractionReviewGeometry | None
+    question_type: QuestionType = QuestionType.UNKNOWN
+    instructions: str | None = None
+    extraction_method: str = Field(default="legacy", min_length=1, max_length=30)
+    review_status: QuestionReviewStatus = QuestionReviewStatus.REVIEWED
+
+
+class ExtractionReviewQuestionOption(_StrictReviewModel):
+    source_record_id: UUID
+    included: bool
+    question_source_record_id: UUID
+    option_label: str = Field(min_length=1, max_length=50)
+    option_text: str = Field(min_length=1)
+    sequence: int = Field(ge=0)
+    page_number: int = Field(ge=1)
+    extraction_confidence: float = Field(ge=0, le=1)
+    geometry: ExtractionReviewGeometry | None
+
+
+class ExtractionReviewQuestionBlank(_StrictReviewModel):
+    source_record_id: UUID
+    included: bool
+    question_source_record_id: UUID
+    blank_index: int = Field(ge=1)
+    source_text: str | None = Field(default=None, min_length=1)
+    page_number: int = Field(ge=1)
+    geometry: ExtractionReviewGeometry | None
+
+
+class ExtractionReviewQuestionSourceSpan(_StrictReviewModel):
+    source_record_id: UUID
+    question_source_record_id: UUID
+    option_source_record_id: UUID | None
+    provider: str = Field(min_length=1, max_length=50)
+    provider_version: str | None = Field(default=None, max_length=100)
+    source_line_id: str = Field(min_length=1, max_length=100)
+    original_text: str = Field(min_length=1)
+    page_number: int = Field(ge=1)
+    geometry: ExtractionReviewGeometry | None
+    extraction_confidence: float | None = Field(default=None, ge=0, le=1)
+    extraction_method: str = Field(min_length=1, max_length=30)
+
+
+class ExtractionReviewExtractionWarning(_StrictReviewModel):
+    source_record_id: UUID
+    code: str = Field(min_length=1, max_length=100)
+    severity: ExtractionWarningSeverity
+    page_number: int | None = Field(default=None, ge=1)
+    source_line_ids: list[str]
+    message: str = Field(min_length=1)
+    geometry: ExtractionReviewGeometry | None
+    resolved: bool
 
 
 class ExtractionReviewEvidence(_StrictReviewModel):
@@ -153,12 +208,20 @@ class ExtractionReviewSnapshot(_StrictReviewModel):
     """A complete, versioned snapshot of source-faithful extraction rows.
 
     Collections may be empty. A snapshot records only entities and evidence
-    that genuinely exist when it is created; callers must never fabricate
-    placeholder questions, CLOs, topics, or assessment records.
+    that genuinely exist when it is created. Manual PDF questions require a
+    selected region of the immutable exam PDF. Structured-template questions
+    require a source page and matching exam question_text evidence but never
+    invent PDF geometry. Placeholder CLOs, topics, assessment records, or
+    untraceable questions remain prohibited.
     """
 
-    schema_version: Literal[1]
+    schema_version: Literal[1, 2]
+    preparation_mode: QuestionPreparationMode = QuestionPreparationMode.ASSISTED_PDF
     questions: list[ExtractionReviewQuestion]
+    question_options: list[ExtractionReviewQuestionOption] = Field(default_factory=list)
+    question_blanks: list[ExtractionReviewQuestionBlank] = Field(default_factory=list)
+    question_source_spans: list[ExtractionReviewQuestionSourceSpan] = Field(default_factory=list)
+    extraction_warnings: list[ExtractionReviewExtractionWarning] = Field(default_factory=list)
     evidence: list[ExtractionReviewEvidence]
     clos: list[ExtractionReviewClo]
     topics: list[ExtractionReviewTopic]
@@ -172,6 +235,10 @@ class ExtractionReviewSnapshot(_StrictReviewModel):
     def validate_source_references(self) -> Self:
         collections = {
             "question": [item.source_record_id for item in self.questions],
+            "question option": [item.source_record_id for item in self.question_options],
+            "question blank": [item.source_record_id for item in self.question_blanks],
+            "question source span": [item.source_record_id for item in self.question_source_spans],
+            "extraction warning": [item.source_record_id for item in self.extraction_warnings],
             "evidence": [item.source_record_id for item in self.evidence],
             "CLO": [item.source_record_id for item in self.clos],
             "topic": [item.source_record_id for item in self.topics],
@@ -190,6 +257,7 @@ class ExtractionReviewSnapshot(_StrictReviewModel):
                 raise ValueError(f"{label} source_record_id values must be unique.")
 
         questions_by_id = {item.source_record_id: item for item in self.questions}
+        options_by_id = {item.source_record_id: item for item in self.question_options}
         for question in self.questions:
             parent_id = question.parent_source_record_id
             if parent_id is None:
@@ -199,6 +267,37 @@ class ExtractionReviewSnapshot(_StrictReviewModel):
                 raise ValueError("Question parent references must resolve within the snapshot.")
             if question.included and not parent.included:
                 raise ValueError("An included question cannot reference an excluded parent.")
+        for question in self.questions:
+            visited = {question.source_record_id}
+            parent_id = question.parent_source_record_id
+            while parent_id is not None:
+                if parent_id in visited:
+                    raise ValueError("Question hierarchy must not contain a cycle.")
+                visited.add(parent_id)
+                parent_id = questions_by_id[parent_id].parent_source_record_id
+
+        for option in self.question_options:
+            option_question = questions_by_id.get(option.question_source_record_id)
+            if option_question is None:
+                raise ValueError("Question-option links must resolve within the snapshot.")
+            if option.included and not option_question.included:
+                raise ValueError("An included option cannot reference an excluded question.")
+        for blank in self.question_blanks:
+            blank_question = questions_by_id.get(blank.question_source_record_id)
+            if blank_question is None:
+                raise ValueError("Question-blank links must resolve within the snapshot.")
+            if blank.included and not blank_question.included:
+                raise ValueError("An included blank cannot reference an excluded question.")
+        for span in self.question_source_spans:
+            if span.question_source_record_id not in questions_by_id:
+                raise ValueError("Question-source-span question links must resolve.")
+            if span.option_source_record_id is not None:
+                span_option = options_by_id.get(span.option_source_record_id)
+                if (
+                    span_option is None
+                    or span_option.question_source_record_id != span.question_source_record_id
+                ):
+                    raise ValueError("Question-source-span option links must resolve.")
 
         for evidence in self.evidence:
             question_id = evidence.question_source_record_id
@@ -247,9 +346,12 @@ class ExtractionReviewSnapshot(_StrictReviewModel):
 
 class ExtractionReviewWarning(_StrictReviewModel):
     code: str = Field(min_length=1, max_length=100)
-    severity: Literal["info", "warning"]
+    severity: Literal["info", "warning", "critical"]
     collection: Literal[
         "questions",
+        "question_options",
+        "question_blanks",
+        "extraction_warnings",
         "evidence",
         "clos",
         "topics",
@@ -277,6 +379,7 @@ class ExtractionReviewResponse(_StrictReviewModel):
     can_confirm: bool
     warnings: list[ExtractionReviewWarning]
     confirmation_blockers: list[str]
+    blocking_extraction_warning_ids: list[UUID] = Field(default_factory=list)
 
 
 class _ReviewRequestModel(BaseModel):

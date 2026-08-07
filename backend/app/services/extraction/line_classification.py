@@ -24,8 +24,21 @@ TOTAL_MARKS_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+_ENGLISH_HIERARCHICAL_DECIMAL = re.compile(
+    r"^(?:Q|Question(?:\s+No\.?)?)\s*(\d+)\.(\d+)\s*(.*)$",
+    re.I,
+)
+_ENGLISH_HIERARCHICAL_LETTER = re.compile(
+    r"^(?:Q|Question(?:\s+No\.?)?)\s*(\d+)\s*\(\s*([a-z])\s*\)\s*(.*)$",
+    re.I,
+)
+
 _ENGLISH_QUESTION = re.compile(
-    r"^Q\s*(\d+)(?:\.\s*|\s+\(\d+(?:\.\d+)?\)\s*:\s*|\s*:\s*)(.*)$",
+    r"^(?:Q|Question(?:\s+No\.?)?)\s*(\d+)\s*(?:"
+    r"[\.\:\-–—]\s*"
+    r"|[\(\[]\s*\d+(?:\.\d+)?\s*(?:marks?)?\s*[\)\]]\s*"
+    r"(?:[\.\:\-–—]\s*)?"
+    r")?(.*)$",
     re.I,
 )
 _ARABIC_Q_QUESTION = re.compile(r"^س\s*(\d+)\s*(?:[\.:\-]\s*)?(.*)$")
@@ -53,17 +66,20 @@ _TOTAL_VALUE_AFTER_LABEL = re.compile(
     re.IGNORECASE,
 )
 
-_ENGLISH_MARKS = re.compile(r"[\[\(]\s*(\d+(?:\.\d+)?)\s*marks?\s*[\]\)]", re.IGNORECASE)
+_ENGLISH_MARKS = re.compile(
+    r"(?P<matched>[\[\(]\s*(?P<value>\d+(?:\.\d+)?)\s*(?:marks?|points?|pts?)\s*[\]\)])",
+    re.IGNORECASE,
+)
 _ENGLISH_PREFIX_MARKS = re.compile(
     r"^Q\s*\d+\s+(?P<matched>\((?P<value>\d+(?:\.\d+)?)\))\s*:", re.IGNORECASE
 )
 _ARABIC_MARKS_BRACKET = re.compile(
-    r"(?P<matched>[\[\(]\s*(?P<value>\d+(?:\.\d+)?)\s*(?:درجة|درجات|علامة|علامات)\s*[\]\)])"
+    r"(?P<matched>[\[\(]\s*(?P<value>\d+(?:\.\d+)?)\s*(?:درجة|درجات|درجتان|علامة|علامات|علامتان)\s*[\]\)])"
 )
 _ARABIC_MARKS_PLAIN = re.compile(
-    r"(?P<matched>(?P<value>\d+(?:\.\d+)?)\s*(?:درجة|درجات|علامة|علامات))\s*$"
+    r"(?P<matched>(?P<value>\d+(?:\.\d+)?)\s*(?:درجة|درجات|درجتان|علامة|علامات|علامتان))\s*$"
 )
-_BARE_BRACKETED_MARKS = re.compile(r"(?P<matched>[\[\(]\s*(?P<value>\d+(?:\.\d+)?)\s*[\]\)])")
+_BARE_BRACKETED_MARKS = re.compile(r"(?P<matched>\[\s*(?P<value>\d+(?:\.\d+)?)\s*\])")
 
 _ARABIC_ORDINALS: dict[str, int] = {
     "الاول": 1,
@@ -146,7 +162,10 @@ def parse_marks(line: str) -> Marks | None:
 
     match = _ENGLISH_MARKS.search(normalized)
     if match is not None:
-        return Marks(value=parse_localized_number(match.group(1)), matched_text=match.group())
+        return Marks(
+            value=parse_localized_number(match.group("value")),
+            matched_text=match.group("matched"),
+        )
 
     prefix_match = _ENGLISH_PREFIX_MARKS.match(normalized)
     if prefix_match is not None:
@@ -177,6 +196,42 @@ def parse_marks(line: str) -> Marks | None:
         )
     return None
 
+
+
+def strip_marks_annotations(text: str) -> str:
+    """Remove explicit mark labels from editable question text.
+
+    PDF generators often place a marks badge at the far right of the same visual
+    line.  Reading-order reconstruction can therefore insert ``[3 marks]`` in
+    the middle of the sentence even though it is not part of the question stem.
+    Marks remain available through :func:`parse_marks` and marks evidence; this
+    helper only cleans the reviewer-facing question transcription.
+
+    Technical numbers such as ``GF (19)``, ``AES-256`` and ``Figure (3)`` are
+    intentionally untouched because they do not contain an approved marks label.
+    """
+
+    cleaned = text
+    cleaned = _ENGLISH_MARKS.sub(" ", cleaned)
+    cleaned = _ARABIC_MARKS_BRACKET.sub(" ", cleaned)
+    cleaned = _ARABIC_MARKS_PLAIN.sub(" ", cleaned)
+
+    # Bare bracketed marks are a legacy supported format.  Restrict removal to
+    # the end of the stem so array/index notation inside code is preserved.
+    cleaned = re.sub(r"\s*\[\s*\d+(?:\.\d+)?\s*\]\s*$", "", cleaned)
+
+    # ``Q1 (10):`` is an approved heading form.  Remove the mark value while
+    # retaining the question label and separator.
+    cleaned = re.sub(
+        r"^(Q\s*\d+)\s*\(\s*\d+(?:\.\d+)?\s*\)\s*:\s*",
+        r"\1: ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r"\s+([,.;:?!])", r"\1", cleaned)
+    return cleaned.strip()
 
 def parse_declared_total(line: str) -> float | None:
     normalized = normalize_arabic_for_matching(line)
@@ -212,6 +267,28 @@ def classify_line(line: str, current_parent_label: str | None) -> ClassifiedLine
 
     normalized = normalize_arabic_for_matching(line)
     marks = parse_marks(line)
+
+    hierarchical_decimal = _ENGLISH_HIERARCHICAL_DECIMAL.match(normalized)
+    if hierarchical_decimal is not None:
+        major = int(hierarchical_decimal.group(1))
+        minor = int(hierarchical_decimal.group(2))
+        return ClassifiedLine(
+            kind=LineKind.SUBQUESTION,
+            text=line,
+            number_label=f"Q{major}.{minor}",
+            marks=marks,
+        )
+
+    hierarchical_letter = _ENGLISH_HIERARCHICAL_LETTER.match(normalized)
+    if hierarchical_letter is not None:
+        major = int(hierarchical_letter.group(1))
+        letter = hierarchical_letter.group(2).lower()
+        return ClassifiedLine(
+            kind=LineKind.SUBQUESTION,
+            text=line,
+            number_label=f"Q{major}({letter})",
+            marks=marks,
+        )
 
     question_match = _ENGLISH_QUESTION.match(normalized) or _ARABIC_Q_QUESTION.match(normalized)
     if question_match is not None:

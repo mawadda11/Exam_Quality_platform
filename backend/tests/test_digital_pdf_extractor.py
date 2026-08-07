@@ -6,6 +6,8 @@ import pytest
 from helpers import corrupted_pdf_bytes
 from pdf_fixtures import (
     build_blank_pdf,
+    build_multiline_question_with_interposed_diagram_pdf,
+    build_multiline_question_with_table_pdf,
     build_official_sample_format_exam_pdf,
     build_synthetic_exam_pdf,
 )
@@ -37,6 +39,20 @@ def test_extracts_expected_question_count_and_hierarchy(tmp_path: Path) -> None:
     assert by_label["Q1"].parent_number_label is None
     assert by_label["Q2"].parent_number_label is None
     assert by_label["Q4"].parent_number_label is None
+
+
+def test_native_source_lines_preserve_token_geometry_for_visual_reconciliation(
+    tmp_path: Path,
+) -> None:
+    pdf_path = _write(tmp_path, "exam.pdf", build_synthetic_exam_pdf())
+
+    result = PdfPlumberExamExtractor().extract(pdf_path)
+    native_lines = [line for line in result.source_lines if line.extraction_method == "direct_text"]
+
+    assert native_lines
+    assert all(line.page_width and line.page_height for line in native_lines)
+    assert all(line.tokens for line in native_lines)
+    assert all(token.geometry is not None for line in native_lines for token in line.tokens)
 
 
 def test_extracts_expected_question_text(tmp_path: Path) -> None:
@@ -162,6 +178,27 @@ def test_extracts_bundled_sample_question_numbers_marks_and_total(tmp_path: Path
     assert totals[0].extracted_text == "Total Marks: 30"
 
 
+def test_multiline_question_is_joined_without_absorbing_material_caption(
+    tmp_path: Path,
+) -> None:
+    pdf_path = _write(
+        tmp_path,
+        "multiline-table.pdf",
+        build_multiline_question_with_table_pdf(),
+    )
+
+    result = PdfPlumberExamExtractor().extract(pdf_path)
+
+    by_label = {question.number_label: question for question in result.questions}
+    assert by_label["Q3"].text == (
+        "Q3 (10): Refer to Table 1. Identify which Python data structure is mutable "
+        "and explain one suitable use for each structure."
+    )
+    assert "Comparison of Python Data Structures" not in by_label["Q3"].text
+    assert len(result.supporting_materials) == 1
+    assert result.supporting_materials[0].material_type.value == "table"
+
+
 def test_exam_without_a_total_line_yields_no_declared_total_evidence(tmp_path: Path) -> None:
     pdf_path = _write(tmp_path, "exam.pdf", build_synthetic_exam_pdf())
 
@@ -189,3 +226,27 @@ def test_unparseable_pdf_raises_extraction_error_without_leaking_details(tmp_pat
     # internals in a way that would leak file-system layout to a client -
     # only the extractor's own message shape, never a bare parser traceback string.
     assert "fake.pdf" in str(excinfo.value)
+
+
+def test_multiline_question_continues_below_interposed_diagram_until_next_question(
+    tmp_path: Path,
+) -> None:
+    pdf_path = _write(
+        tmp_path,
+        "multiline-diagram.pdf",
+        build_multiline_question_with_interposed_diagram_pdf(),
+    )
+
+    result = PdfPlumberExamExtractor().extract(pdf_path)
+
+    by_label = {question.number_label: question for question in result.questions}
+    assert set(by_label) == {"Q5", "Q6"}
+    assert by_label["Q5"].text == (
+        "Q5. Ali and Naif share a secret value S. They use it with a hash function H "
+        "as in the diagram to provide authentication of a message M. "
+        "Could an attacker modify the message after it is intercepted?"
+    )
+    assert "H(M||S)" not in by_label["Q5"].text
+    assert by_label["Q5"].geometry is not None
+    assert by_label["Q6"].geometry is not None
+    assert by_label["Q5"].geometry.bottom < by_label["Q6"].geometry.top

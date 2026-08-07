@@ -80,6 +80,24 @@ describe('AuthProvider', () => {
     expect(getStoredAccessToken()).toBe('')
   })
 
+  it('returns to anonymous state when an API request reports an expired session', async () => {
+    setStoredAccessToken('stored-access-token')
+    vi.mocked(authApi.getCurrentFaculty).mockResolvedValue(USER)
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    )
+
+    expect(await screen.findByText(USER.email)).toBeInTheDocument()
+    window.dispatchEvent(new CustomEvent('exam-quality:auth-expired'))
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('auth status')).toHaveTextContent('anonymous'),
+    )
+  })
+
   it('stores a successful login session and revokes it on logout', async () => {
     vi.mocked(authApi.loginFaculty).mockResolvedValue(SESSION)
     vi.mocked(authApi.logoutFaculty).mockResolvedValue(undefined)

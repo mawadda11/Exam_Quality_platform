@@ -19,14 +19,20 @@ def persist_structured_evidence(
     analysis_id: UUID,
     result: ExtractionResult,
     questions_by_label: dict[str, Question],
+    questions_by_key: dict[str, Question] | None = None,
 ) -> None:
+    questions_by_key = questions_by_key or {}
     materials_by_key: dict[str, SupportingMaterial] = {}
     for extracted_material in result.supporting_materials:
         material_row = SupportingMaterial(
             analysis_id=analysis_id,
             question_id=(
-                questions_by_label[extracted_material.question_number_label].id
-                if extracted_material.question_number_label in questions_by_label
+                question.id
+                if (
+                    question := questions_by_key.get(extracted_material.question_local_key or "")
+                    or questions_by_label.get(extracted_material.question_number_label or "")
+                )
+                is not None
                 else None
             ),
             source_document=UploadedFileType.EXAM,
@@ -81,7 +87,9 @@ def persist_structured_evidence(
 
     reference_rows: list[DocumentReference] = []
     for extracted_reference in result.document_references:
-        question = questions_by_label.get(extracted_reference.question_number_label or "")
+        question = questions_by_key.get(
+            extracted_reference.question_local_key or ""
+        ) or questions_by_label.get(extracted_reference.question_number_label or "")
         reference_row = DocumentReference(
             analysis_id=analysis_id,
             question_id=question.id if question is not None else None,

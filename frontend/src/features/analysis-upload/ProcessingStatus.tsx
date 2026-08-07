@@ -5,7 +5,12 @@ import { Button } from '../../components/ui/Button'
 import { ProgressStepper, type ProgressStep } from '../../components/ui/ProgressStepper'
 import { useI18n } from '../../i18n/I18nProvider'
 import { localizeInterfaceError, localizeServerMessage } from '../../i18n/localizeError'
-import type { AnalysisResponse, ProcessingStage, ProgressResponse } from '../../types/api'
+import type {
+  AnalysisResponse,
+  ProcessingStage,
+  ProgressResponse,
+  QuestionPreparationMode,
+} from '../../types/api'
 
 const TERMINAL_STAGES: ProcessingStage[] = ['review_ready', 'completed', 'failed']
 
@@ -19,17 +24,35 @@ const FAILURE_MESSAGE_KEYS: Record<string, string> = {
   FINALIZATION_FAILED: 'The analysis could not be finalized. Retry the analysis.',
 }
 
-const ORDERED_PROCESSING_STAGES: ProcessingStage[] = [
-  'validating',
-  'extracting_exam',
-  'extracting_tp153',
-  'review_ready',
-  'building_evidence',
-  'retrieving_knowledge',
-  'applying_rules',
-  'generating_report',
-  'completed',
-]
+const PROGRESS_REQUEST_TIMEOUT_MS = 15_000
+
+const FACULTY_STAGES = [
+  { id: 'files', label: 'Validating files', description: 'Checking the uploaded Exam and Course Specification files.' },
+  { id: 'questions', label: 'Extracting questions', description: 'Reading questions, marks, and visible exam structure.' },
+  { id: 'review', label: 'Reviewing extraction', description: 'Preparing the extracted questions for faculty review.' },
+  { id: 'evidence', label: 'Preparing evidence', description: 'Preparing the confirmed extraction as analysis evidence.' },
+  { id: 'knowledge', label: 'Retrieving evaluation knowledge', description: 'Retrieving the validated evaluation knowledge.' },
+  { id: 'criteria', label: 'Applying evaluation criteria', description: 'Linking questions with evaluation criteria.' },
+  { id: 'results', label: 'Generating results', description: 'Generating the findings and results.' },
+] as const
+
+const FACULTY_STAGE_INDEX: Partial<Record<ProcessingStage, number>> = {
+  validating: 0,
+  extracting_exam: 1,
+  extracting_tp153: 1,
+  review_ready: 2,
+  building_evidence: 3,
+  retrieving_knowledge: 4,
+  applying_rules: 5,
+  generating_report: 6,
+  completed: 6,
+}
+
+function elapsedLabel(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
 
 interface ProcessingStatusProps {
   analysisId: string
@@ -37,6 +60,7 @@ interface ProcessingStatusProps {
   pollIntervalMs?: number
   onStateChange?: (state: ProcessingStage) => void
   onAnalysisStarted?: (analysis: AnalysisResponse) => void
+  questionPreparationMode?: QuestionPreparationMode
 }
 
 export function ProcessingStatus({
@@ -45,6 +69,7 @@ export function ProcessingStatus({
   pollIntervalMs = 1500,
   onStateChange,
   onAnalysisStarted,
+  questionPreparationMode = 'assisted_pdf',
 }: ProcessingStatusProps) {
   const { locale, t } = useI18n()
   const onStateChangeRef = useRef(onStateChange)
@@ -61,7 +86,12 @@ export function ProcessingStatus({
   const [actionError, setActionError] = useState<string | null>(null)
   const [retryNotice, setRetryNotice] = useState<string | null>(null)
   const [connectivityDegraded, setConnectivityDegraded] = useState(false)
+  const [requestTimedOut, setRequestTimedOut] = useState(false)
   const [failureDetailsLoaded, setFailureDetailsLoaded] = useState(false)
+  const [elapsedClock, setElapsedClock] = useState<{
+    stage: ProcessingStage
+    seconds: number
+  }>({ stage: initialState, seconds: 0 })
 
   useEffect(() => {
     onStateChangeRef.current = onStateChange
@@ -70,6 +100,19 @@ export function ProcessingStatus({
   const hasStarted = state !== 'queued' || startRequested
   const isTerminal = TERMINAL_STAGES.includes(state)
   const needsFailureDetails = state === 'failed' && !failureDetailsLoaded
+  const facultyStageIndex = FACULTY_STAGE_INDEX[state] ?? 0
+  const facultyStage = FACULTY_STAGES[facultyStageIndex]
+  const elapsedSeconds = elapsedClock.stage === state ? elapsedClock.seconds : 0
+
+  useEffect(() => {
+    if (!hasStarted || isTerminal) return undefined
+    let seconds = 0
+    const timer = globalThis.setInterval(() => {
+      seconds += 1
+      setElapsedClock({ stage: state, seconds })
+    }, 1000)
+    return () => globalThis.clearInterval(timer)
+  }, [hasStarted, isTerminal, state])
 
   const applyState = useCallback((next: ProcessingStage): void => {
     setState(next)
@@ -84,10 +127,16 @@ export function ProcessingStatus({
 
     async function poll(): Promise<void> {
       let shouldContinue = true
+      const controller = new AbortController()
+      const requestTimeout = globalThis.setTimeout(
+        () => controller.abort(),
+        PROGRESS_REQUEST_TIMEOUT_MS,
+      )
       try {
-        const progress = await getAnalysisProgress(analysisId)
+        const progress = await getAnalysisProgress(analysisId, controller.signal)
         if (cancelled) return
         setConnectivityDegraded(false)
+        setRequestTimedOut(false)
         applyState(progress.state)
         setMessage(progress.message)
         setFailure({
@@ -97,9 +146,15 @@ export function ProcessingStatus({
         })
         if (progress.state === 'failed') setFailureDetailsLoaded(true)
         shouldContinue = !TERMINAL_STAGES.includes(progress.state)
-      } catch {
+      } catch (pollError) {
         if (cancelled) return
-        setConnectivityDegraded(true)
+        if (pollError instanceof DOMException && pollError.name === 'AbortError') {
+          setRequestTimedOut(true)
+        } else {
+          setConnectivityDegraded(true)
+        }
+      } finally {
+        globalThis.clearTimeout(requestTimeout)
       }
 
       if (!cancelled && shouldContinue) {
@@ -115,11 +170,15 @@ export function ProcessingStatus({
   }, [analysisId, applyState, hasStarted, isTerminal, needsFailureDetails, pollIntervalMs])
 
   function processingSteps(currentState: ProcessingStage): ProgressStep[] {
-    const currentIndex = ORDERED_PROCESSING_STAGES.indexOf(currentState)
-    return ORDERED_PROCESSING_STAGES.map((stage, index) => ({
-      id: stage,
-      label: t(stage),
-      status: index < currentIndex ? 'complete' : index === currentIndex ? 'current' : 'upcoming',
+    const currentIndex = FACULTY_STAGE_INDEX[currentState] ?? 0
+    return FACULTY_STAGES.map((stage, index) => ({
+      id: stage.id,
+      label: t(stage.label),
+      status: currentState === 'completed' || index < currentIndex
+        ? 'complete'
+        : index === currentIndex
+          ? 'current'
+          : 'upcoming',
     }))
   }
 
@@ -127,7 +186,7 @@ export function ProcessingStatus({
     setIsStarting(true)
     setActionError(null)
     try {
-      const response = await runAnalysis(analysisId)
+      const response = await runAnalysis(analysisId, questionPreparationMode)
       setStartRequested(true)
       applyState(response.state)
       onAnalysisStarted?.(response)
@@ -182,14 +241,25 @@ export function ProcessingStatus({
             </div>
           )}
           <p className="processing-stage" role="status">
-            {t('Current backend stage')}: <strong>{t(state)}</strong>
+            {t('Current stage')}: <strong>{t(facultyStage.label)}</strong>
           </p>
+          <p className="processing-stage-help">{t(facultyStage.description)}</p>
+          {!isTerminal && (
+            <p className="processing-elapsed">
+              {t('Elapsed time')}: <bdi>{elapsedLabel(elapsedSeconds)}</bdi>
+            </p>
+          )}
         </>
       )}
 
       {connectivityDegraded && (
         <Alert variant="warning" title={t('Connection interrupted')}>
           {t('Progress could not be refreshed. Polling will retry automatically.')}
+        </Alert>
+      )}
+      {requestTimedOut && (
+        <Alert variant="warning" title={t('Progress check timed out')}>
+          {t('The analysis is still running. Progress will be checked again automatically.')}
         </Alert>
       )}
       {state === 'failed' && (
@@ -201,7 +271,8 @@ export function ProcessingStatus({
           </p>
           {failure.failed_stage && (
             <p>
-              {t('Current backend stage')}: <strong>{t(failure.failed_stage)}</strong>
+              {t('Stage needing attention')}:{' '}
+              <strong>{t(FACULTY_STAGES[FACULTY_STAGE_INDEX[failure.failed_stage] ?? 0].label)}</strong>
             </p>
           )}
           {failure.error_code && <p><bdi>{failure.error_code}</bdi></p>}

@@ -5,6 +5,9 @@ from pathlib import Path
 from typing import Protocol
 
 from app.core.domain import (
+    ExtractionWarningSeverity,
+    QuestionReviewStatus,
+    QuestionType,
     ReferenceTargetType,
     SupportingAnnotationType,
     SupportingMaterialType,
@@ -44,6 +47,64 @@ class PageExtractionDiagnostic:
 
 
 @dataclass(frozen=True)
+class ExtractedSourceToken:
+    token_id: str
+    original_text: str
+    geometry: Geometry | None
+    confidence: float | None
+
+
+@dataclass(frozen=True)
+class ExtractedSourceLine:
+    source_line_id: str
+    provider: str
+    provider_version: str | None
+    page_number: int
+    reading_order: int
+    original_text: str
+    geometry: Geometry | None
+    confidence: float | None
+    extraction_method: str
+    language: str | None = None
+    tokens: tuple[ExtractedSourceToken, ...] = ()
+    page_width: float | None = None
+    page_height: float | None = None
+
+
+@dataclass(frozen=True)
+class ExtractionReconciliationWarning:
+    code: str
+    severity: ExtractionWarningSeverity
+    message: str
+    page_number: int | None
+    source_line_ids: tuple[str, ...] = ()
+    geometry: Geometry | None = None
+    resolved: bool = False
+
+
+@dataclass(frozen=True)
+class ExtractedQuestionOption:
+    local_key: str
+    question_local_key: str
+    option_label: str
+    option_text: str
+    sequence: int
+    page_number: int
+    confidence: float
+    geometry: Geometry | None
+    source_line_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ExtractedQuestionBlank:
+    question_local_key: str
+    blank_index: int
+    source_text: str | None
+    page_number: int
+    geometry: Geometry | None
+
+
+@dataclass(frozen=True)
 class ExtractedQuestion:
     number_label: str
     text: str
@@ -53,6 +114,16 @@ class ExtractedQuestion:
     sequence: int
     confidence: float
     geometry: Geometry | None
+    local_key: str | None = None
+    parent_local_key: str | None = None
+    question_type: QuestionType = QuestionType.UNKNOWN
+    instructions: str | None = None
+    extraction_method: str = "direct_text"
+    review_status: QuestionReviewStatus = QuestionReviewStatus.MACHINE_EXTRACTED
+    source_line_ids: tuple[str, ...] = ()
+    options: tuple[ExtractedQuestionOption, ...] = ()
+    blanks: tuple[ExtractedQuestionBlank, ...] = ()
+    supporting_material_local_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -64,6 +135,18 @@ class ExtractedEvidence:
     confidence: float
     geometry: Geometry | None
     question_number_label: str | None
+    question_local_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ExtractedTableCell:
+    row_index: int
+    column_index: int
+    original_text: str
+    page_number: int
+    geometry: Geometry | None
+    confidence: float
+    source_line_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -76,6 +159,8 @@ class ExtractedSupportingMaterial:
     geometry: Geometry | None
     extraction_method: str
     question_number_label: str | None = None
+    question_local_key: str | None = None
+    cells: tuple[ExtractedTableCell, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -103,6 +188,21 @@ class ExtractedDocumentReference:
     geometry: Geometry | None
     extraction_method: str
     question_number_label: str | None = None
+    question_local_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ExtractedStructureCandidate:
+    candidate_id: str
+    pipeline: str
+    item_kind: str
+    page_number: int
+    original_text: str
+    geometry: Geometry | None
+    confidence: float
+    question_local_key: str | None = None
+    source_line_ids: tuple[str, ...] = ()
+    provenance: str = "local_only"
 
 
 @dataclass(frozen=True)
@@ -114,6 +214,9 @@ class ExtractionResult:
     supporting_materials: list[ExtractedSupportingMaterial] = field(default_factory=list)
     supporting_annotations: list[ExtractedSupportingAnnotation] = field(default_factory=list)
     document_references: list[ExtractedDocumentReference] = field(default_factory=list)
+    source_lines: list[ExtractedSourceLine] = field(default_factory=list)
+    reconciliation_warnings: list[ExtractionReconciliationWarning] = field(default_factory=list)
+    structure_candidates: list[ExtractedStructureCandidate] = field(default_factory=list)
 
 
 class ExamExtractor(Protocol):

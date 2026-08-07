@@ -22,7 +22,7 @@ from app.models.evidence import Evidence
 from app.models.question import Question
 from app.models.user import User
 from app.services.ai.fake_provider import FakeAiProvider
-from app.services.rules.identifiers import CLO_RELEVANCE
+from app.services.rules.identifiers import CLO_RELEVANCE, QUESTION_TO_CLO_MAPPING
 from app.services.rules.semantic_governance import load_semantic_rule_spec
 from app.services.rules.semantic_types import SemanticValidationContext
 from app.services.rules.semantic_validation import (
@@ -241,6 +241,89 @@ def test_complete_valid_output_derives_high_confidence(
     )
 
 
+def test_unrelated_actual_clo_suggestion_is_downgraded_to_not_verified(
+    db_engine: Engine,
+    validation_rows: ValidationRows,
+) -> None:
+    with Session(db_engine) as session:
+        unrelated_clo = Clo(
+            analysis_id=validation_rows.analysis.id,
+            code="CLO9",
+            text="Analyze electrical circuits and calculate current.",
+            page_number=2,
+            confidence=0.9,
+        )
+        session.add(unrelated_clo)
+        session.flush()
+        unrelated_evidence = Evidence(
+            analysis_id=validation_rows.analysis.id,
+            source_document=UploadedFileType.TP153,
+            evidence_type="clo",
+            page_number=2,
+            item_reference="CLO9",
+            extracted_text=unrelated_clo.text,
+            confidence=0.9,
+        )
+        session.add(unrelated_evidence)
+        session.flush()
+        context = SemanticValidationContext(
+            analysis_id=validation_rows.analysis.id,
+            rule_spec=load_semantic_rule_spec(KB_SOURCE, QUESTION_TO_CLO_MAPPING),
+            prompt_template_version="semantic-rule001-v3",
+            kb_version="1.0.0",
+            allowed_evidence_ids=frozenset(
+                {validation_rows.question_evidence.id, unrelated_evidence.id}
+            ),
+            allowed_evidence_types=frozenset({"question_text", "clo"}),
+            required_source_evidence_ids=frozenset(
+                {validation_rows.question_evidence.id}
+            ),
+            allowed_target_evidence_ids=frozenset({unrelated_evidence.id}),
+            relationship_required=True,
+        )
+        payload = _payload(
+            validation_rows,
+            items=[
+                _item(
+                    validation_rows,
+                    targets=[unrelated_evidence.id],
+                )
+            ],
+            rule_id="RULE001",
+            requirement_id="REQ001",
+            prompt_template_version="semantic-rule001-v3",
+            recommendation_id="REC001",
+        )
+
+        result = _validate(session, validation_rows, payload, context=context)
+
+    assert result.status is AcademicStatus.NOT_VERIFIED
+    assert result.items[0].target_evidence_ids == []
+    assert result.recommendation_id is None
+    assert result.evidence_ids == [validation_rows.question_evidence.id]
+    assert "could not be grounded" in result.explanation
+
+
+def test_provider_aggregate_status_is_advisory(
+    db_engine: Engine,
+    validation_rows: ValidationRows,
+) -> None:
+    payload = _payload(
+        validation_rows,
+        status="Not Satisfied",
+    )
+
+    with Session(db_engine) as session:
+        result = _validate(
+            session,
+            validation_rows,
+            payload,
+        )
+
+    assert result.status is AcademicStatus.SATISFIED
+    assert result.items[0].status is AcademicStatus.SATISFIED
+
+
 def test_missing_required_source_forces_low_not_verified(
     db_engine: Engine, validation_rows: ValidationRows
 ) -> None:
@@ -330,28 +413,44 @@ def test_invalid_contract_claims_are_rejected(
             _validate(session, validation_rows, _payload(validation_rows, **overrides))
 
 
-def test_evidence_ids_must_equal_item_citations(
+def test_provider_evidence_ids_are_advisory(
     db_engine: Engine, validation_rows: ValidationRows
 ) -> None:
     with Session(db_engine) as session:
-        with pytest.raises(SemanticOutputValidationError, match="exactly match"):
-            _validate(
-                session,
+        result = _validate(
+            session,
+            validation_rows,
+            _payload(
                 validation_rows,
-                _payload(
-                    validation_rows,
-                    evidence_ids=[str(validation_rows.question_evidence.id)],
-                ),
-            )
+                evidence_ids=[str(validation_rows.question_evidence.id)],
+            ),
+        )
+
+    assert result.evidence_ids == sorted(
+        [
+            validation_rows.question_evidence.id,
+            validation_rows.clo_evidence.id,
+        ],
+        key=str,
+    )
 
 
-def test_positive_relationship_requires_controlled_target(
+def test_positive_relationship_without_target_is_not_verified(
     db_engine: Engine, validation_rows: ValidationRows
 ) -> None:
     item = _item(validation_rows, targets=[])
+
     with Session(db_engine) as session:
-        with pytest.raises(SemanticOutputValidationError, match="requires at least one"):
-            _validate(session, validation_rows, _payload(validation_rows, items=[item]))
+        result = _validate(
+            session,
+            validation_rows,
+            _payload(validation_rows, items=[item]),
+        )
+
+    assert result.status is AcademicStatus.NOT_VERIFIED
+    assert result.confidence_level is SemanticConfidenceLevel.LOW
+    assert result.items[0].status is AcademicStatus.NOT_VERIFIED
+    assert result.items[0].target_evidence_ids == []
 
 
 def test_target_outside_controlled_set_is_rejected(

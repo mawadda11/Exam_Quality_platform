@@ -117,6 +117,7 @@ const EXTRACTION_REVIEW: ExtractionReviewResponse = {
   can_confirm: true,
   warnings: [],
   confirmation_blockers: [],
+  blocking_extraction_warning_ids: [],
 }
 
 const SCORE: AnalysisScoreResponse = {
@@ -193,6 +194,11 @@ beforeEach(() => {
     total_pages: 0,
   })
   vi.mocked(analysesApi.getExtractionReview).mockResolvedValue(EXTRACTION_REVIEW)
+  vi.mocked(analysesApi.getExamPdf).mockResolvedValue(
+    new Blob(['pdf'], { type: 'application/pdf' }),
+  )
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:route-exam-preview')
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
   mockResults()
 })
 
@@ -439,7 +445,8 @@ describe('AppRoutes', () => {
       ),
     )
     expect(analysesApi.getAnalysis).toHaveBeenCalledTimes(1)
-    expect(screen.getByText('validating', { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.getByText('Validating files', { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.queryByText('validating')).not.toBeInTheDocument()
   })
 
   it('keeps a ready queued analysis on documents until the user explicitly continues and starts', async () => {

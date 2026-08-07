@@ -49,7 +49,11 @@ export function AnalysesRoute() {
         />
       )}
       {state.status === 'ready' && state.analyses.length > 0 && (
-        <AnalysisHistoryTable analyses={state.analyses} caption={t('All analyses')} />
+        <AnalysisHistoryTable
+          analyses={state.analyses}
+          caption={t('All analyses')}
+          onDeleted={state.removeAnalysis}
+        />
       )}
     </div>
   )

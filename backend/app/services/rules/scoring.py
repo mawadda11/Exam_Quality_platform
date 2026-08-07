@@ -1,6 +1,7 @@
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Protocol
 
 from app.core.domain import AcademicStatus
 
@@ -9,6 +10,41 @@ _STATUS_VALUES: dict[AcademicStatus, Decimal] = {
     AcademicStatus.PARTIALLY_SATISFIED: Decimal("0.5"),
     AcademicStatus.NOT_SATISFIED: Decimal("0.0"),
 }
+
+
+_LOCAL_RELATIONSHIP_RULE_IDS = frozenset({
+    "RULE001",  # question-to-CLO mapping
+    "RULE002",  # CLO relevance
+    "RULE004",  # question-format suitability against a CLO
+    "RULE005",  # applicable CLO coverage derived from mapping
+    "RULE007",  # question-to-topic alignment
+    "RULE008",  # out-of-scope content against topics
+    "RULE009",  # applicable topic coverage derived from mapping
+})
+
+
+class ScoreFinding(Protocol):
+    rule_id: str
+    evaluator_type: str
+    status: AcademicStatus
+
+
+def scoreable_statuses(findings: Iterable[ScoreFinding]) -> tuple[list[AcademicStatus], bool, int]:
+    """Return score statuses under the controlled local-pilot contract.
+
+    Local lexical semantic relationships remain visible as faculty-review
+    suggestions, but they are not reliable enough to change the numeric score.
+    When a local semantic baseline is present, relationship-dependent rules are
+    therefore excluded from the denominator. AI-backed and deterministic runs
+    preserve the governed status scoring contract unchanged.
+    """
+
+    rows = list(findings)
+    local_only = any(item.evaluator_type == "local_semantic_baseline" for item in rows)
+    if not local_only:
+        return [item.status for item in rows], False, 0
+    score_rows = [item for item in rows if item.rule_id not in _LOCAL_RELATIONSHIP_RULE_IDS]
+    return [item.status for item in score_rows], True, len(rows) - len(score_rows)
 
 
 @dataclass(frozen=True)

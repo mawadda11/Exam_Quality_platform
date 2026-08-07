@@ -23,6 +23,14 @@ def test_question_line_sets_kind_and_label_and_becomes_new_parent() -> None:
     assert result.marks is None
 
 
+@pytest.mark.parametrize("source", ["Question 1", "Question No. 2", "Question 3: Essay"])
+def test_full_question_heading_is_recognized(source: str) -> None:
+    result = classify_line(source, current_parent_label=None)
+
+    assert result.kind is LineKind.QUESTION
+    assert result.number_label is not None
+
+
 def test_question_line_with_inline_marks_extracts_value_and_matched_text() -> None:
     result = classify_line("Q1. Explain normalization. [5 marks]", current_parent_label=None)
 
@@ -126,3 +134,68 @@ def test_marks_bracket_on_a_non_question_line_is_not_surfaced() -> None:
 
     assert result.kind is LineKind.OTHER
     assert result.marks is None
+
+
+def test_technical_parenthesized_number_is_not_treated_as_marks() -> None:
+    result = classify_line(
+        "Q4. Perform the calculation in GF (19) and explain the result.",
+        current_parent_label=None,
+    )
+
+    assert result.kind is LineKind.QUESTION
+    assert result.marks is None
+
+
+def test_bare_square_bracket_marks_remain_supported() -> None:
+    result = classify_line("Q5. Explain the security property. [5]", current_parent_label=None)
+
+    assert result.marks is not None
+    assert result.marks.value == 5.0
+    assert result.marks.matched_text == "[5]"
+
+
+def test_decimal_question_label_preserves_hierarchy() -> None:
+    result = classify_line("Q1.8 Which index is suitable? [1 marks]", current_parent_label="Q1")
+
+    assert result.kind is LineKind.SUBQUESTION
+    assert result.number_label == "Q1.8"
+    assert result.marks is not None
+    assert result.marks.value == 1.0
+
+
+def test_inline_letter_question_label_preserves_hierarchy() -> None:
+    result = classify_line("Q3(b) Explain partial dependency. [3 marks]", current_parent_label="Q3")
+
+    assert result.kind is LineKind.SUBQUESTION
+    assert result.number_label == "Q3(b)"
+    assert result.marks is not None
+    assert result.marks.value == 3.0
+
+
+def test_strip_marks_annotations_removes_badge_from_middle_of_stem() -> None:
+    from app.services.extraction.line_classification import strip_marks_annotations
+
+    source = (
+        "Q4(b) Write an SQL query to display each student name with the "
+        "[3 marks] titles of courses in which the student is enrolled."
+    )
+
+    assert strip_marks_annotations(source) == (
+        "Q4(b) Write an SQL query to display each student name with the titles "
+        "of courses in which the student is enrolled."
+    )
+
+
+def test_strip_marks_annotations_removes_badge_at_end_and_preserves_technical_number() -> None:
+    from app.services.extraction.line_classification import strip_marks_annotations
+
+    source = "Perform the calculation in GF (19). (3 marks)"
+
+    assert strip_marks_annotations(source) == "Perform the calculation in GF (19)."
+
+
+def test_strip_marks_annotations_supports_points_and_arabic_labels() -> None:
+    from app.services.extraction.line_classification import strip_marks_annotations
+
+    assert strip_marks_annotations("Explain normalization. [2 points]") == "Explain normalization."
+    assert strip_marks_annotations("اشرح التطبيع. (٢ درجتان)") == "اشرح التطبيع."

@@ -14,6 +14,7 @@ from app.services.ai.provider import AiProvider
 # local or fake provider do not require the external SDK at import time.
 AnthropicAiProvider: Any = None
 OllamaProvider: Any = None
+GeminiProvider: Any = None
 
 
 class AiProviderConfigurationError(RuntimeError):
@@ -64,5 +65,20 @@ def build_ai_provider(settings: Settings) -> AiProvider:
                 model=settings.ai_model,
                 timeout_seconds=settings.ollama_timeout_seconds,
             ),
+        )
+    if provider == "gemini":
+        gemini_api_key = settings.gemini_api_key.get_secret_value()
+        if not gemini_api_key.strip():
+            raise AiProviderConfigurationError(
+                "GEMINI_API_KEY is required when AI_PROVIDER=gemini."
+            )
+        if not settings.ai_model.strip():
+            raise AiProviderConfigurationError("AI_MODEL is required when AI_PROVIDER=gemini.")
+        provider_cls = GeminiProvider
+        if provider_cls is None:
+            from app.services.ai.gemini_provider import GeminiProvider as provider_cls
+        return cast(
+            AiProvider,
+            provider_cls(api_key=gemini_api_key, model=settings.ai_model),
         )
     raise AiProviderConfigurationError(f"Unsupported AI_PROVIDER: {settings.ai_provider!r}.")

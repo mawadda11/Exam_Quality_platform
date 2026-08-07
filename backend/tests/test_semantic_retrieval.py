@@ -1,18 +1,19 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from app.services.ai.fake_provider import FakeAiProvider
 from app.services.knowledge_base.embedding_text import (
     build_embeddable_records,
     embedding_text,
     stable_chroma_id,
 )
 from app.services.knowledge_base.entity_types import EntityType
-from app.services.knowledge_base.runtime import load_kb_snapshot
+from app.services.knowledge_base.runtime import SemanticRuntime, load_kb_snapshot
 from app.services.knowledge_base.vector_store import (
     ChromaVectorStore,
     EmbeddableRecord,
@@ -161,6 +162,7 @@ class _FakeCollection:
         self.delete_calls: list[Mapping[str, object]] = []
         self.upserts: list[dict[str, Any]] = []
         self.query_kwargs: dict[str, Any] = {}
+        self.get_result: dict[str, object] = {"ids": [], "metadatas": []}
 
     def delete(self, *, where: Mapping[str, object]) -> None:
         self.delete_calls.append(where)
@@ -170,6 +172,9 @@ class _FakeCollection:
 
     def count(self) -> int:
         return 1
+
+    def get(self, **kwargs: Any) -> dict[str, object]:
+        return self.get_result
 
     def query(self, **kwargs: Any) -> dict[str, object]:
         self.query_kwargs = kwargs
@@ -241,6 +246,61 @@ def test_chroma_rebuild_deletes_same_version_then_upserts_with_filtered_query(
     }
     assert result[0].record_id == "one"
     assert result[0].source_row_number == 3
+
+
+def test_snapshot_match_reuses_only_the_exact_hash_and_record_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    collection = _FakeCollection()
+    client = _FakeChromaClient(collection)
+    monkeypatch.setattr(
+        "app.services.knowledge_base.vector_store._build_chroma_http_client",
+        lambda *, host, port: client,
+    )
+    store = ChromaVectorStore(host="chromadb", port=8000)
+    record = _record(record_id="one", version="1", text="CLO relevance")
+    collection.get_result = {
+        "ids": ["one"],
+        "metadatas": [{"kb_version": "1", "kb_hash": "hash-1"}],
+    }
+
+    assert store.snapshot_matches([record], kb_version="1", kb_hash="hash-1") is True
+    assert store.snapshot_matches([record], kb_version="1", kb_hash="changed") is False
+    assert store.snapshot_matches(
+        [record, _record(record_id="two", version="1", text="other")],
+        kb_version="1",
+        kb_hash="hash-1",
+    ) is False
+
+
+def test_semantic_runtime_reuses_an_exact_unchanged_snapshot() -> None:
+    class CountingStore(InMemoryVectorStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.replace_calls = 0
+
+        def replace_version(
+            self,
+            records: Sequence[EmbeddableRecord],
+            *,
+            kb_version: str,
+        ) -> None:
+            self.replace_calls += 1
+            super().replace_version(records, kb_version=kb_version)
+
+    snapshot = load_kb_snapshot(KB_SOURCE)
+    store = CountingStore()
+    store.replace_version(snapshot.embeddable_records, kb_version=snapshot.version)
+    store.replace_calls = 0
+    runtime = SemanticRuntime(
+        provider=FakeAiProvider(),
+        vector_store=store,
+        snapshot=snapshot,
+    )
+
+    runtime.ensure_index()
+
+    assert store.replace_calls == 0
 
 
 def test_local_embedding_is_deterministic_unicode_aware_and_normalized() -> None:

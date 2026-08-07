@@ -56,6 +56,7 @@ describe('ResultsHeader', () => {
           analysis={ANALYSIS}
           score={{ status: 'ready', data: SCORE }}
           onRetryScore={vi.fn()}
+          questions={{ status: 'ready', data: [{ id: 'q1' } as never] }}
         />
       </MemoryRouter>,
     )

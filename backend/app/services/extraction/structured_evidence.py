@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from pdfplumber.page import Page
@@ -24,6 +24,7 @@ from app.services.extraction.types import (
     ExtractedDocumentReference,
     ExtractedSupportingAnnotation,
     ExtractedSupportingMaterial,
+    ExtractedTableCell,
     Geometry,
 )
 
@@ -58,8 +59,11 @@ _QUESTION_REFERENCE = re.compile(
 )
 _CODE_LINE = re.compile(
     r"^\s*(?:```|(?:async\s+)?def\s+\w+\s*\(.*|class\s+\w+.*:|"
-    r"SELECT\s+.+\s+FROM\s+|for\s*\(.+\)|if\s*\(.+\)|print\s*\(.*|"
-    r"(?:self\.)?[A-Za-z_]\w*(?:\.\w+)*\s*(?:=|\().*)$",
+    r"SELECT\s+.+\s+FROM\s+|for\s*\(.+\)\s*\{?|if\s*\(.+\)\s*\{?|while\s*\(.+\)\s*\{?|"
+    r"print\s*\(.*\)\s*;?|return(?:\s+.+)?|[{}]+|"
+    r"(?:self\.)?[A-Za-z_]\w*(?:\.\w+)*\s*=\s*.+|"
+    r"(?:self\.)?[A-Za-z_]\w*(?:\.\w+)*\s*(?:\+\+|--)\s*;?|"
+    r"(?:self\.)?[A-Za-z_]\w*(?:\.\w+)*\s*\([^)]*\)\s*;?)\s*$",
     re.IGNORECASE,
 )
 _ARABIC_CHARACTER = re.compile(r"[\u0600-\u06ff]")
@@ -71,6 +75,39 @@ _ENGLISH_LABELED_CAPTION = re.compile(
     re.IGNORECASE,
 )
 _LATIN_LETTER = re.compile(r"[A-Za-z]")
+
+_SUPPORTING_CONTEXT_PATTERNS: tuple[tuple[SupportingMaterialType, re.Pattern[str]], ...] = (
+    (
+        SupportingMaterialType.CODE_BLOCK,
+        re.compile(
+            r"(?:use|using|based\s+on|according\s+to|refer\s+to|complete)\s+"
+            r"(?:the\s+)?(?:following|below|shown)?\s*"
+            r"(?:database\s+)?(?:schema|code|listing|sql\s+schema)|"
+            r"(?:المخطط\s+القاعدي|المخطط\s+التالي|الشفرة\s+التالية|الكود\s+التالي)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        SupportingMaterialType.TABLE,
+        re.compile(
+            r"(?:use|using|based\s+on|according\s+to|refer\s+to|complete)\s+"
+            r"(?:the\s+)?(?:following|below|shown)?\s*(?:table|grid)|"
+            r"(?:الجدول\s+(?:التالي|أدناه|الموضح)|استنادا\s+إلى\s+الجدول)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        SupportingMaterialType.FIGURE,
+        re.compile(
+            r"(?:use|using|based\s+on|according\s+to|refer\s+to|complete|study)\s+"
+            r"(?:the\s+)?(?:following|below|shown)?\s*"
+            r"(?:figure|diagram|uml|chart|network|topology)|"
+            r"(?:(?:الشكل|المخطط|الرسم)\s+(?:التالي|أدناه|الموضح)|"
+            r"استنادا\s+إلى\s+(?:الشكل|المخطط|الرسم))",
+            re.IGNORECASE,
+        ),
+    ),
+)
 _ARABIC_PRESENTATION_KIND = {
     SupportingMaterialType.FIGURE.value: "الشكل",
     SupportingMaterialType.TABLE.value: "الجدول",
@@ -225,14 +262,27 @@ def _line_geometry(page: Page, line: str | PdfLayoutLine) -> Geometry | None:
 
 
 def is_code_line(value: str) -> bool:
+    # Question headers such as ``Q1 (8 marks).`` superficially resemble a
+    # function call (identifier followed by parentheses). They must remain
+    # question text and must never create a synthetic code-block material.
+    normalized = normalize_arabic_for_matching(value).strip()
+    if re.match(
+        r"^(?:Q\s*\d+|Question\s+(?:No\.?\s*)?\d+|س\s*\d+|السؤال\s+)",
+        normalized,
+        re.IGNORECASE,
+    ):
+        return False
     return _CODE_LINE.match(value) is not None
 
 
 def _is_meaningful_table(rows: list[list[str | None]]) -> bool:
     row_count = len(rows)
     column_count = max((len(row) for row in rows), default=0)
-    nonempty = sum(bool((cell or "").strip()) for row in rows for cell in row)
-    return row_count >= 2 and column_count >= 2 and nonempty >= 4
+    # A ruled two-dimensional region is meaningful even when most or every
+    # cell is intentionally empty: answer grids, matching banks, UML label
+    # boxes, and short-answer spaces are common exam structures.  pdfplumber
+    # has already required a real table geometry before this point.
+    return row_count >= 2 and column_count >= 2
 
 
 def extract_page_materials(
@@ -277,6 +327,50 @@ def extract_page_materials(
         rows = table.extract() or []
         if not _is_meaningful_table(rows):
             continue
+        cells: list[ExtractedTableCell] = []
+        table_rows = list(table.rows)
+        for row_index, row in enumerate(rows):
+            row_object = table_rows[row_index] if row_index < len(table_rows) else None
+            for column_index, cell_text in enumerate(row):
+                cell_bbox = (
+                    row_object.cells[column_index]
+                    if row_object is not None and column_index < len(row_object.cells)
+                    else None
+                )
+                cell_geometry = (
+                    Geometry(
+                        x0=float(cell_bbox[0]),
+                        top=float(cell_bbox[1]),
+                        x1=float(cell_bbox[2]),
+                        bottom=float(cell_bbox[3]),
+                    )
+                    if cell_bbox is not None
+                    else None
+                )
+                source_line_ids: tuple[str, ...] = ()
+                if cell_geometry is not None:
+                    source_line_ids = tuple(
+                        f"P{page_number}-N{line_index}"
+                        for line_index, line in enumerate(lines, start=1)
+                        if (line_geometry := _line_geometry(page, line)) is not None
+                        and cell_geometry.x0
+                        <= (line_geometry.x0 + line_geometry.x1) / 2
+                        <= cell_geometry.x1
+                        and cell_geometry.top
+                        <= (line_geometry.top + line_geometry.bottom) / 2
+                        <= cell_geometry.bottom
+                    )
+                cells.append(
+                    ExtractedTableCell(
+                        row_index=row_index,
+                        column_index=column_index,
+                        original_text=cell_text or "",
+                        page_number=page_number,
+                        geometry=cell_geometry,
+                        confidence=0.95 if cell_bbox is not None else 0.6,
+                        source_line_ids=source_line_ids,
+                    )
+                )
         source_text = "\n".join(
             " | ".join((cell or "").strip() for cell in row) for row in rows
         ).strip()
@@ -289,13 +383,34 @@ def extract_page_materials(
                 confidence=0.95,
                 geometry=Geometry(float(x0), float(top), float(x1), float(bottom)),
                 extraction_method=extraction_method,
+                cells=tuple(cells),
             )
         )
 
-    code_lines = [line for line in lines if is_code_line(_line_text(line))]
-    if len(code_lines) >= 2 or any(
-        _line_text(line).strip().startswith("```") for line in code_lines
-    ):
+    # Build code materials from contiguous runs instead of unioning every
+    # code-looking line on the page.  Natural-language prompts can legitimately
+    # contain code literals such as ``dequeue()`` or ``add_student()``; treating
+    # one such continuation line as part of an earlier code block creates a huge
+    # false material band and can make the question extractor drop that line.
+    code_groups: list[list[str | PdfLayoutLine]] = []
+    current_code_group: list[str | PdfLayoutLine] = []
+    for line in lines:
+        if is_code_line(_line_text(line)):
+            current_code_group.append(line)
+            continue
+        if current_code_group:
+            code_groups.append(current_code_group)
+            current_code_group = []
+    if current_code_group:
+        code_groups.append(current_code_group)
+
+    emitted_code_index = 0
+    for code_lines in code_groups:
+        is_fenced = any(
+            _line_text(line).strip().startswith("```") for line in code_lines
+        )
+        if len(code_lines) < 2 and not is_fenced:
+            continue
         geometries = [_line_geometry(page, line) for line in code_lines]
         present = [item for item in geometries if item is not None]
         code_geometry = (
@@ -310,7 +425,7 @@ def extract_page_materials(
         )
         materials.append(
             ExtractedSupportingMaterial(
-                local_key=f"p{page_number}:code:0",
+                local_key=f"p{page_number}:code:{emitted_code_index}",
                 material_type=SupportingMaterialType.CODE_BLOCK,
                 page_number=page_number,
                 source_text="\n".join(_line_source_text(line) for line in code_lines),
@@ -319,6 +434,7 @@ def extract_page_materials(
                 extraction_method=extraction_method,
             )
         )
+        emitted_code_index += 1
 
     for index, line in enumerate(lines):
         reading_text = _line_text(line)
@@ -372,6 +488,146 @@ def extract_page_materials(
                 )
             )
     return PageStructuredEvidence(materials=materials, annotations=annotations)
+
+
+
+def _geometry_center(value: Geometry | None) -> tuple[float, float] | None:
+    if value is None:
+        return None
+    return ((value.x0 + value.x1) / 2, (value.top + value.bottom) / 2)
+
+
+def _geometry_distance(left: Geometry | None, right: Geometry | None) -> float | None:
+    left_center = _geometry_center(left)
+    right_center = _geometry_center(right)
+    if left_center is None or right_center is None:
+        return None
+    distance = (
+        (left_center[0] - right_center[0]) ** 2
+        + (left_center[1] - right_center[1]) ** 2
+    ) ** 0.5
+    return float(distance)
+
+
+def _context_material_types(question_text: str) -> set[SupportingMaterialType]:
+    return {
+        material_type
+        for material_type, pattern in _SUPPORTING_CONTEXT_PATTERNS
+        if pattern.search(question_text) is not None
+    }
+
+
+def retain_question_linked_materials(
+    *,
+    questions: Sequence[Any],
+    materials: Sequence[ExtractedSupportingMaterial],
+    annotations: Sequence[ExtractedSupportingAnnotation],
+    references: Sequence[ExtractedDocumentReference],
+) -> tuple[
+    list[ExtractedSupportingMaterial],
+    list[ExtractedSupportingAnnotation],
+]:
+    """Keep only supporting context that a question actually calls for.
+
+    Generic page tables, answer grids, cover metadata, logos, and decorative
+    assets are intentionally excluded from the controlled-pilot review. A
+    material survives only when an explicit label resolves to it or when a
+    question contains a clear source phrase such as ``Use the following
+    schema`` and there is one unambiguous physical candidate of the expected
+    type on that page. The material is linked to that question for human
+    confirmation; proximity alone never creates a scored exact-label claim.
+    """
+
+    material_by_key = {item.local_key: item for item in materials}
+    annotations_by_label: dict[str, list[ExtractedSupportingAnnotation]] = {}
+    for annotation in annotations:
+        if annotation.normalized_label:
+            annotations_by_label.setdefault(annotation.normalized_label, []).append(annotation)
+
+    keep_keys: set[str] = set()
+    owner_by_key: dict[str, tuple[str | None, str | None]] = {}
+
+    # First preserve exact labeled material references (Table 1, Figure 2, ...).
+    for reference in references:
+        if reference.target_type is ReferenceTargetType.QUESTION:
+            continue
+        for annotation in annotations_by_label.get(reference.normalized_target_label, []):
+            material_key = annotation.material_local_key
+            if material_key is None or material_key not in material_by_key:
+                continue
+            material = material_by_key[material_key]
+            if material.material_type.value != reference.target_type.value:
+                continue
+            keep_keys.add(material_key)
+            owner_by_key.setdefault(
+                material_key,
+                (reference.question_number_label, reference.question_local_key),
+            )
+
+    # Then allow one strongly cued, unlabeled material per question/type.
+    for question in questions:
+        expected_types = _context_material_types(getattr(question, "text", ""))
+        for material_type in expected_types:
+            candidates = [
+                item
+                for item in materials
+                if item.material_type is material_type
+                and item.page_number == getattr(question, "page_number", None)
+            ]
+            if not candidates:
+                continue
+            selected: ExtractedSupportingMaterial | None = None
+            if len(candidates) == 1:
+                selected = candidates[0]
+            else:
+                ranked = sorted(
+                    (
+                        (distance, item)
+                        for item in candidates
+                        if (
+                            distance := _geometry_distance(
+                                getattr(question, "geometry", None), item.geometry
+                            )
+                        )
+                        is not None
+                    ),
+                    key=lambda pair: pair[0],
+                )
+                # Multiple candidates are retained only when one is clearly nearer.
+                if ranked and (len(ranked) == 1 or ranked[0][0] + 24 < ranked[1][0]):
+                    selected = ranked[0][1]
+            if selected is None:
+                continue
+            keep_keys.add(selected.local_key)
+            owner_by_key.setdefault(
+                selected.local_key,
+                (
+                    getattr(question, "number_label", None),
+                    getattr(question, "local_key", None),
+                ),
+            )
+
+    retained_materials: list[ExtractedSupportingMaterial] = []
+    for material in materials:
+        if material.local_key not in keep_keys:
+            continue
+        question_number_label, question_local_key = owner_by_key.get(
+            material.local_key, (None, None)
+        )
+        retained_materials.append(
+            replace(
+                material,
+                question_number_label=question_number_label,
+                question_local_key=question_local_key,
+            )
+        )
+
+    retained_annotations = [
+        annotation
+        for annotation in annotations
+        if annotation.material_local_key in keep_keys
+    ]
+    return retained_materials, retained_annotations
 
 
 def extract_question_references(

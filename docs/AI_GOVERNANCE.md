@@ -112,3 +112,19 @@ controlled KB. It does not establish:
 
 See `docs/DESIGN_DECISIONS.md` for the approved alternatives, technical justification, academic
 justification, consequences, and limitations.
+# Extraction AI boundary
+
+Optional extraction-stage Gemini Vision assistance is permitted before
+Extraction Review only for untrusted document structure grouping. It receives
+complete selected page renderings plus normalized local evidence, must reference
+persisted source-line IDs where available, cannot supply canonical transcription, and cannot
+produce academic findings, mappings, scores, recommendations, statuses, or
+accreditation conclusions. Academic semantic evaluators remain blocked until
+the exact latest Extraction Review revision is confirmed. See
+[`EXTRACTION_ARCHITECTURE.md`](EXTRACTION_ARCHITECTURE.md).
+
+Visible candidate text without a source-line match remains non-canonical until
+targeted local OCR corroborates it or a reviewer explicitly resolves the
+resulting blocker. Local and Gemini candidates, fresh/cache provenance, and
+critical disagreements are retained for review. No chain-of-thought is
+requested, stored, or displayed.

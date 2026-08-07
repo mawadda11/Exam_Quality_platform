@@ -127,6 +127,15 @@ def test_snapshot_rejects_included_records_that_depend_on_excluded_questions() -
         )
 
 
+def test_snapshot_rejects_question_hierarchy_cycles_even_when_links_resolve() -> None:
+    first = _question()
+    second = _question(parent_source_record_id=first.source_record_id)
+    first = first.model_copy(update={"parent_source_record_id": second.source_record_id})
+
+    with pytest.raises(ValidationError, match="must not contain a cycle"):
+        _snapshot(questions=[first, second])
+
+
 def test_snapshot_rejects_invalid_values_and_unknown_fields() -> None:
     payload = _snapshot().model_dump(mode="json")
     payload["unknown"] = "not allowed"

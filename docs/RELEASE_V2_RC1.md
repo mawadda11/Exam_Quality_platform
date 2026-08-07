@@ -6,12 +6,19 @@
 production readiness, accreditation validity, institutional approval, certification, or exam
 pass/fail suitability.
 
+This candidate includes provider-neutral local exam OCR (pdfplumber plus
+Tesseract reconciliation), source-constrained optional Gemini structure
+parsing, review-v2 question types/options/provenance, protected PDF review,
+explicit Back navigation, and safe owned-analysis deletion. Alembic head is
+`0013`.
+
 ## Included pilot capabilities
 
 - A bilingual Arabic/English Faculty Member workflow with RTL/LTR presentation.
 - Registration, login, logout, session restoration, password recovery, and authenticated
   owner-isolated analyses and reports.
-- Digital PDF extraction and local OCR fallback for image-based exam pages.
+- Native PDF extraction plus local Tesseract OCR through a provider-neutral
+  document boundary, with deterministic reconciliation and critical blockers.
 - Extraction Review with source-faithful evidence, faculty corrections, append-only review
   revisions, provenance, and confirmation before governed analysis.
 - Results for Overview, Questions, Alignment & Coverage, Marks & Structure, Materials & References,
@@ -45,4 +52,3 @@ See `docs/KNOWN_LIMITATIONS.md`. Important limits include evidence-quality depen
 review of suggested relationships, fallible OCR, no accreditation or approval decision, no external
 language-model integration in this release, and separate unresolved production-infrastructure
 requirements.
-

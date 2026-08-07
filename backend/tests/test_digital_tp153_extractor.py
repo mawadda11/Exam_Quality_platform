@@ -11,7 +11,10 @@ from tp153_pdf_fixtures import (
     build_official_sample_format_tp153_pdf,
 )
 
-from app.services.extraction.digital_tp153_extractor import PdfPlumberTp153Extractor
+from app.services.extraction.digital_tp153_extractor import (
+    CourseSpecificationLine,
+    PdfPlumberTp153Extractor,
+)
 from app.services.extraction.types import ExtractionError
 
 
@@ -155,3 +158,37 @@ def test_unparseable_pdf_raises_extraction_error_without_leaking_details(tmp_pat
         PdfPlumberTp153Extractor().extract(pdf_path)
 
     assert "fake.pdf" in str(excinfo.value)
+
+
+def test_assessment_header_role_accepts_common_assessment_column_name() -> None:
+    from app.services.extraction.digital_tp153_extractor import _header_role, _table_section
+
+    roles = tuple(_header_role(value) for value in ("Assessment", "Week", "Weight", "Notes"))
+
+    assert roles == ("method", "week", "percentage", "notes")
+    assert _table_section(roles) == "assessment_records"
+
+
+def test_compact_clo_and_topic_metadata_are_separated_from_display_text() -> None:
+    result = PdfPlumberTp153Extractor().parse_lines(
+        [
+            CourseSpecificationLine(text="Course Learning Outcomes", page_number=1),
+            CourseSpecificationLine(
+                text=(
+                    "CLO1 | Explain relational database concepts, keys, constraints, "
+                    "and Knowledge PLO1"
+                ),
+                page_number=1,
+            ),
+            CourseSpecificationLine(text="Course Topics", page_number=2),
+            CourseSpecificationLine(
+                text="T1 | Relational model, schemas, keys, and constraints 5",
+                page_number=2,
+            ),
+        ]
+    )
+
+    assert result.clos[0].text == "Explain relational database concepts, keys, constraints"
+    assert result.clos[0].program_outcome_reference == "PLO1"
+    assert result.topics[0].text == "Relational model, schemas, keys, and constraints"
+    assert result.topics[0].expected_hours == 5.0

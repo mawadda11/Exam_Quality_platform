@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 
@@ -12,8 +13,17 @@ class TextQuality:
     reason: str
 
 
+_ANSWER_SPACE_LINE = re.compile(r"^\s*(?:[._·•…⋯-]\s*){12,}\s*$")
+
+
 def assess_text_quality(text: str) -> TextQuality:
-    stripped = text.strip()
+    # Long dotted/underscored answer areas are valid exam layout, not corrupt
+    # text. Excluding them prevents unnecessary OCR fallback on otherwise
+    # clean digital pages.
+    filtered = "\n".join(
+        line for line in text.splitlines() if not _ANSWER_SPACE_LINE.fullmatch(line)
+    )
+    stripped = filtered.strip()
     if not stripped:
         return TextQuality(False, 0.0, "no_direct_text")
 

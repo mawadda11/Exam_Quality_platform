@@ -24,7 +24,13 @@ def _create_analysis(client: TestClient, email: str) -> str:
     return analysis_id
 
 
-def _finding(analysis_id: str, rule_id: str, status: AcademicStatus) -> Finding:
+def _finding(
+    analysis_id: str,
+    rule_id: str,
+    status: AcademicStatus,
+    *,
+    evaluator_type: str = "deterministic_rule",
+) -> Finding:
     return Finding(
         analysis_id=uuid.UUID(analysis_id),
         requirement_id=rule_id.replace("RULE", "REQ"),
@@ -32,7 +38,7 @@ def _finding(analysis_id: str, rule_id: str, status: AcademicStatus) -> Finding:
         status=status,
         explanation="test finding",
         confidence=1.0,
-        evaluator_type="deterministic_rule",
+        evaluator_type=evaluator_type,
     )
 
 
@@ -111,3 +117,42 @@ def test_score_computes_from_mixed_findings_and_counts_every_status(
     assert body["not_satisfied_count"] == 1
     assert body["not_verified_count"] == 1
     assert body["not_applicable_count"] == 1
+
+
+def test_local_semantic_relationships_remain_visible_but_are_excluded_from_score(
+    client: TestClient, db_engine: Engine
+) -> None:
+    email = "score-local-semantic@kau.edu.sa"
+    analysis_id = _create_analysis(client, email)
+    with Session(db_engine) as session:
+        session.add_all(
+            [
+                _finding(
+                    analysis_id,
+                    "RULE001",
+                    AcademicStatus.SATISFIED,
+                    evaluator_type="local_semantic_baseline",
+                ),
+                _finding(
+                    analysis_id,
+                    "RULE005",
+                    AcademicStatus.PARTIALLY_SATISFIED,
+                ),
+                _finding(analysis_id, "RULE010", AcademicStatus.SATISFIED),
+                _finding(analysis_id, "RULE012", AcademicStatus.NOT_SATISFIED),
+            ]
+        )
+        session.commit()
+
+    response = client.get(f"/api/v1/analyses/{analysis_id}/score", headers=auth_header(email))
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["score"] == "50.00"
+    assert body["denominator"] == 2
+    assert body["score_mode"] == "local_preliminary"
+    assert body["excluded_local_semantic_count"] == 2
+    # Score-card counts describe only checks included in the local preliminary score.
+    assert body["satisfied_count"] == 1
+    assert body["partially_satisfied_count"] == 0
+    assert body["not_satisfied_count"] == 1

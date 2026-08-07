@@ -10,6 +10,12 @@ class ExamType(StrEnum):
     FINAL = "Final"
 
 
+class QuestionPreparationMode(StrEnum):
+    ASSISTED_PDF = "assisted_pdf"
+    MANUAL_PDF = "manual_pdf"
+    STRUCTURED_TEMPLATE = "structured_template"
+
+
 class UploadedFileType(StrEnum):
     EXAM = "exam"
     TP153 = "tp153"
@@ -51,6 +57,33 @@ class ReferenceResolutionStatus(StrEnum):
     RESOLVED = "resolved"
     AMBIGUOUS = "ambiguous"
     UNRESOLVED = "unresolved"
+
+
+class QuestionType(StrEnum):
+    MULTIPLE_CHOICE = "multiple_choice"
+    TRUE_FALSE = "true_false"
+    FILL_IN_BLANK = "fill_in_blank"
+    MATCHING = "matching"
+    SHORT_ANSWER = "short_answer"
+    ESSAY = "essay"
+    CALCULATION = "calculation"
+    CODE_QUESTION = "code_question"
+    TABLE_BASED = "table_based"
+    FIGURE_BASED = "figure_based"
+    MIXED = "mixed"
+    UNKNOWN = "unknown"
+
+
+class QuestionReviewStatus(StrEnum):
+    MACHINE_EXTRACTED = "machine_extracted"
+    NEEDS_REVIEW = "needs_review"
+    REVIEWED = "reviewed"
+
+
+class ExtractionWarningSeverity(StrEnum):
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
 
 
 class AssociationBasis(StrEnum):

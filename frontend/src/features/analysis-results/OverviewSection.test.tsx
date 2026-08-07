@@ -54,6 +54,9 @@ describe('OverviewSection', () => {
     expect(screen.getByText('75.00%')).toBeInTheDocument()
     expect(screen.getByText('Based on 4 verified checks')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'About this score' })).toBeInTheDocument()
+    expect(screen.getByText(
+      'This is an advisory estimate of exam quality based on the criteria that could be verified. It is not the exam mark or a student pass rate.',
+    )).toBeInTheDocument()
     expect(screen.queryByText(/earned credit/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/× 1\.0/i)).not.toBeInTheDocument()
     expect(screen.getByText(/analysis completed with a limited check/i)).toBeInTheDocument()
@@ -61,6 +64,9 @@ describe('OverviewSection', () => {
       .toHaveAttribute('href', '/evaluation-scope')
     expect(screen.getByRole('link', { name: /learn how this works/i }))
       .toHaveAttribute('href', '/evaluation-scope#overall-score')
+    const evaluationHeading = screen.getByRole('heading', { name: 'Evaluation results' })
+    const scoreText = screen.getByText('75.00%')
+    expect(evaluationHeading.compareDocumentPosition(scoreText) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByText('Satisfied').closest('li')).toHaveTextContent('2')
     expect(screen.getByText('Partially Satisfied').closest('li')).toHaveTextContent('1')
     expect(screen.getByText('Not Satisfied').closest('li')).toHaveTextContent('1')

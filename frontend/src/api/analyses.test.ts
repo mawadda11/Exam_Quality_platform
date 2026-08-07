@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   confirmExtractionReview,
   createAnalysis,
+  deleteAnalysis,
   getAnalysis,
+  getExamPageImage,
+  getExamPdf,
   getExtractionReview,
   getRuleCoverage,
   generateReport,
@@ -86,6 +89,62 @@ describe('getAnalysis', () => {
     expect(result.id).toBe('analysis-1')
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toBe('http://localhost:8000/api/v1/analyses/analysis-1')
+  })
+})
+
+describe('analysis deletion and protected PDF preview', () => {
+  it('DELETEs an analysis exactly once', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(null, 204))
+    vi.stubGlobal('fetch', fetchMock)
+    await deleteAnalysis('analysis-1')
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('http://localhost:8000/api/v1/analyses/analysis-1')
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('loads the exam PDF as an authenticated Blob', async () => {
+    const blob = new Blob(['pdf'], { type: 'application/pdf' })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: '',
+      blob: async () => blob,
+    } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await getExamPdf('analysis-1')).toBe(blob)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'http://localhost:8000/api/v1/analyses/analysis-1/files/exam/content',
+    )
+  })
+
+  it('loads a protected raster page or crop with PDF geometry', async () => {
+    const blob = new Blob(['png'], { type: 'image/png' })
+    const headers = new Headers({
+      'X-PDF-Page-Width': '612',
+      'X-PDF-Page-Height': '792',
+    })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: '',
+      headers,
+      blob: async () => blob,
+    } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await getExamPageImage(
+      'analysis-1',
+      3,
+      { x0: 10, top: 20, x1: 300, bottom: 180 },
+      { crop: true, padding: 14, dpi: 156 },
+    )
+
+    expect(result).toEqual({ blob, pageWidth: 612, pageHeight: 792 })
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toContain('/analyses/analysis-1/files/exam/pages/3/image?')
+    expect(url).toContain('x0=10')
+    expect(url).toContain('crop=true')
+    expect(url).toContain('dpi=156')
   })
 })
 
@@ -214,6 +273,7 @@ const REVIEW_RESPONSE: ExtractionReviewResponse = {
   can_confirm: true,
   warnings: [],
   confirmation_blockers: [],
+  blocking_extraction_warning_ids: [],
 }
 
 describe('extraction review API', () => {

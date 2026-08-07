@@ -1,5 +1,12 @@
 # RAG and AI Design
 
+Extraction-stage Gemini structure assistance is a separate adapter from the
+academic semantic provider described below. It may group only existing
+source-line IDs and cannot author transcription or produce academic judgments.
+It runs before review only as untrusted extraction assistance; academic
+providers remain gated on exact-revision confirmation. See
+[`EXTRACTION_ARCHITECTURE.md`](EXTRACTION_ARCHITECTURE.md).
+
 ## Contract status
 
 This document distinguishes the approved target design from current runtime capability:
@@ -154,9 +161,43 @@ only on the provider interface; no evaluator contains vendor-specific code, and 
 changes what a semantic evaluator is permitted to decide - Ollama, like Anthropic, may only
 interpret governed relationships within the same validated, strictly-schema'd contract described
 above; the Ollama adapter disables model "thinking" output (`think=false`) and only ever reads the
-final response content, never any thinking/reasoning trace. There is no automatic fallback between
-providers on failure: a configured provider's errors propagate through the existing safe
-processing-failure path.
+final response content, never any thinking/reasoning trace.
+
+When `AI_PROVIDER=gemini` and `AI_FAILOVER_ENABLED=true`, semantic AI uses a sticky
+per-analysis route: `AI_MODEL` (primary, currently Gemini 3.6 Flash) ->
+`GEMINI_FALLBACK_MODEL` (currently Gemini 3.5 Flash-Lite) -> the governed local baseline.
+Only availability failures (quota/rate limit, timeout/network failure, and temporary 5xx service
+unavailability) downgrade the route. Authentication, configuration, malformed output, schema,
+programming, and persistence failures remain visible failures. Once an analysis downgrades, all
+remaining AI work for that same analysis stays on the lower tier; every newly created analysis
+starts from the primary model again. The selected tier is persisted using existing processing-event
+audit storage, so the choice survives the Extraction Review pause and does not require a schema
+migration.
+
+### Ollama JSON-mode compatibility fallback
+
+This is a transport-compatibility workaround, not a governance exception, and it does not weaken
+any validation gate below. Some confirmed Ollama/model combinations (observed: Ollama 0.32.5 with
+`qwen3.5:4b`) cannot compile the full JSON Schema passed in `/api/chat`'s `format` field into their
+sampling grammar and reject the request with HTTP 400 ("Failed to initialize samplers: failed to
+parse grammar"). `app.services.ai.ollama_provider` detects this one *confirmed* condition only -
+HTTP 400 plus a sanitized error message containing `"failed to parse grammar"` or `"failed to
+initialize samplers"` - by inspecting a bounded slice of the error body (never logged, stored, or
+included in any exception; the classification result is the only thing that leaves that function).
+On that specific condition, and only that condition, it retries **exactly once** with
+`format="json"` (Ollama's simpler, non-grammar-compiled JSON mode) instead, restating the same
+schema as compact text inside the system instruction and requiring one JSON object only, no
+Markdown, no prose outside the JSON. `stream=false`, `think=false`, and `options.temperature=0` are
+unchanged between the two attempts. Every other failure - timeout, connection failure, an
+unavailable model, an unrelated HTTP 400, HTTP 404/500, or a malformed response envelope - is not
+retried by this fallback.
+
+The fallback's output is still just an untrusted string returned from `generate_structured`, like
+every other provider call: `app.services.rules.semantic_validation`'s strict, `extra="forbid"`
+Pydantic schema and the evaluator's own bounded `validation_retries` loop are exactly as
+authoritative for JSON-mode output as they are for schema-mode output. Invalid or malformed
+fallback output is rejected the same way any other malformed provider output is - it never becomes
+an academic finding.
 
 ## Validation gates
 

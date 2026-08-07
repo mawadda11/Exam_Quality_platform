@@ -23,6 +23,38 @@ _ISOLATED_TOTAL_VALUE = re.compile(
     re.IGNORECASE,
 )
 _MAX_ADJACENT_GAP = 24.0
+_NUMERIC_TOKEN = re.compile(r"^\s*(?P<value>\d+(?:\.\d+)?)\s*$")
+_ENGLISH_TOTAL_TOKEN_PAIRS = {
+    ("total", "marks"),
+    ("total", "mark"),
+    ("total", "score"),
+    ("exam", "total"),
+    ("maximum", "marks"),
+    ("maximum", "mark"),
+}
+_DECLARED_TOTAL_BRIDGE_TOKENS = {
+    "/",
+    ":",
+    "=",
+    "-",
+    "–",
+    "—",
+    "الدرجة",
+    "ةجردلا",
+    "الدرجات",
+    "تاجردلا",
+}
+_DURATION_TOKENS = {
+    "duration",
+    "minutes",
+    "minute",
+    "hours",
+    "hour",
+    "الزمن",
+    "نمزلا",
+    "المدة",
+    "ةدملا",
+}
 
 
 @dataclass(frozen=True)
@@ -57,6 +89,63 @@ def _isolated_value(line: PdfLayoutLine) -> float | None:
     return parse_localized_number(match.group("value")) if match is not None else None
 
 
+def _token_declared_total(line: PdfLayoutLine) -> DeclaredTotalCandidate | None:
+    """Recover a total from a compact bilingual header-table row.
+
+    Many Saudi university templates place ``Duration`` and ``Total Marks`` in
+    the same physical row.  PDF text reconstruction may therefore emit one
+    merged line such as ``Duration ... 75 minutes Total Marks / الدرجة 30``.
+    The ordinary line parser intentionally refuses to scan arbitrary numbers
+    after a label because that could select a year, duration, or page number.
+
+    This fallback uses the original token geometry instead: it first locates
+    an approved two-token English total label, then accepts only the nearest
+    isolated numeric token to its right while allowing a short bilingual label
+    bridge.  A duration token between the total label and the candidate value
+    invalidates the match.  This keeps the extraction deterministic and avoids
+    treating ``75 minutes`` as the declared total.
+    """
+
+    tokens = list(line.tokens)
+    if len(tokens) < 3:
+        return None
+
+    normalized = [normalize_arabic_for_matching(token.original_text).casefold() for token in tokens]
+    for index in range(len(tokens) - 1):
+        pair = (normalized[index], normalized[index + 1])
+        if pair not in _ENGLISH_TOTAL_TOKEN_PAIRS:
+            continue
+
+        bridge_count = 0
+        for candidate_index in range(index + 2, min(len(tokens), index + 8)):
+            candidate_text = normalized[candidate_index]
+            if candidate_text in _DURATION_TOKENS:
+                break
+            numeric = _NUMERIC_TOKEN.match(candidate_text)
+            if numeric is not None:
+                value = parse_localized_number(numeric.group("value"))
+                label_geometry = _union_geometry(
+                    tokens[index].geometry,
+                    tokens[index + 1].geometry,
+                )
+                geometry = _union_geometry(label_geometry, tokens[candidate_index].geometry)
+                source_text = " ".join(
+                    token.original_text for token in tokens[index : candidate_index + 1]
+                )
+                return DeclaredTotalCandidate(
+                    value=value,
+                    reading_text=f"Total Marks: {value:g}",
+                    source_text=source_text,
+                    geometry=geometry,
+                    confidence=0.95,
+                )
+            if candidate_text not in _DECLARED_TOTAL_BRIDGE_TOKENS:
+                bridge_count += 1
+                if bridge_count > 2:
+                    break
+    return None
+
+
 def extract_layout_declared_total(
     lines: Sequence[PdfLayoutLine],
 ) -> DeclaredTotalCandidate | None:
@@ -78,6 +167,10 @@ def extract_layout_declared_total(
                 geometry=line.geometry,
                 confidence=1.0,
             )
+
+        token_candidate = _token_declared_total(line)
+        if token_candidate is not None:
+            return token_candidate
 
     for label_line in lines:
         if not has_declared_total_label(label_line.reading_text):

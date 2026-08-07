@@ -253,13 +253,19 @@ def _evaluate_relationship_coverage(
     unsupported = target_ids - fully_supported - limited_support
     references = {item.id: item.item_reference for item in target_evidence}
 
-    if unsupported and unresolved_source:
+    local_only = mapping.evaluator_type == "local_semantic_baseline"
+    if unsupported and (unresolved_source or local_only):
         missing = ", ".join(sorted(references[item] for item in unsupported))
+        reason = (
+            "the local-only semantic baseline cannot prove non-coverage from missing "
+            "lexical overlap"
+            if local_only
+            else "at least one confirmed question could not be semantically judged"
+        )
         return RuleFindingResult(
             status=AcademicStatus.NOT_VERIFIED,
             explanation=(
-                f"Coverage for {target_noun}(s) {missing} remains unresolved because at least "
-                "one confirmed question could not be semantically judged."
+                f"Coverage for {target_noun}(s) {missing} remains unresolved because {reason}."
             ),
             confidence=0.0,
             evidence_ids=trace_ids,

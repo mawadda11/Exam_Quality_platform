@@ -25,12 +25,19 @@ _LINE_TOLERANCE = 6.5
 
 
 @dataclass(frozen=True)
+class PdfLayoutToken:
+    original_text: str
+    geometry: Geometry
+
+
+@dataclass(frozen=True)
 class PdfLayoutLine:
     raw_text: str
     reading_text: str
     page_number: int
     geometry: Geometry
     source_spans: tuple[str, ...]
+    tokens: tuple[PdfLayoutToken, ...] = ()
 
 
 def _bbox_key(word: dict[str, Any]) -> tuple[float, float, float, float]:
@@ -135,6 +142,13 @@ def extract_layout_lines(
             if not reading_tokens:
                 reading_tokens = [str(item["logical_text"]) for item in physical]
         source_spans = tuple(str(item["raw_text"]) for item in physical)
+        tokens = tuple(
+            PdfLayoutToken(
+                original_text=str(item["raw_text"]),
+                geometry=_geometry([item]),
+            )
+            for item in physical
+        )
         lines.append(
             PdfLayoutLine(
                 raw_text=_clean_join(list(source_spans)),
@@ -142,6 +156,7 @@ def extract_layout_lines(
                 page_number=page_number,
                 geometry=geometry,
                 source_spans=source_spans,
+                tokens=tokens,
             )
         )
     return sorted(lines, key=lambda line: (line.geometry.top, line.geometry.x0))

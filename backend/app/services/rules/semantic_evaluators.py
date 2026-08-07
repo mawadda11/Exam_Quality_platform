@@ -246,23 +246,52 @@ def prepare_assessment_method_consistency(
     )
 
 
+_QUESTION_SUPPORT_CONTEXT_TYPES = frozenset(
+    {
+        "explicit_reference",
+        "label",
+        "caption",
+        "figure",
+        "table",
+        "code_block",
+    }
+)
+
+
 def _question_text_preparation(
     inputs: SemanticInputs,
     *,
-    include_instructions: bool = False,
+    context_types: frozenset[str] = frozenset(),
 ) -> PreparedSemanticEvaluation | str:
     sources = _question_evidence(inputs)
     if not sources:
         return "No readable scorable question evidence was available from the confirmed exam."
-    instructions = _evidence_of_type(inputs, "instructions") if include_instructions else []
-    evidence = tuple(dict.fromkeys([*sources, *instructions]))
+    context = [item for item in inputs.evidence if item.evidence_type in context_types]
+    evidence = tuple(dict.fromkeys([*sources, *context]))
     return PreparedSemanticEvaluation(
         evidence=evidence,
         query_text=" ".join(item.extracted_text for item in evidence),
-        allowed_evidence_types=frozenset(
-            {"question_text", "instructions"} if include_instructions else {"question_text"}
-        ),
+        allowed_evidence_types=frozenset({"question_text", *context_types}),
         required_source_evidence_ids=frozenset(item.id for item in sources),
+        allowed_target_evidence_ids=frozenset(item.id for item in context),
+        relationship_required=False,
+    )
+
+
+def _exam_instruction_preparation(
+    inputs: SemanticInputs,
+) -> PreparedSemanticEvaluation | str:
+    metadata = _evidence_of_type(inputs, "exam_metadata")
+    if not metadata:
+        return "The uploaded exam type could not be assembled as confirmed exam metadata evidence."
+    instructions = _evidence_of_type(inputs, "instructions")
+    questions = _question_evidence(inputs)
+    evidence = tuple(dict.fromkeys([*metadata, *instructions, *questions]))
+    return PreparedSemanticEvaluation(
+        evidence=evidence,
+        query_text="exam-level instructions " + " ".join(item.extracted_text for item in evidence),
+        allowed_evidence_types=frozenset({"exam_metadata", "instructions", "question_text"}),
+        required_source_evidence_ids=frozenset(item.id for item in metadata),
         allowed_target_evidence_ids=frozenset(item.id for item in instructions),
         relationship_required=False,
     )
@@ -279,11 +308,14 @@ def prepare_unambiguous_wording(inputs: SemanticInputs) -> PreparedSemanticEvalu
 def prepare_complete_question_information(
     inputs: SemanticInputs,
 ) -> PreparedSemanticEvaluation | str:
-    return _question_text_preparation(inputs, include_instructions=True)
+    return _question_text_preparation(
+        inputs,
+        context_types=_QUESTION_SUPPORT_CONTEXT_TYPES,
+    )
 
 
 def prepare_complete_instructions(inputs: SemanticInputs) -> PreparedSemanticEvaluation | str:
-    return _question_text_preparation(inputs, include_instructions=True)
+    return _exam_instruction_preparation(inputs)
 
 
 def _precondition_evidence(identifier: RuleIdentifier, inputs: SemanticInputs) -> list[Evidence]:

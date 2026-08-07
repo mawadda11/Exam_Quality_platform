@@ -187,12 +187,16 @@ def test_semantic_alignment_evaluates_uncited_questions_instead_of_defaulting_no
     for rule_id in ("RULE001", "RULE002", "RULE004", "RULE007", "RULE008"):
         assert findings[rule_id]["status"] != "Not Verified"
         assert findings[rule_id]["evaluator_type"] == "local_semantic_baseline"
-        assert findings[rule_id]["confidence_level"] == "High"
+        # The deterministic local baseline may reach High only for direct
+        # lexical matches; weaker matches remain Medium. Both are still marked
+        # as local semantic suggestions and are excluded from the local score.
+        assert findings[rule_id]["confidence_level"] in {"High", "Medium"}
 
-    # Complete item judgments with no supported relationship are a negative
-    # academic result, not missing evidence.
-    assert findings["RULE005"]["status"] == "Not Satisfied"
-    assert findings["RULE009"]["status"] == "Not Satisfied"
+    # Absence of local lexical overlap alone is not proof of a negative
+    # academic relationship. The controlled-pilot policy keeps these semantic
+    # judgments visible as Not Verified instead of lowering the local score.
+    assert findings["RULE005"]["status"] == "Not Verified"
+    assert findings["RULE009"]["status"] == "Not Verified"
 
 
 def test_partial_relationships_produce_traceable_non_default_results(client: TestClient) -> None:
@@ -212,10 +216,10 @@ def test_partial_relationships_produce_traceable_non_default_results(client: Tes
         }
 
     assert findings["RULE001"]["status"] in {"Satisfied", "Partially Satisfied"}
-    assert findings["RULE005"]["status"] in {
-        "Partially Satisfied",
-        "Not Satisfied",
-    }
+    # Partial lexical evidence is not enough to prove format suitability.
+    # Preserve the controlled-pilot policy: uncertain local semantic judgments
+    # remain visible but are classified as Not Verified.
+    assert findings["RULE005"]["status"] == "Not Verified"
 
 
 def test_hyphenated_and_bracketed_controlled_identifiers_are_recognized(

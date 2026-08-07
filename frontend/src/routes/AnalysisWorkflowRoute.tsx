@@ -23,6 +23,7 @@ import type {
   AnalysisResponse,
   ExtractionReviewConfirmResponse,
   ProcessingStage,
+  QuestionPreparationMode,
 } from '../types/api'
 import { type AnalysisRouteContext, useAnalysisRoute } from './analysisRouteContext'
 
@@ -199,6 +200,18 @@ export function AnalysisStartRoute() {
   const { t } = useI18n()
   const { analysis, replaceAnalysis } = useAnalysisRoute()
   const navigate = useNavigate()
+  const storageKey = `exam-quality:question-preparation:${analysis.id}`
+  const [questionPreparationMode, setQuestionPreparationMode] =
+    useState<QuestionPreparationMode>(() => {
+      const saved = window.sessionStorage.getItem(storageKey)
+      return saved === 'manual_pdf' || saved === 'structured_template'
+        ? saved
+        : 'assisted_pdf'
+    })
+
+  useEffect(() => {
+    window.sessionStorage.setItem(storageKey, questionPreparationMode)
+  }, [questionPreparationMode, storageKey])
 
   if (analysis.state !== 'queued' || !analysis.ready_for_analysis) {
     return <Navigate to={routeForAnalysis(analysis)} replace />
@@ -219,7 +232,11 @@ export function AnalysisStartRoute() {
         <AnalysisWorkflowStepper currentStep="review" />
       </div>
       <Card as="section" className="route-card">
-        <ReviewStartSummary analysis={analysis} />
+        <ReviewStartSummary
+          analysis={analysis}
+          questionPreparationMode={questionPreparationMode}
+          onQuestionPreparationModeChange={setQuestionPreparationMode}
+        />
       </Card>
       <div className="workflow-route-actions">
         <Link className="ui-button ui-button--secondary" to={`/analyses/${analysis.id}/documents`}>
@@ -229,6 +246,7 @@ export function AnalysisStartRoute() {
           analysisId={analysis.id}
           initialState={analysis.state}
           onAnalysisStarted={handleStarted}
+          questionPreparationMode={questionPreparationMode}
         />
       </div>
     </div>

@@ -9,6 +9,17 @@ Extraction Review API/workspace, the M6-M9 categorical semantic/coverage contrac
 presentation/report refinements are currently implemented. M11 adds integrated release acceptance
 without changing the public API contract.
 
+Current additions:
+
+- `GET /analyses/{analysis_id}/files/exam/content` returns the owner-authorized
+  examination PDF bytes with private/no-store caching and no storage metadata.
+- `DELETE /analyses/{analysis_id}` returns 204 in `queued`, `review_ready`,
+  `completed`, or `failed`; active processing and retained predecessor history
+  return sanitized 409 responses; unavailable/non-owned IDs remain private 404s.
+- Question and Extraction Review responses include question types, options,
+  blanks, source spans, and extraction warnings. Review snapshot schema version
+  1 remains accepted; newly extracted reviews use version 2.
+
 ## Health
 - `GET /health`
 

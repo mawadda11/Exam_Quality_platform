@@ -7,6 +7,7 @@ import { UserAccountPanel } from './UserAccountPanel'
 import { LanguageSwitcher } from '../../i18n/LanguageSwitcher'
 import { useI18n } from '../../i18n/I18nProvider'
 import { SidebarIcon } from './SidebarIcon'
+import { PageBackAction } from '../ui/PageBackAction'
 
 export function AppShell() {
   const { t } = useI18n()
@@ -36,6 +37,7 @@ export function AppShell() {
       <main className="app-workspace" id="main-content" tabIndex={-1}>
         <RouteFocusManager />
         <div className="app-route-content">
+          <PageBackAction />
           <Outlet />
         </div>
       </main>

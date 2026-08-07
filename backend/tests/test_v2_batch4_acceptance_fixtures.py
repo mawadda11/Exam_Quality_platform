@@ -29,6 +29,10 @@ from app.models.reference_association import ReferenceAssociation
 from app.models.supporting_material_annotation import SupportingMaterialAnnotation
 from app.models.user import User
 from app.services.extraction.digital_pdf_extractor import PdfPlumberExamExtractor
+from app.services.extraction.exam_structure import (
+    DeterministicExamStructureParser,
+    apply_exam_structure_parser,
+)
 from app.services.extraction.digital_tp153_extractor import PdfPlumberTp153Extractor
 from app.services.extraction.line_classification import parse_declared_total
 from app.services.extraction.persistence import persist_extraction_result
@@ -164,6 +168,23 @@ def test_exact_fixtures_complete_the_public_api_workflow_and_bilingual_reports(
     assert len(declared) == 1
     assert parse_declared_total(declared[0]["extracted_text"]) == 40
 
+    # The full native/Tesseract reconciliation intentionally blocks silent
+    # critical disagreements. This acceptance path represents the faculty
+    # reviewer checking the highlighted source evidence and explicitly
+    # resolving those diagnostics in a new immutable revision.
+    for warning in snapshot.get("extraction_warnings", []):
+        if warning["severity"] == "critical":
+            warning["resolved"] = True
+    if not review["can_confirm"]:
+        saved_review = client.put(
+            f"/api/v1/analyses/{analysis_id}/extraction-review",
+            headers=auth_header(email),
+            json={"base_revision_id": review["revision_id"], "snapshot": snapshot},
+        )
+        assert saved_review.status_code == 201, saved_review.text
+        review = saved_review.json()
+        assert review["can_confirm"] is True
+
     confirmed = client.post(
         f"/api/v1/analyses/{analysis_id}/extraction-review/confirm",
         headers=auth_header(email),
@@ -235,6 +256,56 @@ def test_exact_fixtures_complete_the_public_api_workflow_and_bilingual_reports(
         headers=auth_header("pilot-fixture-intruder@example.test"),
     )
     assert denied.status_code == 404
+
+
+
+
+def test_batch4_question_text_excludes_supporting_captions_and_page_noise() -> None:
+    extracted = PdfPlumberExamExtractor().extract(EXAM)
+    structured = apply_exam_structure_parser(
+        extracted,
+        DeterministicExamStructureParser(),
+        pdf_path=EXAM,
+    )
+    by_label = {question.number_label: question.text for question in structured.questions}
+
+    assert "الشكل 1" in by_label["Q2"]
+    assert "Relational Database Schema" not in by_label["Q2"]
+    assert "Figure -" not in by_label["Q2"]
+
+    assert "Using Table 1" in by_label["Q3"]
+    assert "class average" in by_label["Q3"]
+    assert "Sample Student Scores" not in by_label["Q3"]
+    assert "الجدول:1" not in by_label["Q3"]
+
+    assert "add_student" in by_label["Q4"]
+    assert "Parameterized insert" not in by_label["Q4"]
+    assert "def __init__" not in by_label["Q4"]
+
+    assert "الشكل 5" in by_label["Q5"]
+    assert "مرجع غير موجود" in by_label["Q5"]
+
+    assert "Refer to Figure 2" in by_label["Q6"]
+    assert "Network Structure" not in by_label["Q6"]
+    assert "Validation Flowchart" not in by_label["Q6"]
+
+    assert "المخطط أدناه" in by_label["Q7"]
+    assert "محلل جودة الاختبارات" not in by_label["Q7"]
+    assert "Batch" not in by_label["Q7"]
+    assert "7 / 7" not in by_label["Q7"]
+
+    # Supporting context remains separately available after cleaning the prompt.
+    assert len(structured.supporting_materials) == 6
+    references = {
+        (item.question_number_label, item.normalized_target_label)
+        for item in structured.document_references
+    }
+    assert ("Q2", "figure:1") in references
+    assert ("Q3", "table:1") in references
+    assert ("Q4", "code_block:1") in references
+    assert ("Q5", "figure:5") in references
+    assert ("Q6", "figure:2") in references
+    assert ("Q7", "figure:unlabeled") in references
 
 
 def test_exact_exam_fixture_extracts_hierarchy_marks_materials_and_references() -> None:

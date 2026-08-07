@@ -117,6 +117,47 @@ const RECOMMENDATIONS_AR: Readonly<Record<string, readonly [string, string]>> = 
   REC035: ['اطلب دليل التقييم', 'اطلب قسم التقييم المطلوب والمكتمل في توصيف المقرر.'],
 }
 
+const BALANCED_RECOMMENDATIONS_EN: Readonly<Record<string, readonly [string, string]>> = {
+  REC001: [
+    'Review the question-to-CLO relationship',
+    'Review the question against the cited CLO. Keep or clarify the relationship only when the confirmed evidence supports it; otherwise leave it unassigned.',
+  ],
+  REC005: [
+    'Review intended CLO representation',
+    'First confirm that this CLO was intended to be represented in this exam. If so, consider adjusting an affected question or documenting where it is assessed; a new question is not automatically required.',
+  ],
+  REC007: [
+    'Verify the approved course specification',
+    'Verify the approved course specification. If the topic is officially included but missing from the uploaded specification, update the specification. Otherwise, review or replace the question.',
+  ],
+  REC008: [
+    'Verify the approved course specification',
+    'Verify the approved course specification. If the topic is officially included but missing from the uploaded specification, update the specification. Otherwise, review or replace the question.',
+  ],
+  REC009: [
+    'Review intended topic representation',
+    'First confirm which topics were intended for this exam. If a documented topic should be represented, consider the smallest appropriate adjustment to an affected question; do not add content solely to satisfy the analyzer.',
+  ],
+  REC031: [
+    'Request readable CLO evidence',
+    'If the official populated CLO section exists but is unreadable or incomplete in the upload, provide a readable official copy. Do not create missing course information solely for this analysis.',
+  ],
+  REC032: [
+    'Request readable topic evidence',
+    'If the official populated topic section exists but is unreadable or incomplete in the upload, provide a readable official copy. Do not create missing course information solely for this analysis.',
+  ],
+}
+
+const BALANCED_RECOMMENDATIONS_AR: Readonly<Record<string, readonly [string, string]>> = {
+  REC001: ['راجع علاقة السؤال بناتج التعلم', 'راجع السؤال مقابل ناتج التعلم المشار إليه، وأبقِ العلاقة أو وضّحها فقط عندما تدعمها الأدلة المؤكدة، وإلا فاترك السؤال دون ربط.'],
+  REC005: ['راجع تمثيل ناتج التعلم المقصود', 'تحقق أولًا من أن ناتج التعلم كان مقصودًا لهذا الاختبار. إذا كان كذلك، ففكّر في تعديل سؤال متأثر أو توثيق موضع تقييمه؛ ولا يلزم إضافة سؤال جديد تلقائيًا.'],
+  REC007: ['تحقّق من توصيف المقرر المعتمد', 'تحقّق من توصيف المقرر المعتمد. إذا كان الموضوع معتمدًا لكنه غير مدرج في الملف المرفوع، فحدّث التوصيف؛ وإلا فراجع السؤال أو استبدله.'],
+  REC008: ['تحقّق من توصيف المقرر المعتمد', 'تحقّق من توصيف المقرر المعتمد. إذا كان الموضوع معتمدًا لكنه غير مدرج في الملف المرفوع، فحدّث التوصيف؛ وإلا فراجع السؤال أو استبدله.'],
+  REC009: ['راجع تمثيل الموضوعات المقصودة', 'تحقق أولًا من الموضوعات المقصودة لهذا الاختبار. إذا كان ينبغي تمثيل موضوع موثق، ففكّر في أصغر تعديل مناسب لسؤال متأثر، ولا تضف محتوى لمجرد إرضاء المحلل.'],
+  REC031: ['اطلب دليلًا مقروءًا لنواتج التعلم', 'إذا كان القسم الرسمي المعبأ لنواتج التعلم موجودًا لكنه غير مقروء أو ناقصًا في الملف المرفوع، فقدّم نسخة رسمية مقروءة. لا تنشئ معلومات مقرر مفقودة لمجرد هذا التحليل.'],
+  REC032: ['اطلب دليلًا مقروءًا للموضوعات', 'إذا كان القسم الرسمي المعبأ للموضوعات موجودًا لكنه غير مقروء أو ناقصًا في الملف المرفوع، فقدّم نسخة رسمية مقروءة. لا تنشئ معلومات مقرر مفقودة لمجرد هذا التحليل.'],
+}
+
 const STATUS_EXPLANATIONS_AR: Readonly<Record<AcademicStatus, string>> = {
   Satisfied: 'تشير الأدلة المرتبطة إلى استيفاء هذا المتطلب.',
   'Partially Satisfied': 'تشير الأدلة المرتبطة إلى استيفاء هذا المتطلب جزئيًا مع وجود جوانب تحتاج إلى مراجعة.',
@@ -166,14 +207,16 @@ export function presentRecommendation(
   locale: Locale,
 ): { title: string; text: string; targetUser: string; type: string } {
   if (locale !== 'ar') {
+    const balanced = BALANCED_RECOMMENDATIONS_EN[recommendation.recommendation_id]
     return {
-      title: presentCourseSpecificationTerminology(recommendation.title),
-      text: presentCourseSpecificationTerminology(recommendation.text),
+      title: presentCourseSpecificationTerminology(balanced?.[0] ?? recommendation.title),
+      text: presentCourseSpecificationTerminology(balanced?.[1] ?? recommendation.text),
       targetUser: recommendation.target_user,
       type: recommendation.recommendation_type,
     }
   }
-  const translated = RECOMMENDATIONS_AR[recommendation.recommendation_id]
+  const translated = BALANCED_RECOMMENDATIONS_AR[recommendation.recommendation_id]
+    ?? RECOMMENDATIONS_AR[recommendation.recommendation_id]
   return {
     title: translated?.[0] ?? 'راجع التوصية المرتبطة',
     text: translated?.[1] ?? 'راجع نتيجة التقييم والأدلة المرتبطة واتخذ الإجراء الأكاديمي المناسب.',

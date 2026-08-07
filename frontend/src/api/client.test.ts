@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, apiGet, apiPatchJson, apiPostJson, apiPutJson, getApiBaseUrl } from './client'
-import { setStoredAccessToken } from './authToken'
+import { getStoredAccessToken, setStoredAccessToken } from './authToken'
 
 function mockResponse(body: unknown, ok: boolean, status: number, statusText = ''): Response {
   return {
@@ -60,6 +60,22 @@ describe('apiGet', () => {
       status: 404,
       detail: 'Analysis not found.',
     })
+  })
+
+  it('clears an expired token and broadcasts one auth-expired event on 401', async () => {
+    setStoredAccessToken('expired-access-token')
+    const authExpired = vi.fn()
+    window.addEventListener('exam-quality:auth-expired', authExpired)
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse({ detail: 'Authentication required.' }, false, 401, 'Unauthorized'),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(apiGet('/analyses')).rejects.toMatchObject({ status: 401 })
+
+    expect(getStoredAccessToken()).toBe('')
+    expect(authExpired).toHaveBeenCalledTimes(1)
+    window.removeEventListener('exam-quality:auth-expired', authExpired)
   })
 
   it('falls back to statusText when the error body is not JSON', async () => {

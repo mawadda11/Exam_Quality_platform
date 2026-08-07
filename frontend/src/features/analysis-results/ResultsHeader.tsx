@@ -3,13 +3,14 @@ import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { ScoreRing } from '../../components/ui/ScoreRing'
 import { useI18n } from '../../i18n/I18nProvider'
-import type { AnalysisResponse, AnalysisScoreResponse, UploadedFileType } from '../../types/api'
+import type { AnalysisResponse, AnalysisScoreResponse, QuestionResponse, UploadedFileType } from '../../types/api'
 import type { ResultResource } from './useAnalysisResultsData'
 
 interface ResultsHeaderProps {
   analysis: AnalysisResponse
   score: ResultResource<AnalysisScoreResponse>
   onRetryScore: () => void
+  questions: ResultResource<QuestionResponse[]>
 }
 
 function filename(analysis: AnalysisResponse, fileType: UploadedFileType): string | null {
@@ -19,7 +20,7 @@ function filename(analysis: AnalysisResponse, fileType: UploadedFileType): strin
   )
 }
 
-export function ResultsHeader({ analysis, score, onRetryScore }: ResultsHeaderProps) {
+export function ResultsHeader({ analysis, score, onRetryScore, questions }: ResultsHeaderProps) {
   const { t, formatDateTime } = useI18n()
   const examFilename = filename(analysis, 'exam')
   const tp153Filename = filename(analysis, 'tp153')
@@ -72,12 +73,14 @@ export function ResultsHeader({ analysis, score, onRetryScore }: ResultsHeaderPr
         </div>
 
         <div className="results-header-score">
-          {score.status === 'loading' && (
+          {questions.status !== 'error' &&
+            !(questions.status === 'ready' && questions.data.length === 0) &&
+            score.status === 'loading' && (
             <div className="results-score-state" role="status" aria-busy="true">
               {t('Loading score…')}
             </div>
           )}
-          {score.status === 'error' && (
+          {questions.status === 'ready' && questions.data.length > 0 && score.status === 'error' && (
             <div className="results-score-state" role="alert">
               <p>{score.message}</p>
               <Button variant="secondary" onClick={onRetryScore}>
@@ -85,11 +88,26 @@ export function ResultsHeader({ analysis, score, onRetryScore }: ResultsHeaderPr
               </Button>
             </div>
           )}
-          {score.status === 'ready' && (
+          {(questions.status === 'error' ||
+            (questions.status === 'ready' && questions.data.length === 0)) && (
+            <div className="results-score-state results-score-state--incomplete" role="status">
+              <strong>{t('Analysis incomplete')}</strong>
+              <p>{t('A quality score is hidden until confirmed question evidence is available.')}</p>
+            </div>
+          )}
+          {questions.status === 'ready' && questions.data.length > 0 && score.status === 'ready' && (
             <ScoreRing
               score={score.data.score}
               denominator={score.data.denominator}
               emptyLabel={score.data.label ?? t('Insufficient Evidence')}
+              label={
+                score.data.score_mode === 'local_preliminary'
+                  ? t('Preliminary Local Quality Score')
+                  : t('Overall Exam Quality Score')
+              }
+              denominatorKind={
+                score.data.score_mode === 'local_preliminary' ? 'applicable' : 'verified'
+              }
             />
           )}
         </div>

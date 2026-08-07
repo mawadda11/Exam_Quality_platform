@@ -159,7 +159,7 @@ describe('FindingsRecommendationsSection', () => {
     const { container } = renderSection([alignment], [recommendation])
 
     expect(screen.getByText('Included with partial credit.')).toBeInTheDocument()
-    expect(screen.getByText('Review the suggested relationship')).toBeInTheDocument()
+    expect(screen.getByText('Review the question-to-CLO relationship')).toBeInTheDocument()
     expect(
       screen.getByRole('link', { name: 'View details in Alignment & Coverage' }),
     ).toHaveAttribute(
@@ -270,7 +270,7 @@ describe('FindingsRecommendationsSection', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('hides a satisfied assessment-method check and keeps a non-satisfied one', () => {
+  it('shows satisfied and non-satisfied assessment-method checks', () => {
     renderSection([
       finding({
         id: 'assessment-ok',
@@ -290,7 +290,7 @@ describe('FindingsRecommendationsSection', () => {
       }),
     ])
 
-    expect(screen.queryByText('Satisfied assessment check')).not.toBeInTheDocument()
+    expect(screen.getByText('Satisfied assessment check')).toBeInTheDocument()
     expect(screen.getByText('Assessment method requires review')).toBeInTheDocument()
   })
 

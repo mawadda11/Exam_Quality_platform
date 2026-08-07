@@ -11,21 +11,52 @@ semantic_validation) - CLAUDE.md's "treat model output as untrusted input"
 applies regardless of which provider produced it or what it claims to
 guarantee.
 
-Genuine infrastructure failures (network errors, auth failures, rate limits)
-must propagate as exceptions, not be swallowed into a return value - the
-existing pipeline exception-safety net (app.services.processing.runner)
-already converts any uncaught exception into a safe processing failure, and
-conflating that with an academic "Not Verified" conclusion would violate
-CLAUDE.md's "Processing failures are not academic statuses."
+Provider failures remain infrastructure concerns rather than academic
+statuses. A higher-level per-analysis router may transparently retry a request
+on a lower-priority provider only when ``AiFailureKind.AVAILABILITY`` is
+reported. Authentication, configuration, response-validation, and programming
+failures are never hidden by failover.
 """
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Any, Protocol
+
+
+class AiFailureKind(StrEnum):
+    """Stable machine-readable provider failure categories."""
+
+    AVAILABILITY = "availability"
+    AUTHENTICATION = "authentication"
+    CONFIGURATION = "configuration"
+    RESPONSE = "response"
+    UNEXPECTED = "unexpected"
+
+
+class AiRouteTier(StrEnum):
+    """Sticky provider tier selected for one analysis."""
+
+    PRIMARY = "primary"
+    FALLBACK = "fallback"
+    LOCAL = "local"
 
 
 class AiProviderError(RuntimeError):
     """Provider integration failure; never an academic evaluation status."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        kind: AiFailureKind = AiFailureKind.UNEXPECTED,
+    ) -> None:
+        super().__init__(message)
+        self.kind = kind
+
+    @property
+    def is_availability_failure(self) -> bool:
+        return self.kind is AiFailureKind.AVAILABILITY
 
 
 class AiProvider(Protocol):

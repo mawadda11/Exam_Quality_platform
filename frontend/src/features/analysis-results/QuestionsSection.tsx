@@ -29,7 +29,7 @@ export function QuestionsSection({
   const [filters, setFilters] = useState<QuestionFilterValues>(EMPTY_QUESTION_FILTERS)
 
   const evaluatedQuestions = useMemo(
-    () => sortQuestionsForFaculty(independentlyScorableQuestions(questions)),
+    () => independentlyScorableQuestions(sortQuestionsForFaculty(questions)),
     [questions],
   )
   const findings = readyData(findingsResource, [] as FindingResponse[])

@@ -81,13 +81,6 @@ export function compareQuestionRecords(
   if (isParentOf(left, right)) return -1
   if (isParentOf(right, left)) return 1
 
-  const leftHasSequence = Number.isFinite(left.sequence) && left.sequence > 0
-  const rightHasSequence = Number.isFinite(right.sequence) && right.sequence > 0
-  if (leftHasSequence && rightHasSequence && left.sequence !== right.sequence) {
-    return left.sequence - right.sequence
-  }
-  if (leftHasSequence !== rightHasSequence) return leftHasSequence ? -1 : 1
-
   if (left.page_number !== right.page_number) {
     return left.page_number - right.page_number
   }
@@ -96,13 +89,51 @@ export function compareQuestionRecords(
     right.number_label,
   )
   if (referenceOrder !== 0) return referenceOrder
+  const leftHasSequence = Number.isFinite(left.sequence) && left.sequence > 0
+  const rightHasSequence = Number.isFinite(right.sequence) && right.sequence > 0
+  if (leftHasSequence && rightHasSequence && left.sequence !== right.sequence) {
+    return left.sequence - right.sequence
+  }
+  if (leftHasSequence !== rightHasSequence) return leftHasSequence ? -1 : 1
   return left.id.localeCompare(right.id)
 }
 
 export function sortQuestionsForFaculty(
   questions: QuestionResponse[],
 ): QuestionResponse[] {
-  return [...questions].sort(compareQuestionRecords)
+  const questionsById = new Map(questions.map((question) => [question.id, question]))
+  const appearance = new Map(questions.map((question, index) => [question.id, index]))
+  const childrenByParent = new Map<string, QuestionResponse[]>()
+  const roots: QuestionResponse[] = []
+
+  for (const question of questions) {
+    if (question.parent_question_id && questionsById.has(question.parent_question_id)) {
+      const children = childrenByParent.get(question.parent_question_id) ?? []
+      children.push(question)
+      childrenByParent.set(question.parent_question_id, children)
+    } else {
+      roots.push(question)
+    }
+  }
+
+  const compareSiblings = (left: QuestionResponse, right: QuestionResponse): number =>
+    compareQuestionRecords(left, right) ||
+    (appearance.get(left.id) ?? 0) - (appearance.get(right.id) ?? 0)
+  const ordered: QuestionResponse[] = []
+  const visited = new Set<string>()
+  const appendBranch = (question: QuestionResponse): void => {
+    if (visited.has(question.id)) return
+    visited.add(question.id)
+    ordered.push(question)
+    for (const child of [...(childrenByParent.get(question.id) ?? [])].sort(compareSiblings)) {
+      appendBranch(child)
+    }
+  }
+  for (const root of roots.sort(compareSiblings)) appendBranch(root)
+  // Historical corrupt hierarchies should remain visible in deterministic
+  // source order rather than disappearing from faculty views.
+  for (const question of [...questions].sort(compareSiblings)) appendBranch(question)
+  return ordered
 }
 
 export function independentlyScorableQuestions(

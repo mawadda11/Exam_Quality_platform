@@ -42,8 +42,9 @@ from app.services.knowledge_base.reference_data import (
     get_controlled_recommendations,
     get_requirement_display,
 )
+from app.services.question_ordering import sort_question_records
 from app.services.rules.question_hierarchy import scorable_leaves
-from app.services.rules.scoring import calculate_overall_score, count_statuses
+from app.services.rules.scoring import calculate_overall_score, count_statuses, scoreable_statuses
 from app.services.rules.versioning import (
     LEGACY_CAPABILITY_VERSION,
     effective_capability_version,
@@ -190,6 +191,8 @@ class ReportContent:
     not_verified_count: int
     not_applicable_count: int
     findings: tuple[ReportFindingEntry, ...]
+    score_mode: str = "governed"
+    excluded_local_semantic_count: int = 0
     assessment_records: tuple[ReportAssessmentRecordEntry, ...] = ()
     rule_coverage: RuleCoverageAuditResponse | None = None
     supporting_materials: tuple[ReportSupportingMaterialEntry, ...] = ()
@@ -391,7 +394,10 @@ def _relationship_entries(
     target_evidence_type: str,
 ) -> tuple[ReportRelationshipEntry, ...]:
     marks_by_label = {q.number_label: (q.marks or 0.0) for q in scorable_leaves(questions)}
-    sequence_by_label = {q.number_label: q.sequence for q in questions}
+    sequence_by_label = {
+        question.number_label: index
+        for index, question in enumerate(sort_question_records(questions))
+    }
     matches: dict[str, list[tuple[str, AcademicStatus]]] = defaultdict(list)
 
     for finding in findings:
@@ -512,8 +518,9 @@ def assemble_report_content(
     topics: Sequence[Topic] = (),
 ) -> ReportContent:
     statuses = [f.status for f in findings]
-    score_result = calculate_overall_score(statuses)
-    counts = count_statuses(statuses)
+    scored_statuses, local_only, excluded_local_semantic_count = scoreable_statuses(findings)
+    score_result = calculate_overall_score(scored_statuses)
+    counts = count_statuses(scored_statuses if local_only else statuses)
     entries = tuple(_build_finding_entry(f, kb_source_dir) for f in findings)
     document_reference_entries = tuple(
         _document_reference_entry(item, analysis.confirmed_review_id)
@@ -554,6 +561,8 @@ def assemble_report_content(
         not_verified_count=counts[AcademicStatus.NOT_VERIFIED],
         not_applicable_count=counts[AcademicStatus.NOT_APPLICABLE],
         findings=entries,
+        score_mode="local_preliminary" if local_only else "governed",
+        excluded_local_semantic_count=excluded_local_semantic_count,
         assessment_records=tuple(_assessment_entry(item) for item in assessment_records),
         rule_coverage=rule_coverage,
         supporting_materials=tuple(

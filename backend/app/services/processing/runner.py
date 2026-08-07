@@ -8,14 +8,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.domain import ProcessingStage
+from app.core.domain import ProcessingStage, QuestionPreparationMode
 from app.db.session import session_scope
 from app.models.analysis import Analysis
 from app.models.processing_event import ProcessingEvent
+from app.services.extraction.preparation_mode import question_preparation_mode_for_analysis
 from app.services.processing.stages import (
     POST_CONFIRMATION_STAGES,
     PRE_REVIEW_STAGES,
     STAGE_HANDLERS,
+    run_extracting_exam,
     run_materializing_review,
 )
 
@@ -121,7 +123,10 @@ def _record_failure(
     )
 
 
-def run_analysis_pipeline(analysis_id: UUID) -> None:
+def run_analysis_pipeline(
+    analysis_id: UUID,
+    preparation_mode: QuestionPreparationMode | None = None,
+) -> None:
     settings = get_settings()
     with session_scope() as session:
         analysis = session.execute(
@@ -138,10 +143,26 @@ def run_analysis_pipeline(analysis_id: UUID) -> None:
             )
             return
 
+        effective_preparation_mode = (
+            preparation_mode or question_preparation_mode_for_analysis(analysis)
+        )
+
         current_stage = ProcessingStage.VALIDATING
         try:
             for current_stage in PRE_REVIEW_STAGES:
-                STAGE_HANDLERS[current_stage](analysis, session, settings)
+                handler = STAGE_HANDLERS[current_stage]
+                if (
+                    current_stage is ProcessingStage.EXTRACTING_EXAM
+                    and handler is run_extracting_exam
+                ):
+                    run_extracting_exam(
+                        analysis,
+                        session,
+                        settings,
+                        preparation_mode=effective_preparation_mode,
+                    )
+                else:
+                    handler(analysis, session, settings)
                 _transition(
                     session,
                     analysis,
@@ -251,8 +272,21 @@ def run_retry_pipeline(
             stages: Sequence[ProcessingStage] = PRE_REVIEW_STAGES[start_index:]
             current_stage = retry_from
             try:
+                preparation_mode = question_preparation_mode_for_analysis(analysis)
                 for current_stage in stages:
-                    STAGE_HANDLERS[current_stage](analysis, session, settings)
+                    handler = STAGE_HANDLERS[current_stage]
+                    if (
+                        current_stage is ProcessingStage.EXTRACTING_EXAM
+                        and handler is run_extracting_exam
+                    ):
+                        run_extracting_exam(
+                            analysis,
+                            session,
+                            settings,
+                            preparation_mode=preparation_mode,
+                        )
+                    else:
+                        handler(analysis, session, settings)
                     _transition(
                         session,
                         analysis,

@@ -1,9 +1,16 @@
 import { Alert } from '../../components/ui/Alert'
 import { useI18n } from '../../i18n/I18nProvider'
-import type { AnalysisResponse, UploadedFileResponse, UploadedFileType } from '../../types/api'
+import type {
+  AnalysisResponse,
+  QuestionPreparationMode,
+  UploadedFileResponse,
+  UploadedFileType,
+} from '../../types/api'
 
 interface ReviewStartSummaryProps {
   analysis: AnalysisResponse
+  questionPreparationMode: QuestionPreparationMode
+  onQuestionPreparationModeChange: (mode: QuestionPreparationMode) => void
 }
 
 function findFile(
@@ -43,7 +50,11 @@ function FileSummary({
   )
 }
 
-export function ReviewStartSummary({ analysis }: ReviewStartSummaryProps) {
+export function ReviewStartSummary({
+  analysis,
+  questionPreparationMode,
+  onQuestionPreparationModeChange,
+}: ReviewStartSummaryProps) {
   const { t } = useI18n()
   const exam = findFile(analysis, 'exam')
   const tp153 = findFile(analysis, 'tp153')
@@ -84,6 +95,43 @@ export function ReviewStartSummary({ analysis }: ReviewStartSummaryProps) {
         <FileSummary label={t('Examination PDF')} file={exam} />
         <FileSummary label={t('Course Specification file')} file={tp153} />
       </dl>
+
+      <fieldset className="question-preparation-fieldset">
+        <legend>{t('How should questions be prepared?')}</legend>
+        <p>{t('Choose the safest workflow for the uploaded exam. The academic analysis starts only after you confirm the questions.')}</p>
+        <div className="question-preparation-options">
+          <label className="question-preparation-option">
+            <input
+              type="radio"
+              name="question-preparation-mode"
+              value="assisted_pdf"
+              checked={questionPreparationMode === 'assisted_pdf'}
+              onChange={() => onQuestionPreparationModeChange('assisted_pdf')}
+            />
+            <span>
+              <strong>{t('Assisted extraction from PDF')}</strong>
+              <small>{t('Best for clear digital exams. The platform proposes questions and you correct only the items that need attention.')}</small>
+              <b>{t('Recommended starting point')}</b>
+            </span>
+          </label>
+          <label className="question-preparation-option">
+            <input
+              type="radio"
+              name="question-preparation-mode"
+              value="structured_template"
+              checked={questionPreparationMode === 'structured_template'}
+              onChange={() => onQuestionPreparationModeChange('structured_template')}
+            />
+            <span>
+              <strong>{t('Paste or import question list')}</strong>
+              <small>{t('Paste questions copied from Word or import a simple CSV. Only number, text, and visible marks are required.')}</small>
+            </span>
+          </label>
+        </div>
+        <p className="question-preparation-fallback-note">
+          {t('Missing questions can still be added from the PDF inside the review screen.')}
+        </p>
+      </fieldset>
 
       <Alert variant="info" title={t('Scope reminder')}>
         {t('The analysis applies only to this uploaded examination and its corresponding Course Specification. Starting the analysis does not issue an accreditation or institutional decision.')}

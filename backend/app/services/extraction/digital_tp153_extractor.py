@@ -194,6 +194,55 @@ def _canonical_po(value: str | None) -> str | None:
     return f"PLO{int(to_ascii_digits(digits.group()))}" if digits is not None else value.strip()
 
 
+_TRAILING_PLO = re.compile(
+    rf"^(?P<text>.+?)\s+(?:(?:Knowledge|Skills?|Values?|"
+    rf"المعارف?|المهارات?|القيم)\s+)?(?P<po>PLO\s*{_DIGITS})\s*$",
+    re.IGNORECASE,
+)
+_TRAILING_TOPIC_HOURS = re.compile(
+    rf"^(?P<text>.+?\D)\s+(?P<hours>{_NUMBER})\s*$",
+    re.IGNORECASE,
+)
+
+
+def _split_trailing_clo_metadata(value: str) -> tuple[str, str | None]:
+    """Separate a trailing domain/PLO token from the source-faithful CLO text.
+
+    Compact TP-153 tables sometimes collapse the description, domain and PLO
+    columns into one PDF text run (for example ``... constraints Knowledge
+    PLO1``). The PLO is structured metadata, not part of the learning-outcome
+    sentence. The source row remains preserved separately for audit.
+    """
+
+    compact = " ".join(value.split()).strip()
+    match = _TRAILING_PLO.match(compact)
+    if match is None:
+        return compact, None
+    text = match.group("text").rstrip(" -–—|,:;")
+    text = re.sub(r"(?:\band\b|\bو\b)\s*$", "", text, flags=re.IGNORECASE).rstrip(
+        " -–—|,:;"
+    )
+    return text, _canonical_po(match.group("po"))
+
+
+def _split_trailing_topic_hours(value: str) -> tuple[str, float | None]:
+    """Separate compact-table contact hours from topic text.
+
+    A bare trailing number is accepted only in a topic row and only within a
+    realistic course-hours range. This avoids stripping technical numbers from
+    ordinary free text while handling rows such as ``Normalization 6``.
+    """
+
+    compact = " ".join(value.split()).strip().lstrip("|:-–— ")
+    match = _TRAILING_TOPIC_HOURS.match(compact)
+    if match is None:
+        return compact, None
+    hours = parse_localized_number(match.group("hours"))
+    if hours <= 0 or hours > 60:
+        return compact, None
+    return match.group("text").rstrip(" -–—|,:;"), hours
+
+
 def _cells(text: str) -> list[str]:
     if "|" not in text and "\t" not in text and re.search(r"\s{2,}", text) is None:
         return []
@@ -210,7 +259,18 @@ def _section_for_header(text: str) -> str | None:
 
 def _header_role(value: str) -> str | None:
     normalized = normalize_arabic_for_matching(value).casefold()
-    if "assessment activity" in normalized or "نشاط التقييم" in normalized:
+    if (
+        "assessment activity" in normalized
+        or "نشاط التقييم" in normalized
+        or normalized.strip(" /:-") in {
+            "assessment",
+            "assessment method",
+            "method",
+            "التقييم",
+            "طريقة التقييم",
+            "أسلوب التقييم",
+        }
+    ):
         return "method"
     if "weight" in normalized or "الوزن" in normalized or "النسبة" in normalized:
         return "percentage"
@@ -612,10 +672,11 @@ class AdaptiveCourseSpecificationExtractor:
             code_match = re.match(rf"^(?P<number>{_DIGITS})$", cells[0])
         if code_match is not None and len(cells) >= 2:
             po = next((cell for cell in cells[2:] if _PO_CODE.match(cell)), None)
+            clean_text, trailing_po = _split_trailing_clo_metadata(cells[1])
             return ExtractedClo(
                 code=_canonical_code("CLO", code_match.group("number")),
-                text=cells[1],
-                program_outcome_reference=_canonical_po(po),
+                text=clean_text,
+                program_outcome_reference=_canonical_po(po) or trailing_po,
                 page_number=line.page_number,
                 confidence=_scaled_confidence(line, 0.9),
                 geometry=line.geometry,
@@ -623,10 +684,11 @@ class AdaptiveCourseSpecificationExtractor:
 
         explicit = _CLO_EXPLICIT.match(line.text.strip())
         if explicit is not None:
+            clean_text, trailing_po = _split_trailing_clo_metadata(explicit.group("text"))
             return ExtractedClo(
                 code=_canonical_code("CLO", explicit.group("number")),
-                text=explicit.group("text").strip(),
-                program_outcome_reference=_canonical_po(explicit.group("po")),
+                text=clean_text,
+                program_outcome_reference=_canonical_po(explicit.group("po")) or trailing_po,
                 page_number=line.page_number,
                 confidence=_scaled_confidence(line, 1.0),
                 geometry=line.geometry,
@@ -649,10 +711,11 @@ class AdaptiveCourseSpecificationExtractor:
         description = _compact_cell(cells.get("description", ("", ""))[0])
         if code_match is None or not description:
             return None
+        clean_text, trailing_po = _split_trailing_clo_metadata(description)
         return ExtractedClo(
             code=_canonical_code("CLO", code_match.group("number")),
-            text=description,
-            program_outcome_reference=None,
+            text=clean_text,
+            program_outcome_reference=trailing_po,
             page_number=line.page_number,
             confidence=_scaled_confidence(line, 0.98),
             geometry=line.geometry,
@@ -667,12 +730,14 @@ class AdaptiveCourseSpecificationExtractor:
         hours_match = re.search(_NUMBER, hours_value)
         if not text:
             return None
+        clean_text, trailing_hours = _split_trailing_topic_hours(text)
+        explicit_hours = (
+            parse_localized_number(hours_match.group()) if hours_match is not None else None
+        )
         return ExtractedTopic(
             code=None,
-            text=text,
-            expected_hours=(
-                parse_localized_number(hours_match.group()) if hours_match is not None else None
-            ),
+            text=clean_text,
+            expected_hours=explicit_hours if explicit_hours is not None else trailing_hours,
             page_number=line.page_number,
             confidence=_scaled_confidence(line, 0.98),
             geometry=line.geometry,
@@ -720,10 +785,12 @@ class AdaptiveCourseSpecificationExtractor:
                 # The non-greedy text may still include the separator when a
                 # PDF text layer uses unusual spaces; remove only a trailing one.
                 text = text.rstrip(" -–—|")
+            clean_text, trailing_hours = _split_trailing_topic_hours(text)
+            explicit_hours = parse_localized_number(hours) if hours else None
             return ExtractedTopic(
                 code=_canonical_code("T", number),
-                text=text,
-                expected_hours=parse_localized_number(hours) if hours else None,
+                text=clean_text,
+                expected_hours=explicit_hours if explicit_hours is not None else trailing_hours,
                 page_number=line.page_number,
                 confidence=_scaled_confidence(line, 1.0),
                 geometry=line.geometry,
@@ -739,10 +806,12 @@ class AdaptiveCourseSpecificationExtractor:
             None,
         )
         hours = hours_match.group("hours") if hours_match is not None else None
+        clean_text, trailing_hours = _split_trailing_topic_hours(cells[1])
+        explicit_hours = parse_localized_number(hours) if hours else None
         return ExtractedTopic(
             code=_canonical_code("T", code_match.group("number")),
-            text=cells[1],
-            expected_hours=parse_localized_number(hours) if hours else None,
+            text=clean_text,
+            expected_hours=explicit_hours if explicit_hours is not None else trailing_hours,
             page_number=line.page_number,
             confidence=_scaled_confidence(line, 0.85),
             geometry=line.geometry,

@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from app.models.document_reference import DocumentReference
     from app.models.evidence import Evidence
     from app.models.extraction_review_revision import ExtractionReviewRevision
+    from app.models.extraction_warning import ExtractionWarning
     from app.models.finding import Finding
     from app.models.processing_event import ProcessingEvent
     from app.models.question import Question
@@ -112,6 +113,9 @@ class Analysis(TimestampMixin, Base):
         back_populates="analysis", cascade="all, delete-orphan"
     )
     document_references: Mapped[list[DocumentReference]] = relationship(
+        back_populates="analysis", cascade="all, delete-orphan"
+    )
+    extraction_warnings: Mapped[list[ExtractionWarning]] = relationship(
         back_populates="analysis", cascade="all, delete-orphan"
     )
     review_revisions: Mapped[list[ExtractionReviewRevision]] = relationship(

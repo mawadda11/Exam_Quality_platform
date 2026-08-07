@@ -27,7 +27,10 @@ function loadAnalysesOnce(): Promise<AnalysisResponse[]> {
   return request
 }
 
-export type AnalysesLoadResult = AnalysesLoadState & { retry: () => void }
+export type AnalysesLoadResult = AnalysesLoadState & {
+  retry: () => void
+  removeAnalysis: (analysisId: string) => void
+}
 
 export function useAnalyses(): AnalysesLoadResult {
   const { locale, t } = useI18n()
@@ -69,5 +72,16 @@ export function useAnalyses(): AnalysesLoadResult {
     load()
   }, [load, state.status])
 
-  return { ...state, retry }
+  const removeAnalysis = useCallback((analysisId: string): void => {
+    setState((current) =>
+      current.status === 'ready'
+        ? {
+            status: 'ready',
+            analyses: current.analyses.filter((analysis) => analysis.id !== analysisId),
+          }
+        : current,
+    )
+  }, [])
+
+  return { ...state, retry, removeAnalysis }
 }

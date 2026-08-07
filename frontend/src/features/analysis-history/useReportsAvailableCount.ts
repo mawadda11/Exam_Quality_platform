@@ -11,7 +11,7 @@ export type ReportsAvailableState =
  * authoritative `total` from the paginated envelope is used, never the
  * (single) returned item. Kept independent from useAnalyses so a failure
  * here never blocks the rest of the dashboard. */
-export function useReportsAvailableCount(): ReportsAvailableState {
+export function useReportsAvailableCount(reloadToken = 0): ReportsAvailableState {
   const [state, setState] = useState<ReportsAvailableState>({ status: 'loading' })
 
   useEffect(() => {
@@ -26,7 +26,7 @@ export function useReportsAvailableCount(): ReportsAvailableState {
     return () => {
       active = false
     }
-  }, [])
+  }, [reloadToken])
 
   return state
 }

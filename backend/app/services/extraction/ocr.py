@@ -16,10 +16,18 @@ _DEFAULT_LANGUAGE_ORDER = ("ara", "eng")
 
 
 @dataclass(frozen=True)
+class OcrToken:
+    text: str
+    geometry: Geometry
+    confidence: float
+
+
+@dataclass(frozen=True)
 class OcrLine:
     text: str
     geometry: Geometry
     confidence: float
+    tokens: tuple[OcrToken, ...] = ()
 
 
 class OcrEngine(Protocol):
@@ -87,6 +95,24 @@ class TesseractOcrEngine:
             indices = sorted(words_by_line[line_key], key=lambda i: data["word_num"][i])
             text = " ".join(str(data["text"][i]).strip() for i in indices)
 
+            tokens = tuple(
+                OcrToken(
+                    text=str(data["text"][i]).strip(),
+                    geometry=Geometry(
+                        x0=int(data["left"][i]) / scale,
+                        top=int(data["top"][i]) / scale,
+                        x1=(int(data["left"][i]) + int(data["width"][i])) / scale,
+                        bottom=(int(data["top"][i]) + int(data["height"][i])) / scale,
+                    ),
+                    confidence=(
+                        max(0.0, float(data["conf"][i])) / 100.0
+                        if float(data["conf"][i]) != _NO_CONFIDENCE
+                        else 0.0
+                    ),
+                )
+                for i in indices
+            )
+
             lefts = [int(data["left"][i]) for i in indices]
             tops = [int(data["top"][i]) for i in indices]
             rights = [int(data["left"][i]) + int(data["width"][i]) for i in indices]
@@ -102,6 +128,13 @@ class TesseractOcrEngine:
                 float(data["conf"][i]) for i in indices if float(data["conf"][i]) != _NO_CONFIDENCE
             ]
             confidence = (sum(confidences) / len(confidences) / 100.0) if confidences else 0.0
-            lines.append(OcrLine(text=text, geometry=geometry, confidence=confidence))
+            lines.append(
+                OcrLine(
+                    text=text,
+                    geometry=geometry,
+                    confidence=confidence,
+                    tokens=tokens,
+                )
+            )
 
         return lines

@@ -273,3 +273,33 @@ def test_post_confirmation_pipeline_fails_safely_and_stops(
         ProcessingStage.FAILED,
     ]
     assert events[-1].message == runner.SAFE_FAILURE_MESSAGES[ProcessingStage.RETRIEVING_KNOWLEDGE]
+
+
+def test_timed_out_stage_records_a_retryable_failure_boundary(
+    runner_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(
+        stages.STAGE_HANDLERS,
+        ProcessingStage.BUILDING_EVIDENCE,
+        lambda analysis, session, settings: None,
+    )
+
+    def time_out(analysis: Analysis, session: Session, settings: object) -> None:
+        raise TimeoutError("private provider request exceeded its deadline")
+
+    monkeypatch.setitem(
+        stages.STAGE_HANDLERS,
+        ProcessingStage.RETRIEVING_KNOWLEDGE,
+        time_out,
+    )
+    analysis_id, revision_id = _prepare_confirmed_analysis(runner_engine)
+
+    runner.run_post_confirmation_pipeline(analysis_id, revision_id)
+
+    failure = _events_for(runner_engine, analysis_id)[-1]
+    assert failure.stage is ProcessingStage.FAILED
+    assert failure.failed_stage is ProcessingStage.RETRIEVING_KNOWLEDGE
+    assert failure.error_code == "KNOWLEDGE_RETRIEVAL_FAILED"
+    assert failure.retryable is True
+    assert "private provider" not in (failure.message or "")

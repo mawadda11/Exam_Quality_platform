@@ -1,4 +1,12 @@
-import { apiGet, apiGetBlob, apiPostForm, apiPostJson, apiPutJson } from './client'
+import {
+  apiDeleteNoContent,
+  apiGet,
+  apiGetBlob,
+  apiGetBlobResponse,
+  apiPostForm,
+  apiPostJson,
+  apiPutJson,
+} from './client'
 import type {
   AnalysisCreateRequest,
   AnalysisResponse,
@@ -6,11 +14,13 @@ import type {
   AssessmentRecordResponse,
   CloResponse,
   ExtractionReviewConfirmResponse,
+  ExtractionReviewGeometry,
   ExtractionReviewResponse,
   ExtractionReviewSnapshot,
   DocumentReferenceResponse,
   FindingResponse,
   ProgressResponse,
+  QuestionPreparationMode,
   QuestionResponse,
   RecommendationResponse,
   ReportResponse,
@@ -35,6 +45,47 @@ export function listAnalyses(): Promise<AnalysisResponse[]> {
   return apiGet<AnalysisResponse[]>('/analyses')
 }
 
+export function deleteAnalysis(analysisId: string): Promise<void> {
+  return apiDeleteNoContent(`/analyses/${analysisId}`)
+}
+
+export function getExamPdf(analysisId: string): Promise<Blob> {
+  return apiGetBlob(`/analyses/${analysisId}/files/exam/content`)
+}
+
+export interface ExamPageImageResponse {
+  blob: Blob
+  pageWidth: number
+  pageHeight: number
+}
+
+export async function getExamPageImage(
+  analysisId: string,
+  pageNumber: number,
+  geometry: ExtractionReviewGeometry | null,
+  options: { crop?: boolean; padding?: number; dpi?: number } = {},
+): Promise<ExamPageImageResponse> {
+  const query = new URLSearchParams()
+  if (geometry) {
+    query.set('x0', String(geometry.x0))
+    query.set('top', String(geometry.top))
+    query.set('x1', String(geometry.x1))
+    query.set('bottom', String(geometry.bottom))
+  }
+  if (options.crop) query.set('crop', 'true')
+  if (options.padding !== undefined) query.set('padding', String(options.padding))
+  if (options.dpi !== undefined) query.set('dpi', String(options.dpi))
+  const suffix = query.size ? `?${query.toString()}` : ''
+  const response = await apiGetBlobResponse(
+    `/analyses/${analysisId}/files/exam/pages/${pageNumber}/image${suffix}`,
+  )
+  return {
+    blob: response.blob,
+    pageWidth: Number(response.headers.get('X-PDF-Page-Width') ?? 612),
+    pageHeight: Number(response.headers.get('X-PDF-Page-Height') ?? 792),
+  }
+}
+
 export function uploadAnalysisFile(
   analysisId: string,
   fileType: UploadedFileType,
@@ -46,12 +97,20 @@ export function uploadAnalysisFile(
   return apiPostForm<UploadedFileResponse>(`/analyses/${analysisId}/files`, form)
 }
 
-export function runAnalysis(analysisId: string): Promise<AnalysisResponse> {
-  return apiPostJson<AnalysisResponse>(`/analyses/${analysisId}/run`, {})
+export function runAnalysis(
+  analysisId: string,
+  questionPreparationMode: QuestionPreparationMode = 'assisted_pdf',
+): Promise<AnalysisResponse> {
+  return apiPostJson<AnalysisResponse>(`/analyses/${analysisId}/run`, {
+    question_preparation_mode: questionPreparationMode,
+  })
 }
 
-export function getAnalysisProgress(analysisId: string): Promise<ProgressResponse> {
-  return apiGet<ProgressResponse>(`/analyses/${analysisId}/progress`)
+export function getAnalysisProgress(
+  analysisId: string,
+  signal?: AbortSignal,
+): Promise<ProgressResponse> {
+  return apiGet<ProgressResponse>(`/analyses/${analysisId}/progress`, signal)
 }
 
 export function retryAnalysis(analysisId: string): Promise<AnalysisResponse> {
