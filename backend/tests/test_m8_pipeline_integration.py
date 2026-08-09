@@ -148,9 +148,11 @@ def test_complete_inputs_execute_all_unconditional_m6_m9_rules_and_reduce_not_ve
     assert "RULE006" not in findings  # documented partial branch for 2+ CLOs
     assert len(findings) == 17
 
-    for rule_id in ("RULE001", "RULE005", "RULE007", "RULE009"):
+    for rule_id in ("RULE001", "RULE005", "RULE007"):
         assert findings[rule_id]["status"] == "Satisfied"
         assert findings[rule_id]["evidence"]
+
+    assert findings["RULE009"]["status"] == "Not Applicable"
 
     semantic = [findings[rule_id] for rule_id in SEMANTIC_RULE_IDS]
     assert all(finding["status"] != "Not Verified" for finding in semantic)
@@ -192,11 +194,11 @@ def test_semantic_alignment_evaluates_uncited_questions_instead_of_defaulting_no
         # as local semantic suggestions and are excluded from the local score.
         assert findings[rule_id]["confidence_level"] in {"High", "Medium"}
 
-    # Absence of local lexical overlap alone is not proof of a negative
-    # academic relationship. The controlled-pilot policy keeps these semantic
-    # judgments visible as Not Verified instead of lowering the local score.
-    assert findings["RULE005"]["status"] == "Not Verified"
-    assert findings["RULE009"]["status"] == "Not Verified"
+    # Local semantic evidence supports only part of the applicable CLO set,
+    # so CLO coverage remains partial rather than being treated as a proven
+    # negative. Topic coverage is informational in the controlled pilot.
+    assert findings["RULE005"]["status"] == "Partially Satisfied"
+    assert findings["RULE009"]["status"] == "Not Applicable"
 
 
 def test_partial_relationships_produce_traceable_non_default_results(client: TestClient) -> None:
@@ -216,10 +218,9 @@ def test_partial_relationships_produce_traceable_non_default_results(client: Tes
         }
 
     assert findings["RULE001"]["status"] in {"Satisfied", "Partially Satisfied"}
-    # Partial lexical evidence is not enough to prove format suitability.
-    # Preserve the controlled-pilot policy: uncertain local semantic judgments
-    # remain visible but are classified as Not Verified.
-    assert findings["RULE005"]["status"] == "Not Verified"
+    # Some applicable CLOs have local semantic support while others remain
+    # unresolved, so aggregate coverage is Partially Satisfied.
+    assert findings["RULE005"]["status"] == "Partially Satisfied"
 
 
 def test_hyphenated_and_bracketed_controlled_identifiers_are_recognized(
@@ -235,7 +236,7 @@ def test_hyphenated_and_bracketed_controlled_identifiers_are_recognized(
     assert findings["RULE001"]["status"] == "Satisfied"
     assert findings["RULE007"]["status"] == "Satisfied"
     assert findings["RULE005"]["status"] == "Satisfied"
-    assert findings["RULE009"]["status"] == "Satisfied"
+    assert findings["RULE009"]["status"] == "Not Applicable"
 
 
 def test_missing_clo_source_is_the_genuine_not_verified_case_and_score_excludes_it(

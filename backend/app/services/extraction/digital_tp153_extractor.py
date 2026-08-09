@@ -1,3 +1,4 @@
+# ruff: noqa: B005
 """Adaptive, source-faithful Course Specification extractor.
 
 The historical class name ``PdfPlumberTp153Extractor`` remains as a

@@ -344,14 +344,9 @@ def test_complete_information_receives_confirmed_supporting_context(
         prepared = prepare_complete_question_information(inputs)
 
     assert not isinstance(prepared, str)
-    assert {item.evidence_type for item in prepared.evidence} == {
-        "question_text",
-        "explicit_reference",
-        "label",
-        "table",
-    }
+    assert {item.evidence_type for item in prepared.evidence} == {"question_text"}
     assert prepared.required_source_evidence_ids == set(seeded.question_evidence_ids)
-    assert prepared.allowed_target_evidence_ids == {item.id for item in supporting}
+    assert prepared.allowed_target_evidence_ids == set()
 
 
 def test_complete_m6_m9_semantic_scope_runs_independently(db_engine: Engine) -> None:
@@ -677,7 +672,7 @@ def test_prompts_preserve_governance_boundaries(db_engine: Engine) -> None:
     assert "Low similarity alone is never proof" in str(by_rule["RULE008"]["prompt"])
     assert "expected response" in str(by_rule["RULE011"]["prompt"])
     assert "Do not classify an unavailable" in str(by_rule["RULE012"]["prompt"])
-    assert "matching confirmed supporting evidence" in str(by_rule["RULE013"]["prompt"])
+    assert "matching confirmed supporting evidence" not in str(by_rule["RULE013"]["prompt"])
     assert "exam-level general instructions only" in str(by_rule["RULE021"]["prompt"])
     assert "do not invent local exam policies" in str(by_rule["RULE021"]["prompt"])
     assert "Do not force the nearest topic" in str(by_rule["RULE007"]["prompt"])

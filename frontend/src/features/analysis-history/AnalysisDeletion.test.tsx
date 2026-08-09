@@ -83,6 +83,6 @@ describe('analysis deletion confirmation', () => {
     unmount()
 
     render(<Harness initial={analysis({ state: 'applying_rules' })} />)
-    expect(screen.getByRole('button', { name: 'Delete analysis' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Deletion is unavailable while processing' })).toBeDisabled()
   })
 })

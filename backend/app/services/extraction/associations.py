@@ -1,3 +1,4 @@
+# ruff: noqa: E702
 """Deterministic exact-label association with proximity retained as non-decisive provenance."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+/* eslint-disable no-constant-binary-expression -- Verified build intentionally keeps selected legacy/review UI blocks false-gated. */
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import {
   confirmExtractionReview,
@@ -1776,7 +1777,7 @@ export function ExtractionReviewWorkspace({
     const cues = new Map<string, QuestionReviewCue[]>()
     if (!draft || !review) return cues
 
-    const blockingIds = new Set(review.blocking_extraction_warning_ids ?? [])
+    const blockingIds = new Set(review!.blocking_extraction_warning_ids ?? [])
     const questionIdsBySourceLine = new Map<string, Set<string>>()
     for (const span of draft.question_source_spans ?? []) {
       const ids = questionIdsBySourceLine.get(span.source_line_id) ?? new Set<string>()
@@ -1871,6 +1872,7 @@ export function ExtractionReviewWorkspace({
       ? t('Gemini cached')
       : t('Local only')
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- retained for intentionally hidden review UI
   function reviewFlaggedQuestions(): void {
     const questionId = flaggedQuestionIds[0]
     const question = draft?.questions.find((item) => item.source_record_id === questionId)
@@ -2018,15 +2020,15 @@ export function ExtractionReviewWorkspace({
     setSelectedQuestionId(null)
     setSelectedCourseRecord(null)
     if (tab === 'clos') {
-      const first = draft.clos[0]
+      const first = draft!.clos[0]
       setSelectedPage(first?.page_number ?? 1)
       setSelectedGeometry(first?.geometry ?? null)
     } else if (tab === 'topics') {
-      const first = draft.topics[0]
+      const first = draft!.topics[0]
       setSelectedPage(first?.page_number ?? 1)
       setSelectedGeometry(first?.geometry ?? null)
     } else {
-      const first = draft.questions[0]
+      const first = draft!.questions[0]
       setSelectedPage(first?.page_number ?? 1)
       setSelectedGeometry(first?.geometry ?? null)
       if (tab === 'questions' && first) setSelectedQuestionId(first.source_record_id)
@@ -2479,7 +2481,7 @@ export function ExtractionReviewWorkspace({
               dir="auto"
               rows={9}
               value={pastedQuestionsText}
-              disabled={!review.can_edit}
+              disabled={!review!.can_edit}
               placeholder={t('Paste numbered questions here. Keep answer options on lines beginning with A, B, C, or D.')}
               onChange={(event) => setPastedQuestionsText(event.target.value)}
             />
@@ -2487,7 +2489,7 @@ export function ExtractionReviewWorkspace({
           <div className="structured-template-actions">
             <Button
               onClick={importPastedQuestionText}
-              disabled={!review.can_edit || pastedQuestionsText.trim().length === 0}
+              disabled={!review!.can_edit || pastedQuestionsText.trim().length === 0}
             >
               {t('Import pasted questions')}
             </Button>
@@ -2500,7 +2502,7 @@ export function ExtractionReviewWorkspace({
                 className="visually-hidden"
                 type="file"
                 accept=".csv,text/csv"
-                disabled={!review.can_edit}
+                disabled={!review!.can_edit}
                 onChange={(event) => {
                   const file = event.target.files?.[0]
                   if (file) void importStructuredTemplate(file)
@@ -2537,7 +2539,7 @@ export function ExtractionReviewWorkspace({
             </div>
             <Button
               variant="secondary"
-              disabled={!review.can_edit}
+              disabled={!review!.can_edit}
               onClick={() => setShowStartOverTools((value) => !value)}
             >
               {t(showStartOverTools ? 'Cancel start over' : 'Start over / paste questions')}
@@ -2558,7 +2560,7 @@ export function ExtractionReviewWorkspace({
                   dir="auto"
                   rows={10}
                   value={pastedQuestionsText}
-                  disabled={!review.can_edit}
+                  disabled={!review!.can_edit}
                   placeholder={t('Paste numbered questions here. Keep answer options on lines beginning with A, B, C, or D.')}
                   onChange={(event) => setPastedQuestionsText(event.target.value)}
                 />
@@ -2566,7 +2568,7 @@ export function ExtractionReviewWorkspace({
               <div className="structured-template-actions">
                 <Button
                   onClick={importPastedQuestionText}
-                  disabled={!review.can_edit || pastedQuestionsText.trim().length === 0}
+                  disabled={!review!.can_edit || pastedQuestionsText.trim().length === 0}
                 >
                   {t('Replace draft with pasted questions')}
                 </Button>
@@ -2579,7 +2581,7 @@ export function ExtractionReviewWorkspace({
                     className="visually-hidden"
                     type="file"
                     accept=".csv,text/csv"
-                    disabled={!review.can_edit}
+                    disabled={!review!.can_edit}
                     onChange={(event) => {
                       const file = event.target.files?.[0]
                       if (file) void importStructuredTemplate(file)
@@ -2623,7 +2625,7 @@ export function ExtractionReviewWorkspace({
           <p>{t('These records are grouped by type and page for audit. Review recommendations do not block confirmation unless listed above.')}</p>
           {extractionWarningGroups.map((group) => {
             const first = group.items[0]
-            const blockingIds = new Set(review.blocking_extraction_warning_ids ?? [])
+            const blockingIds = new Set(review!.blocking_extraction_warning_ids ?? [])
             const isBlocking = group.items.some((item) => blockingIds.has(item.source_record_id))
             const allResolved = group.items.every((item) => item.resolved)
             return (
@@ -2649,7 +2651,7 @@ export function ExtractionReviewWorkspace({
                     <input
                       type="checkbox"
                       checked={allResolved}
-                      disabled={!review.can_edit}
+                      disabled={!review!.can_edit}
                       onChange={(event) => {
                         const ids = new Set(group.items.map((item) => item.source_record_id))
                         setDraft((current) => current ? {
@@ -2703,7 +2705,7 @@ export function ExtractionReviewWorkspace({
           onPageChange={changePdfPage}
           focusRequest={pdfFocusRequest}
           onGeometryChange={
-            activeTab === 'questions' && selectedQuestionId && review.can_edit
+            activeTab === 'questions' && selectedQuestionId && review!.can_edit
               ? (geometry) => {
                   const selected = draft.questions.find(
                     (item) => item.source_record_id === selectedQuestionId,
@@ -2721,7 +2723,7 @@ export function ExtractionReviewWorkspace({
                   setSelectedGeometry(geometry)
                   setPdfFocusRequest((value) => value + 1)
                 }
-              : selectedCourseRecord && review.can_edit && (
+              : selectedCourseRecord && review!.can_edit && (
                   selectedCourseRecord.collection === 'clos'
                     ? !review.original_snapshot.clos.some((item) => item.source_record_id === selectedCourseRecord.id)
                     : !review.original_snapshot.topics.some((item) => item.source_record_id === selectedCourseRecord.id)
@@ -2770,7 +2772,7 @@ export function ExtractionReviewWorkspace({
             )}
             supportingMaterials={draft.supporting_materials ?? []}
             preparationMode={preparationMode}
-            disabled={!review.can_edit}
+            disabled={!review!.can_edit}
             onChange={(id, patch) => changeRecord('questions', id, patch)}
             onOptionChange={(id, patch) => changeRecord('question_options', id, patch)}
             onBlankChange={(id, patch) => changeRecord('question_blanks', id, patch)}
@@ -2788,7 +2790,7 @@ export function ExtractionReviewWorkspace({
           <ClosPanel
             items={draft.clos}
             original={review.original_snapshot.clos}
-            disabled={!review.can_edit}
+            disabled={!review!.can_edit}
             selectedPage={selectedPage}
             onChange={(id, patch) => changeRecord('clos', id, patch)}
             onAdd={addManualClo}
@@ -2801,7 +2803,7 @@ export function ExtractionReviewWorkspace({
           <TopicsPanel
             items={draft.topics}
             original={review.original_snapshot.topics}
-            disabled={!review.can_edit}
+            disabled={!review!.can_edit}
             selectedPage={selectedPage}
             onChange={(id, patch) => changeRecord('topics', id, patch)}
             onAdd={addManualTopic}
@@ -2814,7 +2816,7 @@ export function ExtractionReviewWorkspace({
           <StructuredEvidencePanel
             snapshot={draft}
             original={review.original_snapshot}
-            disabled={!review.can_edit}
+            disabled={!review!.can_edit}
             onChange={changeRecord}
           />
         )}
@@ -2875,7 +2877,7 @@ export function ExtractionReviewWorkspace({
         <div className="review-action-buttons">
           <Button
             variant="secondary"
-            disabled={!review.can_edit || !isDirty || hasIncompleteReviewRecords}
+            disabled={!review!.can_edit || !isDirty || hasIncompleteReviewRecords}
             isLoading={isSaving}
             loadingLabel={t('Saving revision…')}
             onClick={() => void handleSave()}

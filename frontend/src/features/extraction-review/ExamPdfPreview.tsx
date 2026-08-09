@@ -168,6 +168,9 @@ export function ExamPdfPreview({
 
   useEffect(() => {
     if (focusRequest <= 0) return
+    // Preserve the verified Show-in-PDF behavior: focusing a source location
+    // intentionally returns the preview to Region view.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setViewMode('region')
     previewRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
     previewRef.current?.focus?.({ preventScroll: true })

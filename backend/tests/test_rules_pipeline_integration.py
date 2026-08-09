@@ -127,11 +127,11 @@ def test_valid_child_numbering_under_different_parents_is_satisfied(client: Test
     assert findings["RULE019"]["status"] == "Satisfied"
 
 
-def test_missing_marks_evidence_is_not_verified(client: TestClient) -> None:
+def test_missing_marks_evidence_is_not_satisfied(client: TestClient) -> None:
     findings = _run_to_completion_and_get_findings(
         client, "rules5@kau.edu.sa", build_exam_with_missing_marks_evidence_pdf()
     )
-    assert findings["RULE018"]["status"] == "Not Verified"
+    assert findings["RULE018"]["status"] == "Not Satisfied"
     assert "Q2" in findings["RULE018"]["explanation"]
 
 

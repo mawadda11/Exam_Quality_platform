@@ -503,7 +503,7 @@ describe('AlignmentCoverageSection', () => {
     expect(screen.getByText('أسئلة مرتبطة بمخرج تعلم')).toBeInTheDocument()
     expect(screen.getByText('أسئلة مرتبطة بموضوع مقرر')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'التغطية' })).toBeInTheDocument()
-    expect(screen.getAllByText('عرض تفاصيل الربط').length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('columnheader', { name: '\u0627\u0644\u062a\u0641\u0627\u0635\u064a\u0644' }).length).toBeGreaterThan(0)
     expect(screen.queryByText('عرض المقارنة')).not.toBeInTheDocument()
     expect(screen.getAllByText('لم يظهر ارتباط واضح').length)
       .toBeGreaterThan(0)

@@ -80,10 +80,10 @@ def test_migration_upgrade_creates_expected_tables(tmp_path: Path) -> None:
     assert "question_type_review_revisions" not in tables
 
 
-def test_final_migration_head_is_0013(tmp_path: Path) -> None:
+def test_final_migration_head_is_0014(tmp_path: Path) -> None:
     cfg = _alembic_config(f"sqlite:///{tmp_path / 'migration_head.db'}")
 
-    assert ScriptDirectory.from_config(cfg).get_current_head() == "0013"
+    assert ScriptDirectory.from_config(cfg).get_current_head() == "0014"
 
 
 def test_question_structure_and_provenance_migration_preserves_legacy_questions(

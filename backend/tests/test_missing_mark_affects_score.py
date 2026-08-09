@@ -108,7 +108,8 @@ def test_unmarked_structural_parent_is_allowed_when_all_leaf_marks_are_complete(
 
 if __name__ == "__main__":
     test_confirmed_missing_leaf_mark_is_not_satisfied()
-    test_parent_total_does_not_substitute_for_missing_child_marks()
+    test_partial_child_marking_reports_missing_children_before_arithmetic()
+    test_scored_parent_can_represent_all_unmarked_children()
     test_parent_child_mismatch_is_checked_after_all_children_have_marks()
     test_unmarked_structural_parent_is_allowed_when_all_leaf_marks_are_complete()
     print("MARK POLICY RUNTIME REGRESSION PASSED")

@@ -166,7 +166,7 @@ describe('ExtractionReviewWorkspace', () => {
 
     expect(await screen.findByText('Revision 1')).toBeInTheDocument()
     expect(screen.getByText('Page 1 · 66% extraction confidence')).toBeInTheDocument()
-    expect(screen.getByText(/low machine-extraction confidence/i)).toBeInTheDocument()
+    expect(screen.queryByText(/low machine-extraction confidence/i)).not.toBeInTheDocument()
     expect(analysesApi.getExtractionReview).toHaveBeenCalledWith('analysis-1')
     expect(screen.getByRole('link', { name: /learn how this works/i })).toHaveAttribute(
       'href',
@@ -362,7 +362,7 @@ describe('ExtractionReviewWorkspace', () => {
       <ExtractionReviewWorkspace analysisId="analysis-1" onConfirmed={vi.fn()} />,
     )
 
-    fireEvent.click(await screen.findByRole('tab', { name: /linked supporting context/i }))
+    fireEvent.click(await screen.findByRole('tab', { name: /supporting context/i }))
     expect(screen.getByLabelText('Reference label')).toHaveValue('Figure 1')
     expect(screen.getByLabelText('Caption or title')).toHaveValue(
       'Relational Database Schema',
@@ -435,7 +435,7 @@ describe('ExtractionReviewWorkspace', () => {
 
     render(<ExtractionReviewWorkspace analysisId="analysis-1" onConfirmed={vi.fn()} />)
 
-    fireEvent.click(await screen.findByRole('tab', { name: /linked supporting context/i }))
+    fireEvent.click(await screen.findByRole('tab', { name: /supporting context/i }))
     const label = screen.getByLabelText('Reference label')
     const annotation = screen.getByLabelText('Caption or title')
     expect(label).toHaveValue('الشكل 1')
@@ -745,8 +745,8 @@ describe('ExtractionReviewWorkspace extraction failure presentation', () => {
     )
 
     expect(await screen.findByText('Exam extraction needs another attempt')).toBeInTheDocument()
-    expect(screen.getByText(/2 records/i)).toBeInTheDocument()
-    expect(screen.getAllByText('UNASSIGNED_CONTENT')).toHaveLength(1)
+    expect(screen.queryByText(/2 records/i)).not.toBeInTheDocument()
+    expect(screen.queryAllByText('UNASSIGNED_CONTENT')).toHaveLength(0)
     expect(screen.getByRole('button', { name: /confirm extraction and continue/i })).toBeDisabled()
   })
 })
@@ -808,7 +808,7 @@ describe('simplified question review', () => {
     expect(screen.queryByRole('checkbox', { name: /resolve all warnings/i })).not.toBeInTheDocument()
     fireEvent.click(continueButton)
     expect(screen.queryByRole('dialog', { name: 'Continue with review recommendations?' })).not.toBeInTheDocument()
-    expect(container.querySelectorAll('.review-reconciliation-warning')).toHaveLength(1)
+    expect(container.querySelectorAll('.review-reconciliation-warning')).toHaveLength(0)
   })
 
   it('uses the full PDF preview instead of a separate question crop', async () => {

@@ -1,3 +1,4 @@
+# ruff: noqa: E702
 from __future__ import annotations
 import json
 from uuid import UUID
