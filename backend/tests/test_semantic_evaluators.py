@@ -30,6 +30,7 @@ from app.services.rules.semantic_evaluators import (
     prepare_assessment_method_consistency,
     prepare_clo_relevance,
     prepare_complete_instructions,
+    prepare_complete_question_information,
     prepare_out_of_scope_content,
     prepare_question_format_suitability,
     prepare_question_to_clo_mapping,
@@ -291,9 +292,66 @@ def test_preparers_use_only_compatible_confirmed_evidence(db_engine: Engine) -> 
         "assessment_record",
     }
     assert {item.evidence_type for item in preparations["instructions"].evidence} == {
-        "question_text",
+        "exam_metadata",
         "instructions",
     }
+    assert preparations["instructions"].required_source_evidence_ids == {
+        seeded.exam_metadata_evidence_id
+    }
+
+
+def test_complete_information_receives_confirmed_supporting_context(
+    db_engine: Engine,
+) -> None:
+    with Session(db_engine) as session:
+        seeded = _seed_analysis(
+            session,
+            question_texts=("Refer to Table 1 and identify the mutable data structure.",),
+        )
+        supporting = (
+            Evidence(
+                analysis_id=seeded.analysis_id,
+                source_document=UploadedFileType.EXAM,
+                evidence_type="explicit_reference",
+                page_number=1,
+                item_reference="table:1",
+                extracted_text="Table 1",
+                confidence=0.95,
+            ),
+            Evidence(
+                analysis_id=seeded.analysis_id,
+                source_document=UploadedFileType.EXAM,
+                evidence_type="label",
+                page_number=1,
+                item_reference="table:1",
+                extracted_text="Table 1: Python data structures",
+                confidence=0.95,
+            ),
+            Evidence(
+                analysis_id=seeded.analysis_id,
+                source_document=UploadedFileType.EXAM,
+                evidence_type="table",
+                page_number=1,
+                item_reference="table:1",
+                extracted_text="Feature | List | Tuple\nMutable | Yes | No",
+                confidence=0.95,
+            ),
+        )
+        session.add_all(supporting)
+        session.flush()
+
+        inputs = load_semantic_inputs(session, seeded.analysis_id)
+        prepared = prepare_complete_question_information(inputs)
+
+    assert not isinstance(prepared, str)
+    assert {item.evidence_type for item in prepared.evidence} == {
+        "question_text",
+        "explicit_reference",
+        "label",
+        "table",
+    }
+    assert prepared.required_source_evidence_ids == set(seeded.question_evidence_ids)
+    assert prepared.allowed_target_evidence_ids == {item.id for item in supporting}
 
 
 def test_complete_m6_m9_semantic_scope_runs_independently(db_engine: Engine) -> None:
@@ -329,6 +387,15 @@ def test_complete_m6_m9_semantic_scope_runs_independently(db_engine: Engine) -> 
     prompts = [json.loads(str(call["prompt"])) for call in provider.calls]
     assert all(prompt["retrieved_knowledge"] for prompt in prompts)
     assert all(prompt["required_source_evidence_ids"] for prompt in prompts)
+    assert all("bilingual_presentation_contract" not in prompt for prompt in prompts)
+    assert all("reasoning_ar" not in prompt["item_contract"] for prompt in prompts)
+    for call in provider.calls:
+        schema = call["schema"]
+        assert isinstance(schema, dict)
+        properties = schema["properties"]
+        assert "explanation_ar" not in properties
+        item_properties = schema["$defs"]["SemanticItemJudgment"]["properties"]
+        assert "reasoning_ar" not in item_properties
 
 
 def test_local_provider_maps_questions_without_explicit_clo_or_topic_codes(
@@ -355,6 +422,34 @@ def test_local_provider_maps_questions_without_explicit_clo_or_topic_codes(
     assert all(item.target_evidence_ids for item in clo_mapping.items)
     assert all(item.target_evidence_ids for item in topic_mapping.items)
     assert clo_mapping.evaluator_type == "local_semantic_baseline"
+    assert "2 Satisfied" in clo_mapping.explanation
+
+
+
+
+def test_local_provider_uses_not_verified_when_lexical_overlap_is_absent(
+    db_engine: Engine,
+) -> None:
+    runtime = _runtime(LocalSemanticProvider())
+    with Session(db_engine) as session:
+        seeded = _seed_analysis(
+            session,
+            question_texts=("Calculate the electric current in a series circuit.",),
+        )
+        analysis = session.get(Analysis, seeded.analysis_id)
+        assert analysis is not None
+        clo_mapping, topic_mapping = evaluate_semantic_relationship_rules(
+            analysis,
+            session,
+            runtime,
+            KB_SOURCE,
+            validation_retries=0,
+        )
+
+    assert clo_mapping.status is AcademicStatus.NOT_VERIFIED
+    assert topic_mapping.status is AcademicStatus.NOT_VERIFIED
+    assert "Q1" in clo_mapping.explanation
+    assert "Absence of lexical overlap" in clo_mapping.explanation
 
 
 def test_local_provider_evaluates_assessment_and_question_writing_rules(
@@ -498,6 +593,70 @@ def test_ollama_provider_integrates_with_the_shared_bounded_retry_loop(
     assert len(calls) == 3
 
 
+def test_ollama_grammar_fallback_composes_with_the_shared_bounded_retry_loop(
+    db_engine: Engine,
+) -> None:
+    """The grammar-compilation compatibility fallback lives entirely inside
+    OllamaProvider.generate_structured - the evaluator's own retry loop
+    (validation_retries) has no special-case knowledge of it, and just calls
+    generate_structured again on SemanticOutputValidationError exactly as it
+    would for any other provider. Here every "primary" HTTP call hits the
+    confirmed grammar-compilation failure, and every fallback call returns
+    malformed JSON-mode output - proving the fallback and the outer bounded
+    retry compose correctly (2 HTTP calls per evaluator attempt, still
+    bounded overall) rather than the fallback silently disabling or
+    duplicating the shared retry behavior."""
+    import io
+    import urllib.error
+
+    from app.services.ai.ollama_provider import OllamaProvider
+    from app.services.rules.semantic_evaluators import evaluate_clo_relevance
+
+    calls: list[dict[str, object]] = []
+
+    def fake_http_client(
+        url: str, payload: dict[str, object], *, timeout: float
+    ) -> dict[str, object]:
+        calls.append({"url": url, "payload": payload})
+        # Odd-numbered calls (1st, 3rd, ...) are each evaluator attempt's
+        # "primary" schema-mode request; even-numbered calls are that
+        # attempt's one fallback.
+        if len(calls) % 2 == 1:
+            assert payload["format"] != "json", "primary call must send the real schema, not json"
+            body = b'{"error":"failed to parse grammar: unexpected token"}'
+            raise urllib.error.HTTPError(url, 400, "Bad Request", None, io.BytesIO(body))
+        assert payload["format"] == "json", "fallback call must send format=json"
+        return {"message": {"role": "assistant", "content": "not-valid-json-either"}}
+
+    provider = OllamaProvider(
+        base_url="http://localhost:11434",
+        model="qwen3.5:4b",
+        http_client=fake_http_client,
+    )
+    runtime = _runtime(provider)
+    with Session(db_engine) as session:
+        seeded = _seed_analysis(session)
+        analysis = session.get(Analysis, seeded.analysis_id)
+        assert analysis is not None
+        inputs = load_semantic_inputs(session, analysis.id)
+
+        with pytest.raises(SemanticOutputValidationError):
+            evaluate_clo_relevance(
+                analysis,
+                session,
+                runtime,
+                KB_SOURCE,
+                inputs,
+                validation_retries=1,
+            )
+
+    # validation_retries=1 -> 2 evaluator attempts, each making exactly 2
+    # HTTP calls (primary grammar failure + one fallback) -> 4 total, never
+    # more (the fallback's own internal "never retried twice" guard would
+    # otherwise be invisible from outside generate_structured).
+    assert len(calls) == 4
+
+
 def test_prompts_preserve_governance_boundaries(db_engine: Engine) -> None:
     provider = FakeAiProvider()
     runtime = _runtime(provider)
@@ -516,4 +675,14 @@ def test_prompts_preserve_governance_boundaries(db_engine: Engine) -> None:
     by_rule = {json.loads(str(call["prompt"]))["rule_id"]: call for call in provider.calls}
     assert "Do not infer Bloom levels" in str(by_rule["RULE004"]["prompt"])
     assert "Low similarity alone is never proof" in str(by_rule["RULE008"]["prompt"])
+    assert "expected response" in str(by_rule["RULE011"]["prompt"])
+    assert "Do not classify an unavailable" in str(by_rule["RULE012"]["prompt"])
+    assert "matching confirmed supporting evidence" in str(by_rule["RULE013"]["prompt"])
+    assert "exam-level general instructions only" in str(by_rule["RULE021"]["prompt"])
     assert "do not invent local exam policies" in str(by_rule["RULE021"]["prompt"])
+    assert "Do not force the nearest topic" in str(by_rule["RULE007"]["prompt"])
+    assert "IPv4 is not the same topic as IPv6" in str(by_rule["RULE007"]["prompt"])
+    assert "Missing mark values" in str(by_rule["RULE011"]["prompt"])
+    assert "not wording ambiguity" in str(by_rule["RULE012"]["prompt"])
+    assert "marks are evaluated separately" in str(by_rule["RULE013"]["prompt"])
+    assert "authoritative exam-level directions" in str(by_rule["RULE021"]["prompt"])

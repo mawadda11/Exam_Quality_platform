@@ -102,6 +102,16 @@ class RetrievedRecord:
 
 
 class VectorStore(Protocol):
+    def snapshot_matches(
+        self,
+        records: Sequence[EmbeddableRecord],
+        *,
+        kb_version: str,
+        kb_hash: str,
+    ) -> bool:
+        """Return whether the exact governed snapshot is already indexed."""
+        ...
+
     def replace_version(self, records: Sequence[EmbeddableRecord], *, kb_version: str) -> None:
         """Atomically from the caller's perspective replaces one KB version.
 
@@ -205,6 +215,29 @@ class ChromaVectorStore:
         self._client = _build_chroma_http_client(host=host, port=port)
         self._collection = self._client.get_or_create_collection(_COLLECTION_NAME)
 
+    def snapshot_matches(
+        self,
+        records: Sequence[EmbeddableRecord],
+        *,
+        kb_version: str,
+        kb_hash: str,
+    ) -> bool:
+        result = self._collection.get(
+            where={"$and": [{"kb_version": kb_version}, {"kb_hash": kb_hash}]},
+            include=["metadatas"],
+        )
+        indexed_ids = set(result.get("ids") or [])
+        expected_ids = {record.record_id for record in records}
+        if indexed_ids != expected_ids:
+            return False
+        metadatas = result.get("metadatas") or []
+        return all(
+            metadata is not None
+            and metadata.get("kb_version") == kb_version
+            and metadata.get("kb_hash") == kb_hash
+            for metadata in metadatas
+        )
+
     def replace_version(self, records: Sequence[EmbeddableRecord], *, kb_version: str) -> None:
         self._collection.delete(where={"kb_version": kb_version})
         if not records:
@@ -260,6 +293,25 @@ class InMemoryVectorStore:
 
     def __init__(self) -> None:
         self._records: dict[str, EmbeddableRecord] = {}
+
+    def snapshot_matches(
+        self,
+        records: Sequence[EmbeddableRecord],
+        *,
+        kb_version: str,
+        kb_hash: str,
+    ) -> bool:
+        indexed = {
+            record_id: record
+            for record_id, record in self._records.items()
+            if record.kb_version == kb_version
+        }
+        expected = {record.record_id: record for record in records}
+        return indexed.keys() == expected.keys() and all(
+            indexed[record_id].kb_hash == kb_hash
+            and indexed[record_id].record_hash == record.record_hash
+            for record_id, record in expected.items()
+        )
 
     def replace_version(self, records: Sequence[EmbeddableRecord], *, kb_version: str) -> None:
         self._records = {

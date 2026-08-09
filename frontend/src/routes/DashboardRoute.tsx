@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
@@ -13,7 +14,8 @@ import { useI18n } from '../i18n/I18nProvider'
 export function DashboardRoute() {
   const { t } = useI18n()
   const state = useAnalyses()
-  const reportsAvailable = useReportsAvailableCount()
+  const [reportsReloadToken, setReportsReloadToken] = useState(0)
+  const reportsAvailable = useReportsAvailableCount(reportsReloadToken)
   const metrics =
     state.status === 'ready' ? calculateAnalysisMetrics(state.analyses) : null
 
@@ -58,6 +60,10 @@ export function DashboardRoute() {
               <AnalysisHistoryTable
                 analyses={metrics.recent}
                 caption={t('Recent analyses')}
+                onDeleted={(analysisId) => {
+                  state.removeAnalysis(analysisId)
+                  setReportsReloadToken((current) => current + 1)
+                }}
               />
             </section>
           ) : (

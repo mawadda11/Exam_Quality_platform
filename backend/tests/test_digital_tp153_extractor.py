@@ -11,7 +11,10 @@ from tp153_pdf_fixtures import (
     build_official_sample_format_tp153_pdf,
 )
 
-from app.services.extraction.digital_tp153_extractor import PdfPlumberTp153Extractor
+from app.services.extraction.digital_tp153_extractor import (
+    CourseSpecificationLine,
+    PdfPlumberTp153Extractor,
+)
 from app.services.extraction.types import ExtractionError
 
 
@@ -155,3 +158,148 @@ def test_unparseable_pdf_raises_extraction_error_without_leaking_details(tmp_pat
         PdfPlumberTp153Extractor().extract(pdf_path)
 
     assert "fake.pdf" in str(excinfo.value)
+
+
+def test_assessment_header_role_accepts_common_assessment_column_name() -> None:
+    from app.services.extraction.digital_tp153_extractor import _header_role, _table_section
+
+    roles = tuple(_header_role(value) for value in ("Assessment", "Week", "Weight", "Notes"))
+
+    assert roles == ("method", "week", "percentage", "notes")
+    assert _table_section(roles) == "assessment_records"
+
+
+def test_compact_clo_and_topic_metadata_are_separated_from_display_text() -> None:
+    result = PdfPlumberTp153Extractor().parse_lines(
+        [
+            CourseSpecificationLine(text="Course Learning Outcomes", page_number=1),
+            CourseSpecificationLine(
+                text=(
+                    "CLO1 | Explain relational database concepts, keys, constraints, "
+                    "and Knowledge PLO1"
+                ),
+                page_number=1,
+            ),
+            CourseSpecificationLine(text="Course Topics", page_number=2),
+            CourseSpecificationLine(
+                text="T1 | Relational model, schemas, keys, and constraints 5",
+                page_number=2,
+            ),
+        ]
+    )
+
+    assert result.clos[0].text == "Explain relational database concepts, keys, constraints"
+    assert result.clos[0].program_outcome_reference == "PLO1"
+    assert result.topics[0].text == "Relational model, schemas, keys, and constraints"
+    assert result.topics[0].expected_hours == 5.0
+
+
+def test_arabic_mixed_course_spec_sections_extract_all_clos_and_topics_without_collapsing_rows() -> None:
+    result = PdfPlumberTp153Extractor().parse_lines(
+        [
+            CourseSpecificationLine(text="نواتج تعلم المقرر", page_number=1),
+            CourseSpecificationLine(
+                text="CLO1 شرح النموذج العلاقي والمفاتيح والقيود.",
+                page_number=1,
+            ),
+            CourseSpecificationLine(
+                text="CLO2 كتابة استعلامات SQL وربط الجداول باستخدام JOIN.",
+                page_number=1,
+            ),
+            CourseSpecificationLine(
+                text="CLO3 تحليل تصميم قاعدة البيانات وتطبيق 3NF.",
+                page_number=1,
+            ),
+            CourseSpecificationLine(
+                text="CLO4 تقييم المعاملات وأمن قواعد البيانات.",
+                page_number=1,
+            ),
+            CourseSpecificationLine(text="موضوعات المقرر", page_number=2),
+            CourseSpecificationLine(
+                text="مقدمة في قواعد البيانات T1 والنموذج العلاقي",
+                page_number=2,
+            ),
+            CourseSpecificationLine(
+                text="SQL T2 الاستعلامات والتصفية والتجميع",
+                page_number=2,
+            ),
+            CourseSpecificationLine(
+                text="JOIN T3 والربط بين الجداول",
+                page_number=2,
+            ),
+            CourseSpecificationLine(
+                text="التطبيع T4 حتى 3NF",
+                page_number=2,
+            ),
+            CourseSpecificationLine(
+                text="المعاملات T5 وخصائص ACID",
+                page_number=2,
+            ),
+            CourseSpecificationLine(
+                text="أمن قواعد البيانات T6 و SQL Injection",
+                page_number=2,
+            ),
+            CourseSpecificationLine(text="استراتيجيات التقييم", page_number=3),
+            CourseSpecificationLine(text="Final Exam CLO1, CLO2, CLO3, CLO4", page_number=3),
+        ]
+    )
+
+    assert [item.code for item in result.clos] == ["CLO1", "CLO2", "CLO3", "CLO4"]
+    assert [item.code for item in result.topics] == ["T1", "T2", "T3", "T4", "T5", "T6"]
+    assert result.topics[-1].text == "أمن قواعد البيانات و SQL Injection"
+    assert all("Final Exam" not in item.text for item in result.topics)
+
+
+def test_topic_dedupe_merges_coded_and_uncoded_recovery_of_same_source() -> None:
+    from app.services.extraction.types import ExtractedTopic, Geometry
+
+    coded = ExtractedTopic(
+        code="T2",
+        text="Relational model, keys, and integrity constraints",
+        expected_hours=6.0,
+        page_number=2,
+        confidence=0.96,
+        geometry=Geometry(x0=80, top=210, x1=470, bottom=232),
+        source_text="T2 Relational model, keys, and integrity constraints 6",
+    )
+    recovered = ExtractedTopic(
+        code=None,
+        text="Relational model, keys, and integrity constraints",
+        expected_hours=None,
+        page_number=2,
+        confidence=0.73,
+        geometry=Geometry(x0=82, top=211, x1=468, bottom=233),
+        source_text="Relational model, keys, and integrity constraints",
+        extraction_method="recovery",
+    )
+
+    result = PdfPlumberTp153Extractor._dedupe_topics([coded, recovered])
+
+    assert len(result) == 1
+    assert result[0].code == "T2"
+    assert result[0].expected_hours == 6.0
+
+
+def test_topic_dedupe_preserves_distinct_explicit_codes() -> None:
+    from app.services.extraction.types import ExtractedTopic, Geometry
+
+    first = ExtractedTopic(
+        code="T2",
+        text="Database security",
+        expected_hours=4.0,
+        page_number=2,
+        confidence=0.9,
+        geometry=Geometry(x0=80, top=210, x1=470, bottom=232),
+    )
+    second = ExtractedTopic(
+        code="T3",
+        text="Database security",
+        expected_hours=4.0,
+        page_number=2,
+        confidence=0.9,
+        geometry=Geometry(x0=80, top=210, x1=470, bottom=232),
+    )
+
+    result = PdfPlumberTp153Extractor._dedupe_topics([first, second])
+
+    assert [item.code for item in result] == ["T2", "T3"]

@@ -15,10 +15,12 @@ from tp153_pdf_fixtures import build_complete_tp153_pdf
 
 from app.core.domain import ProcessingStage
 from app.models.analysis import Analysis
+from app.models.clo import Clo
 from app.models.evidence import Evidence
 from app.models.extraction_review_revision import ExtractionReviewRevision
 from app.models.processing_event import ProcessingEvent
 from app.models.question import Question
+from app.models.question_option import QuestionOption
 from app.models.topic import Topic
 
 ANALYSIS_PAYLOAD = {
@@ -28,7 +30,11 @@ ANALYSIS_PAYLOAD = {
 }
 
 
-def _paused_analysis(client: TestClient, email: str) -> str:
+def _paused_analysis(
+    client: TestClient,
+    email: str,
+    question_preparation_mode: str | None = None,
+) -> str:
     created = client.post(
         "/api/v1/analyses",
         json=ANALYSIS_PAYLOAD,
@@ -50,6 +56,11 @@ def _paused_analysis(client: TestClient, email: str) -> str:
     started = client.post(
         f"/api/v1/analyses/{analysis_id}/run",
         headers=auth_header(email),
+        json=(
+            {"question_preparation_mode": question_preparation_mode}
+            if question_preparation_mode is not None
+            else None
+        ),
     )
     assert started.status_code == 202
     progress = client.get(
@@ -101,6 +112,7 @@ def test_review_save_creates_immutable_revision_and_rejects_stale_or_new_source_
     question = candidate["questions"][0]
     question["number_label"] = "Q1 corrected"
     question["question_text"] = "Corrected source-faithful question transcription."
+    question["geometry"] = {"x0": 40.0, "top": 80.0, "x1": 500.0, "bottom": 240.0}
 
     saved = client.put(
         f"/api/v1/analyses/{analysis_id}/extraction-review",
@@ -112,6 +124,7 @@ def test_review_save_creates_immutable_revision_and_rejects_stale_or_new_source_
     saved_body = saved.json()
     assert saved_body["revision_number"] == 2
     assert saved_body["snapshot"]["questions"][0]["question_text"].startswith("Corrected")
+    assert saved_body["snapshot"]["questions"][0]["geometry"]["bottom"] == 240.0
     linked_question_evidence = [
         item
         for item in saved_body["snapshot"]["evidence"]
@@ -142,7 +155,7 @@ def test_review_save_creates_immutable_revision_and_rejects_stale_or_new_source_
         json={"base_revision_id": saved_body["revision_id"], "snapshot": fabricated},
     )
     assert rejected.status_code == 422
-    assert "source-record set" in rejected.json()["detail"]
+    assert "manual_review" in rejected.json()["detail"]
 
     changed_anchor = copy.deepcopy(saved_body["snapshot"])
     changed_anchor["questions"][0]["page_number"] += 1
@@ -166,6 +179,197 @@ def test_review_save_creates_immutable_revision_and_rejects_stale_or_new_source_
         assert revisions[0].snapshot == initial["original_snapshot"]
 
 
+def test_reviewer_can_add_one_traceable_question_region_without_a_migration(
+    client: TestClient,
+    db_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.api.analyses.run_post_confirmation_pipeline",
+        lambda analysis_id, revision_id: None,
+    )
+    email = "review-add-question@example.test"
+    analysis_id = _paused_analysis(client, email)
+    initial = _get_review(client, analysis_id, email)
+    candidate = copy.deepcopy(initial["snapshot"])
+    question_id = str(uuid.uuid4())
+    evidence_id = str(uuid.uuid4())
+    geometry = {"x0": 40.0, "top": 160.0, "x1": 520.0, "bottom": 280.0}
+    candidate["questions"].append(
+        {
+            "source_record_id": question_id,
+            "included": True,
+            "parent_source_record_id": None,
+            "number_label": "Q-review",
+            "question_text": "Visible reviewer-added question transcription.",
+            "page_number": 1,
+            "marks": 2.0,
+            "sequence": max(item["sequence"] for item in candidate["questions"]) + 1,
+            "extraction_confidence": 1.0,
+            "geometry": geometry,
+            "question_type": "short_answer",
+            "instructions": None,
+            "extraction_method": "manual_review",
+            "review_status": "reviewed",
+        }
+    )
+    candidate["evidence"].append(
+        {
+            "source_record_id": evidence_id,
+            "included": True,
+            "question_source_record_id": question_id,
+            "source_document": "exam",
+            "evidence_type": "question_text",
+            "page_number": 1,
+            "item_reference": "Q-review",
+            "extracted_text": "Visible reviewer-added question transcription.",
+            "extraction_confidence": 1.0,
+            "geometry": geometry,
+        }
+    )
+
+    saved = client.put(
+        f"/api/v1/analyses/{analysis_id}/extraction-review",
+        headers=auth_header(email),
+        json={"base_revision_id": initial["revision_id"], "snapshot": candidate},
+    )
+    assert saved.status_code == 201, saved.text
+
+    confirmed = client.post(
+        f"/api/v1/analyses/{analysis_id}/extraction-review/confirm",
+        headers=auth_header(email),
+        json={"revision_id": saved.json()["revision_id"]},
+    )
+    assert confirmed.status_code == 202, confirmed.text
+
+    with Session(db_engine) as session:
+        question = session.get(Question, uuid.UUID(question_id))
+        evidence = session.get(Evidence, uuid.UUID(evidence_id))
+        assert question is not None
+        assert question.analysis_id == uuid.UUID(analysis_id)
+        assert question.question_text == "Visible reviewer-added question transcription."
+        assert question.extraction_method == "manual_review"
+        assert question.geometry == geometry
+        assert evidence is not None
+        assert evidence.question_id == uuid.UUID(question_id)
+        assert evidence.geometry == geometry
+
+
+
+def test_reviewer_can_add_traceable_clo_and_topic_from_course_specification_pdf(
+    client: TestClient,
+    db_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.api.analyses.run_post_confirmation_pipeline",
+        lambda analysis_id, revision_id: None,
+    )
+    email = "review-add-course-spec@example.test"
+    analysis_id = _paused_analysis(client, email)
+    initial = _get_review(client, analysis_id, email)
+    candidate = copy.deepcopy(initial["snapshot"])
+
+    clo_id = str(uuid.uuid4())
+    topic_id = str(uuid.uuid4())
+    clo_evidence_id = str(uuid.uuid4())
+    topic_evidence_id = str(uuid.uuid4())
+    clo_geometry = {"x0": 70.0, "top": 140.0, "x1": 520.0, "bottom": 190.0}
+    topic_geometry = {"x0": 70.0, "top": 300.0, "x1": 520.0, "bottom": 350.0}
+
+    candidate["clos"].append(
+        {
+            "source_record_id": clo_id,
+            "included": True,
+            "code": "CLO9",
+            "text": "تحليل متطلبات النظام وربطها بقرارات التصميم.",
+            "program_outcome_reference": None,
+            "page_number": 1,
+            "extraction_confidence": 1.0,
+            "geometry": clo_geometry,
+        }
+    )
+    candidate["topics"].append(
+        {
+            "source_record_id": topic_id,
+            "included": True,
+            "code": "T9",
+            "text": "نمذجة البيانات و SQL المتقدم",
+            "expected_hours": None,
+            "page_number": 1,
+            "extraction_confidence": 1.0,
+            "geometry": topic_geometry,
+        }
+    )
+    candidate["evidence"].extend(
+        [
+            {
+                "source_record_id": clo_evidence_id,
+                "included": True,
+                "question_source_record_id": None,
+                "source_document": "tp153",
+                "evidence_type": "clo",
+                "page_number": 1,
+                "item_reference": "CLO9",
+                "extracted_text": "تحليل متطلبات النظام وربطها بقرارات التصميم.",
+                "extraction_confidence": 1.0,
+                "geometry": clo_geometry,
+            },
+            {
+                "source_record_id": topic_evidence_id,
+                "included": True,
+                "question_source_record_id": None,
+                "source_document": "tp153",
+                "evidence_type": "topic",
+                "page_number": 1,
+                "item_reference": "T9",
+                "extracted_text": "نمذجة البيانات و SQL المتقدم",
+                "extraction_confidence": 1.0,
+                "geometry": topic_geometry,
+            },
+        ]
+    )
+
+    saved = client.put(
+        f"/api/v1/analyses/{analysis_id}/extraction-review",
+        headers=auth_header(email),
+        json={"base_revision_id": initial["revision_id"], "snapshot": candidate},
+    )
+    assert saved.status_code == 201, saved.text
+
+    confirmed = client.post(
+        f"/api/v1/analyses/{analysis_id}/extraction-review/confirm",
+        headers=auth_header(email),
+        json={"revision_id": saved.json()["revision_id"]},
+    )
+    assert confirmed.status_code == 202, confirmed.text
+
+    with Session(db_engine) as session:
+        clo = session.get(Clo, uuid.UUID(clo_id))
+        topic = session.get(Topic, uuid.UUID(topic_id))
+        clo_evidence = session.get(Evidence, uuid.UUID(clo_evidence_id))
+        topic_evidence = session.get(Evidence, uuid.UUID(topic_evidence_id))
+
+        assert clo is not None
+        assert clo.analysis_id == uuid.UUID(analysis_id)
+        assert clo.code == "CLO9"
+        assert clo.text == "تحليل متطلبات النظام وربطها بقرارات التصميم."
+        assert clo.geometry == clo_geometry
+
+        assert topic is not None
+        assert topic.analysis_id == uuid.UUID(analysis_id)
+        assert topic.code == "T9"
+        assert topic.text == "نمذجة البيانات و SQL المتقدم"
+        assert topic.geometry == topic_geometry
+
+        assert clo_evidence is not None
+        assert clo_evidence.source_document.value == "tp153"
+        assert clo_evidence.evidence_type == "clo"
+        assert clo_evidence.geometry == clo_geometry
+        assert topic_evidence is not None
+        assert topic_evidence.evidence_type == "topic"
+        assert topic_evidence.geometry == topic_geometry
+
 def test_confirm_exact_latest_revision_materializes_review_and_starts_continuation(
     client: TestClient,
     db_engine: Engine,
@@ -186,6 +390,19 @@ def test_confirm_exact_latest_revision_materializes_review_and_starts_continuati
     initial = _get_review(client, analysis_id, email)
     candidate = copy.deepcopy(initial["snapshot"])
     candidate["questions"][0]["question_text"] = "Reviewed question text."
+    candidate["questions"][0]["geometry"] = {
+        "x0": 35.0,
+        "top": 75.0,
+        "x1": 510.0,
+        "bottom": 250.0,
+    }
+    top_level_questions = [
+        item for item in candidate["questions"] if item["parent_source_record_id"] is None
+    ]
+    assert len(top_level_questions) >= 2
+    reviewed_parent_id = top_level_questions[0]["source_record_id"]
+    reparented_question_id = top_level_questions[1]["source_record_id"]
+    top_level_questions[1]["parent_source_record_id"] = reviewed_parent_id
     excluded_topic = candidate["topics"][0]
     excluded_topic_id = excluded_topic["source_record_id"]
     excluded_topic_evidence_id = next(
@@ -237,6 +454,15 @@ def test_confirm_exact_latest_revision_materializes_review_and_starts_continuati
         )
         assert question is not None
         assert question.question_text == "Reviewed question text."
+        assert question.geometry == {
+            "x0": 35.0,
+            "top": 75.0,
+            "x1": 510.0,
+            "bottom": 250.0,
+        }
+        reparented_question = session.get(Question, uuid.UUID(reparented_question_id))
+        assert reparented_question is not None
+        assert reparented_question.parent_question_id == uuid.UUID(reviewed_parent_id)
         assert session.get(Topic, uuid.UUID(excluded_topic_id)) is None
         assert session.get(Evidence, uuid.UUID(excluded_topic_evidence_id)) is None
         confirmation_events = list(
@@ -338,3 +564,113 @@ def test_confirm_can_exclude_a_question_subtree_and_its_trace_evidence(
         )
     assert persisted_question_ids.isdisjoint(uuid.UUID(value) for value in excluded_ids)
     assert persisted_evidence_ids.isdisjoint(uuid.UUID(value) for value in excluded_evidence_ids)
+
+
+def test_structured_template_questions_and_options_materialize_without_invented_marks_or_geometry(
+    client: TestClient,
+    db_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.api.analyses.run_post_confirmation_pipeline",
+        lambda analysis_id, revision_id: None,
+    )
+    email = "structured-template-review@example.test"
+    analysis_id = _paused_analysis(client, email, "structured_template")
+    initial = _get_review(client, analysis_id, email)
+    candidate = copy.deepcopy(initial["snapshot"])
+    assert candidate["preparation_mode"] == "structured_template"
+    assert candidate["questions"] == []
+
+    question_id = str(uuid.uuid4())
+    evidence_id = str(uuid.uuid4())
+    option_ids = [str(uuid.uuid4()), str(uuid.uuid4())]
+    candidate["questions"] = [
+        {
+            "source_record_id": question_id,
+            "included": True,
+            "parent_source_record_id": None,
+            "number_label": "Q1",
+            "question_text": "Which pattern constructs a complex object step by step?",
+            "page_number": 1,
+            "marks": None,
+            "sequence": 1,
+            "extraction_confidence": 1.0,
+            "geometry": None,
+            "question_type": "multiple_choice",
+            "instructions": None,
+            "extraction_method": "structured_template",
+            "review_status": "reviewed",
+        }
+    ]
+    candidate["evidence"].append(
+        {
+            "source_record_id": evidence_id,
+            "included": True,
+            "question_source_record_id": question_id,
+            "source_document": "exam",
+            "evidence_type": "question_text",
+            "page_number": 1,
+            "item_reference": "Q1",
+            "extracted_text": "Which pattern constructs a complex object step by step?",
+            "extraction_confidence": 1.0,
+            "geometry": None,
+        }
+    )
+    candidate["question_options"] = [
+        {
+            "source_record_id": option_ids[0],
+            "included": True,
+            "question_source_record_id": question_id,
+            "option_label": "A",
+            "option_text": "Singleton",
+            "sequence": 1,
+            "page_number": 1,
+            "extraction_confidence": 1.0,
+            "geometry": None,
+        },
+        {
+            "source_record_id": option_ids[1],
+            "included": True,
+            "question_source_record_id": question_id,
+            "option_label": "B",
+            "option_text": "Builder",
+            "sequence": 2,
+            "page_number": 1,
+            "extraction_confidence": 1.0,
+            "geometry": None,
+        },
+    ]
+
+    saved = client.put(
+        f"/api/v1/analyses/{analysis_id}/extraction-review",
+        headers=auth_header(email),
+        json={"base_revision_id": initial["revision_id"], "snapshot": candidate},
+    )
+    assert saved.status_code == 201, saved.text
+    assert saved.json()["can_confirm"] is True
+
+    confirmed = client.post(
+        f"/api/v1/analyses/{analysis_id}/extraction-review/confirm",
+        headers=auth_header(email),
+        json={"revision_id": saved.json()["revision_id"]},
+    )
+    assert confirmed.status_code == 202, confirmed.text
+
+    with Session(db_engine) as session:
+        question = session.get(Question, uuid.UUID(question_id))
+        options = list(
+            session.execute(
+                select(QuestionOption)
+                .where(QuestionOption.question_id == uuid.UUID(question_id))
+                .order_by(QuestionOption.sequence)
+            ).scalars()
+        )
+        assert question is not None
+        assert question.marks is None
+        assert question.geometry is None
+        assert question.extraction_method == "structured_template"
+        assert [(option.option_label, option.option_text) for option in options] == [
+            ("A", "Singleton"),
+            ("B", "Builder"),
+        ]

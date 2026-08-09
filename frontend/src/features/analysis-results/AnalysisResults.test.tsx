@@ -160,19 +160,15 @@ describe('AnalysisResults', () => {
     expect(screen.getByText(/score unavailable/i)).toBeInTheDocument()
   })
 
-  it('keeps score and unrelated tabs available when questions fail', async () => {
+  it('hides the score and academic results when confirmed questions fail to load', async () => {
     vi.mocked(analysesApi.listQuestions).mockRejectedValue(
       new ApiError(503, 'Questions unavailable.'),
     )
     render(resultsTree(<AnalysisResults analysis={ANALYSIS} />))
 
-    expect(
-      (
-        await screen.findAllByText('100.00%', {
-          selector: '.ui-score-ring-value',
-        })
-      ).length,
-    ).toBeGreaterThan(0)
+    expect(await screen.findAllByText('Analysis incomplete')).not.toHaveLength(0)
+    expect(screen.queryByText('100.00%', { selector: '.ui-score-ring-value' }))
+      .not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: 'Questions' }))
     expect(await screen.findByText(/questions unavailable/i)).toBeInTheDocument()
   })

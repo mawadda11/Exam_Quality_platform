@@ -5,10 +5,14 @@ from app.models.course import Course
 from app.models.document_reference import DocumentReference
 from app.models.evidence import Evidence
 from app.models.extraction_review_revision import ExtractionReviewRevision
+from app.models.extraction_warning import ExtractionWarning
 from app.models.finding import Finding, FindingEvidence
 from app.models.password_reset_token import PasswordResetToken
 from app.models.processing_event import ProcessingEvent
 from app.models.question import Question
+from app.models.question_blank import QuestionBlank
+from app.models.question_option import QuestionOption
+from app.models.question_source_span import QuestionSourceSpan
 from app.models.reference_association import ReferenceAssociation
 from app.models.report import Report
 from app.models.supporting_material import SupportingMaterial
@@ -25,11 +29,15 @@ __all__ = [
     "DocumentReference",
     "Evidence",
     "ExtractionReviewRevision",
+    "ExtractionWarning",
     "Finding",
     "FindingEvidence",
     "PasswordResetToken",
     "ProcessingEvent",
     "Question",
+    "QuestionBlank",
+    "QuestionOption",
+    "QuestionSourceSpan",
     "ReferenceAssociation",
     "Report",
     "Topic",

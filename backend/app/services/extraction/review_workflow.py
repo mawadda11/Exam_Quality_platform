@@ -11,22 +11,35 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.domain import ProcessingStage, ReferenceResolutionStatus
+from app.core.domain import (
+    ProcessingStage,
+    QuestionPreparationMode,
+    QuestionReviewStatus,
+    QuestionType,
+    ReferenceResolutionStatus,
+    UploadedFileType,
+)
 from app.models.analysis import Analysis
 from app.models.assessment_record import AssessmentRecord
 from app.models.clo import Clo
 from app.models.document_reference import DocumentReference
 from app.models.evidence import Evidence
 from app.models.extraction_review_revision import ExtractionReviewRevision
+from app.models.extraction_warning import ExtractionWarning
 from app.models.processing_event import ProcessingEvent
 from app.models.question import Question
+from app.models.question_blank import QuestionBlank
+from app.models.question_option import QuestionOption
+from app.models.question_source_span import QuestionSourceSpan
 from app.models.reference_association import ReferenceAssociation
 from app.models.supporting_material import SupportingMaterial
 from app.models.supporting_material_annotation import SupportingMaterialAnnotation
 from app.models.topic import Topic
 from app.schemas.extraction_review import (
     ExtractionReviewAssessmentRecord,
+    ExtractionReviewEvidence,
     ExtractionReviewQuestion,
+    ExtractionReviewQuestionOption,
     ExtractionReviewResponse,
     ExtractionReviewSnapshot,
     ExtractionReviewWarning,
@@ -42,6 +55,17 @@ from app.services.extraction.structured_evidence import (
 )
 
 LOW_EXTRACTION_CONFIDENCE = 0.75
+
+PILOT_SUPPORTED_QUESTION_TYPES = frozenset(
+    {
+        QuestionType.MULTIPLE_CHOICE,
+        QuestionType.TRUE_FALSE,
+        QuestionType.FILL_IN_BLANK,
+        QuestionType.SHORT_ANSWER,
+        QuestionType.ESSAY,
+    }
+)
+
 
 
 class ExtractionReviewError(RuntimeError):
@@ -74,6 +98,12 @@ class ConfirmedReview:
     revision_number: int
 
 
+@dataclass(frozen=True)
+class ExtractionReviewConfirmationPolicy:
+    blockers: tuple[str, ...]
+    blocking_warning_ids: tuple[UUID, ...]
+
+
 def _validate_stored_snapshot(value: dict[str, Any]) -> ExtractionReviewSnapshot:
     return ExtractionReviewSnapshot.model_validate_json(json.dumps(value))
 
@@ -82,8 +112,66 @@ def _snapshot(revision: ExtractionReviewRevision) -> ExtractionReviewSnapshot:
     return _validate_stored_snapshot(revision.snapshot)
 
 
+def _resolve_deterministic_hierarchical_marks(
+    snapshot: ExtractionReviewSnapshot,
+) -> ExtractionReviewSnapshot:
+    """Fill only marks that are mathematically determined by the hierarchy.
+
+    This deliberately does *not* distribute a parent total across multiple
+    unknown children.  It only performs deductions with a unique arithmetic
+    answer:
+
+    - known parent + exactly one unknown direct child -> child = remainder.
+
+    A missing parent is deliberately left unchanged: this policy is only about
+    resolving a uniquely determined child mark without inventing a distribution.
+    """
+
+    resolved = snapshot.model_copy(deep=True)
+    included = {
+        item.source_record_id: item for item in resolved.questions if item.included
+    }
+    children_by_parent: dict[UUID, list[ExtractionReviewQuestion]] = {}
+    for question in included.values():
+        parent_id = question.parent_source_record_id
+        if parent_id in included:
+            children_by_parent.setdefault(parent_id, []).append(question)
+
+    for children in children_by_parent.values():
+        children.sort(key=lambda item: (item.sequence, item.number_label))
+
+    tolerance = 1e-9
+    for parent_id, children in children_by_parent.items():
+        parent = included[parent_id]
+        if parent.marks is None or not children:
+            continue
+        unknown = [child for child in children if child.marks is None]
+        if len(unknown) != 1:
+            # Two or more unknown children have multiple possible allocations;
+            # never assume equal marks or any other split.
+            continue
+        if unknown[0].source_record_id in children_by_parent:
+            # Do not stamp a remainder onto an unresolved container question.
+            # Its own descendants may carry a different branch total; only a
+            # leaf child is safe to resolve from the parent's remainder here.
+            continue
+        known_total = sum(
+            float(child.marks) for child in children if child.marks is not None
+        )
+        remainder = float(parent.marks) - known_total
+        if remainder < -tolerance:
+            # The known children already exceed the parent total.  This is a
+            # real inconsistency, not a value we can repair by inference.
+            continue
+        if abs(remainder) <= tolerance:
+            remainder = 0.0
+        unknown[0].marks = remainder
+
+    return resolved
+
+
 def _presentation_snapshot(snapshot: ExtractionReviewSnapshot) -> ExtractionReviewSnapshot:
-    presented = snapshot.model_copy(deep=True)
+    presented = _resolve_deterministic_hierarchical_marks(snapshot)
     for annotation in presented.supporting_annotations:
         annotation.original_text = logical_annotation_text(
             annotation.original_text,
@@ -163,6 +251,23 @@ def _assert_same_record_ids(
     )
 
 
+def _assert_original_ids_preserved(
+    *,
+    collection: str,
+    original_items: Iterable[Any],
+    candidate_items: Iterable[Any],
+) -> set[UUID]:
+    original_ids = set(_record_map(original_items))
+    candidate_ids = set(_record_map(candidate_items))
+    missing = sorted(str(value) for value in original_ids - candidate_ids)
+    if missing:
+        raise ExtractionReviewSourceFaithfulnessError(
+            f"{collection} must preserve every machine-extraction source record "
+            f"(missing IDs: {', '.join(missing)})."
+        )
+    return candidate_ids - original_ids
+
+
 def _assert_immutable_fields(
     *,
     collection: str,
@@ -172,7 +277,9 @@ def _assert_immutable_fields(
 ) -> None:
     original_by_id = _record_map(original_items)
     for candidate in candidate_items:
-        original = original_by_id[candidate.source_record_id]
+        original = original_by_id.get(candidate.source_record_id)
+        if original is None:
+            continue
         changed = [
             field for field in fields if getattr(candidate, field) != getattr(original, field)
         ]
@@ -189,6 +296,8 @@ def _assessment_summary(record: ExtractionReviewAssessmentRecord) -> str:
         parts.append(f"Activity: {record.activity}")
     if record.percentage is not None:
         parts.append(f"Percentage: {record.percentage}%")
+    if record.related_clo_codes:
+        parts.append("Related CLOs: " + ", ".join(record.related_clo_codes))
     return " | ".join(parts)
 
 
@@ -228,6 +337,8 @@ def _normalize_related_evidence(
     candidate_materials = _record_map(normalized.supporting_materials)
     candidate_annotations = _record_map(normalized.supporting_annotations)
     candidate_references = _record_map(normalized.document_references)
+    original_references = _record_map(original.document_references)
+    candidate_associations = list(normalized.reference_associations)
 
     for original_evidence in original.evidence:
         candidate_evidence = normalized_evidence[original_evidence.source_record_id]
@@ -274,12 +385,49 @@ def _normalize_related_evidence(
                 candidate_evidence.item_reference = record.method[:100]
                 candidate_evidence.extracted_text = _assessment_summary(record)
 
+    original_evidence_ids = {item.source_record_id for item in original.evidence}
+    for evidence in normalized.evidence:
+        if evidence.source_record_id in original_evidence_ids:
+            continue
+        if evidence.source_document is not UploadedFileType.TP153:
+            continue
+        if evidence.evidence_type == "clo":
+            matches = [
+                item for item in normalized.clos
+                if item.page_number == evidence.page_number
+                and item.geometry == evidence.geometry
+                and item.code == evidence.item_reference
+            ]
+            if len(matches) == 1:
+                clo = matches[0]
+                evidence.included = clo.included
+                evidence.item_reference = clo.code
+                evidence.extracted_text = clo.text
+        elif evidence.evidence_type == "topic":
+            matches = [
+                item for item in normalized.topics
+                if item.page_number == evidence.page_number
+                and item.geometry == evidence.geometry
+                and (item.code or item.text[:100]) == evidence.item_reference
+            ]
+            if len(matches) == 1:
+                topic = matches[0]
+                evidence.included = topic.included
+                evidence.item_reference = topic.code or topic.text[:100]
+                evidence.extracted_text = topic.text
+
     for material in normalized.supporting_materials:
         if (
             material.question_source_record_id is not None
             and not candidate_questions[material.question_source_record_id].included
         ):
             material.included = False
+    for option in normalized.question_options:
+        if not candidate_questions[option.question_source_record_id].included:
+            option.included = False
+    for blank in normalized.question_blanks:
+        if not candidate_questions[blank.question_source_record_id].included:
+            blank.included = False
     for annotation in normalized.supporting_annotations:
         material_id = annotation.material_source_record_id
         if material_id is not None and not candidate_materials[material_id].included:
@@ -290,10 +438,11 @@ def _normalize_related_evidence(
         question_id = reference.question_source_record_id
         if question_id is not None and not candidate_questions[question_id].included:
             reference.included = False
-        reference.normalized_target_label = normalize_target_label(
-            reference.target_type,
-            reference.target_label,
-        )
+        if reference.target_label != original_references[reference.source_record_id].target_label:
+            reference.normalized_target_label = normalize_target_label(
+                reference.target_type,
+                reference.target_label,
+            )
 
     included_annotations = [
         item
@@ -301,8 +450,35 @@ def _normalize_related_evidence(
         if item.included and item.material_source_record_id is not None
     ]
     included_questions = [item for item in candidate_questions.values() if item.included]
+    included_material_ids = {
+        item.source_record_id for item in candidate_materials.values() if item.included
+    }
     for reference in candidate_references.values():
         if not reference.included:
+            continue
+        if reference.normalized_target_label.endswith(":unlabeled"):
+            associations = [
+                item
+                for item in candidate_associations
+                if item.reference_source_record_id == reference.source_record_id
+                and item.target_material_source_record_id in included_material_ids
+            ]
+            selected_targets = {
+                item.target_material_source_record_id
+                for item in associations
+                if item.selected and item.target_material_source_record_id is not None
+            }
+            candidate_targets = {
+                item.target_material_source_record_id
+                for item in associations
+                if item.target_material_source_record_id is not None
+            }
+            if len(selected_targets) == 1:
+                reference.resolution_status = ReferenceResolutionStatus.RESOLVED
+            elif len(candidate_targets) > 1:
+                reference.resolution_status = ReferenceResolutionStatus.AMBIGUOUS
+            else:
+                reference.resolution_status = ReferenceResolutionStatus.UNRESOLVED
             continue
         if reference.target_type.value == "question":
             matches = [
@@ -345,11 +521,49 @@ def validate_source_faithful_snapshot(
             "The extraction-review schema version cannot be changed."
         )
 
+    if candidate.preparation_mode is not original.preparation_mode:
+        raise ExtractionReviewSourceFaithfulnessError(
+            "The question-preparation mode cannot be changed after processing starts."
+        )
+
+    added_question_ids = _assert_original_ids_preserved(
+        collection="questions",
+        original_items=original.questions,
+        candidate_items=candidate.questions,
+    )
+    added_evidence_ids = _assert_original_ids_preserved(
+        collection="evidence",
+        original_items=original.evidence,
+        candidate_items=candidate.evidence,
+    )
+    added_option_ids = _assert_original_ids_preserved(
+        collection="question options",
+        original_items=original.question_options,
+        candidate_items=candidate.question_options,
+    )
+    added_clo_ids = _assert_original_ids_preserved(
+        collection="CLOs",
+        original_items=original.clos,
+        candidate_items=candidate.clos,
+    )
+    added_topic_ids = _assert_original_ids_preserved(
+        collection="topics",
+        original_items=original.topics,
+        candidate_items=candidate.topics,
+    )
+
     collections: tuple[tuple[str, Iterable[Any], Iterable[Any]], ...] = (
-        ("questions", original.questions, candidate.questions),
-        ("evidence", original.evidence, candidate.evidence),
-        ("CLOs", original.clos, candidate.clos),
-        ("topics", original.topics, candidate.topics),
+        ("question blanks", original.question_blanks, candidate.question_blanks),
+        (
+            "question source spans",
+            original.question_source_spans,
+            candidate.question_source_spans,
+        ),
+        (
+            "extraction warnings",
+            original.extraction_warnings,
+            candidate.extraction_warnings,
+        ),
         ("assessment records", original.assessment_records, candidate.assessment_records),
         (
             "supporting materials",
@@ -379,17 +593,202 @@ def validate_source_faithful_snapshot(
             candidate_items=candidate_items,
         )
 
+    candidate_questions_by_id = _record_map(candidate.questions)
+    added_questions = [
+        item for item in candidate.questions if item.source_record_id in added_question_ids
+    ]
+    for question_candidate in added_questions:
+        is_pasted_review = question_candidate.extraction_method == "pasted_review"
+        if candidate.preparation_mode is QuestionPreparationMode.STRUCTURED_TEMPLATE:
+            if question_candidate.extraction_method != "structured_template":
+                raise ExtractionReviewSourceFaithfulnessError(
+                    "Structured-template questions must use the structured_template "
+                    "extraction method."
+                )
+        elif is_pasted_review:
+            if question_candidate.geometry is not None:
+                raise ExtractionReviewSourceFaithfulnessError(
+                    "Pasted review questions must not invent PDF geometry."
+                )
+        else:
+            if question_candidate.extraction_method != "manual_review":
+                raise ExtractionReviewSourceFaithfulnessError(
+                    "Reviewer-added questions must use manual_review or pasted_review extraction."
+                )
+            if question_candidate.geometry is None:
+                raise ExtractionReviewSourceFaithfulnessError(
+                    "Reviewer-added questions require a selected region in the original exam PDF."
+                )
+        if question_candidate.review_status is not QuestionReviewStatus.REVIEWED:
+            raise ExtractionReviewSourceFaithfulnessError(
+                "Reviewer-added questions must be explicitly reviewed before saving."
+            )
+        if question_candidate.parent_source_record_id is not None and (
+            question_candidate.parent_source_record_id not in candidate_questions_by_id
+        ):
+            raise ExtractionReviewSourceFaithfulnessError(
+                "A reviewer-added question references an unavailable parent question."
+            )
+
+    added_evidence = [
+        item for item in candidate.evidence if item.source_record_id in added_evidence_ids
+    ]
+    evidence_by_added_question: dict[UUID, list[ExtractionReviewEvidence]] = {
+        item.source_record_id: [] for item in added_questions
+    }
+    added_course_evidence: list[ExtractionReviewEvidence] = []
+    for evidence_candidate in added_evidence:
+        question_id = evidence_candidate.question_source_record_id
+        if question_id in added_question_ids:
+            if (
+                evidence_candidate.source_document is not UploadedFileType.EXAM
+                or evidence_candidate.evidence_type != "question_text"
+            ):
+                raise ExtractionReviewSourceFaithfulnessError(
+                    "Reviewer-added question evidence must be exam question_text evidence."
+                )
+            assert question_id is not None
+            evidence_by_added_question[question_id].append(evidence_candidate)
+            continue
+        if (
+            question_id is None
+            and evidence_candidate.source_document is UploadedFileType.TP153
+            and evidence_candidate.evidence_type in {"clo", "topic"}
+        ):
+            added_course_evidence.append(evidence_candidate)
+            continue
+        raise ExtractionReviewSourceFaithfulnessError(
+            "Reviewer-added evidence must trace an added exam question, CLO, or topic."
+        )
+
+    for question_id, question_evidence in evidence_by_added_question.items():
+        if len(question_evidence) != 1:
+            raise ExtractionReviewSourceFaithfulnessError(
+                "Each reviewer-added question requires exactly one traceable "
+                "question_text evidence record."
+            )
+        question = candidate_questions_by_id[question_id]
+        evidence = question_evidence[0]
+        if evidence.page_number != question.page_number:
+            raise ExtractionReviewSourceFaithfulnessError(
+                "Reviewer-added question evidence must use the same source page."
+            )
+        if question.extraction_method == "pasted_review":
+            if evidence.geometry is not None:
+                raise ExtractionReviewSourceFaithfulnessError(
+                    "Pasted review evidence must not invent PDF geometry."
+                )
+        elif evidence.geometry != question.geometry:
+            raise ExtractionReviewSourceFaithfulnessError(
+                "Reviewer-added question evidence must use the same page and source region."
+            )
+
+    added_clos = [item for item in candidate.clos if item.source_record_id in added_clo_ids]
+    added_topics = [item for item in candidate.topics if item.source_record_id in added_topic_ids]
+    matched_course_evidence_ids: set[UUID] = set()
+    for clo in added_clos:
+        if not clo.included:
+            continue
+        if clo.geometry is None:
+            raise ExtractionReviewSourceFaithfulnessError(
+                "Reviewer-added CLOs require a selected region in the Course Specification PDF."
+            )
+        matches = [
+            item for item in added_course_evidence
+            if item.included
+            and item.evidence_type == "clo"
+            and item.page_number == clo.page_number
+            and item.geometry == clo.geometry
+            and item.item_reference == clo.code
+        ]
+        if len(matches) != 1:
+            raise ExtractionReviewSourceFaithfulnessError(
+                "Each reviewer-added CLO requires exactly one traceable Course Specification evidence record."
+            )
+        matched_course_evidence_ids.add(matches[0].source_record_id)
+    for topic in added_topics:
+        if not topic.included:
+            continue
+        if topic.geometry is None:
+            raise ExtractionReviewSourceFaithfulnessError(
+                "Reviewer-added topics require a selected region in the Course Specification PDF."
+            )
+        reference = topic.code or topic.text[:100]
+        matches = [
+            item for item in added_course_evidence
+            if item.included
+            and item.evidence_type == "topic"
+            and item.page_number == topic.page_number
+            and item.geometry == topic.geometry
+            and item.item_reference == reference
+        ]
+        if len(matches) != 1:
+            raise ExtractionReviewSourceFaithfulnessError(
+                "Each reviewer-added topic requires exactly one traceable Course Specification evidence record."
+            )
+        matched_course_evidence_ids.add(matches[0].source_record_id)
+    unmatched_course_evidence = [
+        item for item in added_course_evidence
+        if item.included and item.source_record_id not in matched_course_evidence_ids
+    ]
+    if unmatched_course_evidence:
+        raise ExtractionReviewSourceFaithfulnessError(
+            "Reviewer-added Course Specification evidence must correspond to exactly one added CLO or topic."
+        )
+
+    added_options = [
+        item for item in candidate.question_options if item.source_record_id in added_option_ids
+    ]
+    for option in added_options:
+        question = candidate_questions_by_id.get(option.question_source_record_id)
+        if question is None or question.source_record_id not in added_question_ids:
+            raise ExtractionReviewSourceFaithfulnessError(
+                "Structured-template options may reference only imported questions."
+            )
+        if (
+            candidate.preparation_mode is not QuestionPreparationMode.STRUCTURED_TEMPLATE
+            and question.extraction_method != "pasted_review"
+        ):
+            raise ExtractionReviewSourceFaithfulnessError(
+                "Reviewer-added options are supported only for structured or pasted questions."
+            )
+        if question.question_type is not QuestionType.MULTIPLE_CHOICE:
+            raise ExtractionReviewSourceFaithfulnessError(
+                "Imported options require a multiple-choice question."
+            )
+        if option.page_number != question.page_number or option.geometry is not None:
+            raise ExtractionReviewSourceFaithfulnessError(
+                "Structured-template options must use the imported question page without "
+                "PDF geometry."
+            )
+
+    included_options_by_question: dict[UUID, list[ExtractionReviewQuestionOption]] = {}
+    for option in candidate.question_options:
+        if option.included:
+            included_options_by_question.setdefault(
+                option.question_source_record_id, []
+            ).append(option)
+    for question in added_questions:
+        if not question.included or question.extraction_method not in {
+            "structured_template",
+            "pasted_review",
+        }:
+            continue
+        included_options = included_options_by_question.get(question.source_record_id, [])
+        if question.question_type is QuestionType.MULTIPLE_CHOICE and len(included_options) < 2:
+            raise ExtractionReviewSourceFaithfulnessError(
+                "Each imported multiple-choice question requires at least two included options."
+            )
+
     _assert_immutable_fields(
         collection="Question",
         original_items=original.questions,
         candidate_items=candidate.questions,
         fields=(
             "source_record_id",
-            "parent_source_record_id",
             "page_number",
             "sequence",
             "extraction_confidence",
-            "geometry",
         ),
     )
     _assert_immutable_fields(
@@ -407,6 +806,63 @@ def validate_source_faithful_snapshot(
         ),
     )
     _assert_immutable_fields(
+        collection="Question option",
+        original_items=original.question_options,
+        candidate_items=candidate.question_options,
+        fields=(
+            "source_record_id",
+            "question_source_record_id",
+            "sequence",
+            "page_number",
+            "extraction_confidence",
+            "geometry",
+        ),
+    )
+    _assert_immutable_fields(
+        collection="Question blank",
+        original_items=original.question_blanks,
+        candidate_items=candidate.question_blanks,
+        fields=(
+            "source_record_id",
+            "question_source_record_id",
+            "blank_index",
+            "page_number",
+            "geometry",
+        ),
+    )
+    _assert_immutable_fields(
+        collection="Question source span",
+        original_items=original.question_source_spans,
+        candidate_items=candidate.question_source_spans,
+        fields=(
+            "source_record_id",
+            "question_source_record_id",
+            "option_source_record_id",
+            "provider",
+            "provider_version",
+            "source_line_id",
+            "original_text",
+            "page_number",
+            "geometry",
+            "extraction_confidence",
+            "extraction_method",
+        ),
+    )
+    _assert_immutable_fields(
+        collection="Extraction warning",
+        original_items=original.extraction_warnings,
+        candidate_items=candidate.extraction_warnings,
+        fields=(
+            "source_record_id",
+            "code",
+            "severity",
+            "page_number",
+            "source_line_ids",
+            "message",
+            "geometry",
+        ),
+    )
+    _assert_immutable_fields(
         collection="CLO",
         original_items=original.clos,
         candidate_items=candidate.clos,
@@ -418,7 +874,6 @@ def validate_source_faithful_snapshot(
         candidate_items=candidate.supporting_materials,
         fields=(
             "source_record_id",
-            "question_source_record_id",
             "source_document",
             "material_type",
             "page_number",
@@ -448,7 +903,6 @@ def validate_source_faithful_snapshot(
         candidate_items=candidate.document_references,
         fields=(
             "source_record_id",
-            "question_source_record_id",
             "source_document",
             "target_type",
             "page_number",
@@ -498,6 +952,52 @@ def _review_blockers(analysis: Analysis) -> list[str]:
     return blockers
 
 
+def _assessed_questions(snapshot: ExtractionReviewSnapshot) -> list[ExtractionReviewQuestion]:
+    container_ids = {
+        item.parent_source_record_id
+        for item in snapshot.questions
+        if item.parent_source_record_id is not None
+    }
+    return [
+        item
+        for item in snapshot.questions
+        if item.included and item.source_record_id not in container_ids
+    ]
+
+
+def _confirmation_policy(
+    snapshot: ExtractionReviewSnapshot,
+) -> ExtractionReviewConfirmationPolicy:
+    blockers: list[str] = []
+    if not _assessed_questions(snapshot):
+        if snapshot.preparation_mode is QuestionPreparationMode.STRUCTURED_TEMPLATE:
+            blockers.append(
+                "Import and review at least one structured question before confirmation."
+            )
+        elif snapshot.preparation_mode is QuestionPreparationMode.MANUAL_PDF:
+            blockers.append(
+                "Add and review at least one question region from the original exam PDF "
+                "before confirmation."
+            )
+        else:
+            blockers.append(
+                "No reliable exam questions were extracted. Add the visible question regions, "
+                "rerun extraction, or replace the exam file."
+            )
+    # Extraction Review confirms what the source PDF says; it does not repair
+    # exam-quality defects.  Confirmed arithmetic inconsistencies (declared
+    # total mismatches, parent/child mark mismatches, etc.) must flow into the
+    # downstream Marks & Structure rule so they can be reported as academic
+    # findings instead of preventing analysis.
+    #
+    # Extraction warnings remain audit/review guidance only and never require
+    # a hidden acknowledgement checkbox to continue.
+    return ExtractionReviewConfirmationPolicy(
+        blockers=tuple(blockers),
+        blocking_warning_ids=(),
+    )
+
+
 def _warnings(snapshot: ExtractionReviewSnapshot) -> list[ExtractionReviewWarning]:
     warnings: list[ExtractionReviewWarning] = []
     collection_specs: tuple[tuple[str, str, list[Any]], ...] = (
@@ -505,14 +1005,6 @@ def _warnings(snapshot: ExtractionReviewSnapshot) -> list[ExtractionReviewWarnin
         ("clos", "CLOs", snapshot.clos),
         ("topics", "topics", snapshot.topics),
         ("assessment_records", "assessment records", snapshot.assessment_records),
-        ("evidence", "evidence records", snapshot.evidence),
-        ("supporting_materials", "supporting materials", snapshot.supporting_materials),
-        (
-            "supporting_annotations",
-            "supporting annotations",
-            snapshot.supporting_annotations,
-        ),
-        ("document_references", "document references", snapshot.document_references),
     )
     for collection, label, items in collection_specs:
         included = [item for item in items if item.included]
@@ -538,7 +1030,11 @@ def _warnings(snapshot: ExtractionReviewSnapshot) -> list[ExtractionReviewWarnin
                 )
             )
         for item in included:
-            if item.extraction_confidence < LOW_EXTRACTION_CONFIDENCE:
+            extraction_confidence = getattr(item, "extraction_confidence", None)
+            if (
+                extraction_confidence is not None
+                and extraction_confidence < LOW_EXTRACTION_CONFIDENCE
+            ):
                 warnings.append(
                     ExtractionReviewWarning(
                         code="low_extraction_confidence",
@@ -551,6 +1047,30 @@ def _warnings(snapshot: ExtractionReviewSnapshot) -> list[ExtractionReviewWarnin
                         ),
                     )
                 )
+    child_parent_ids = {
+        item.parent_source_record_id
+        for item in snapshot.questions
+        if item.included and item.parent_source_record_id is not None
+    }
+    for question in snapshot.questions:
+        if (
+            question.included
+            and question.source_record_id not in child_parent_ids
+            and question.question_type not in PILOT_SUPPORTED_QUESTION_TYPES
+        ):
+            warnings.append(
+                ExtractionReviewWarning(
+                    code="unsupported_pilot_question_type",
+                    severity="warning",
+                    collection="questions",
+                    source_record_id=question.source_record_id,
+                    message=(
+                        "This question type is outside the controlled-pilot automatic scope. "
+                        "Use the PDF page shown on the left and review the editable question "
+                        "manually."
+                    ),
+                )
+            )
     for reference in snapshot.document_references:
         if reference.included and reference.resolution_status.value == "ambiguous":
             warnings.append(
@@ -571,8 +1091,10 @@ def _warnings(snapshot: ExtractionReviewSnapshot) -> list[ExtractionReviewWarnin
 def get_extraction_review(session: Session, analysis: Analysis) -> ExtractionReviewResponse:
     latest = latest_review_revision(session, analysis.id)
     original = _original_review_revision(session, analysis.id)
-    blockers = _review_blockers(analysis)
     presented = _presentation_snapshot(_snapshot(latest))
+    edit_blockers = _review_blockers(analysis)
+    policy = _confirmation_policy(presented)
+    blockers = [*edit_blockers, *policy.blockers]
     return ExtractionReviewResponse(
         analysis_id=analysis.id,
         revision_id=latest.id,
@@ -582,10 +1104,11 @@ def get_extraction_review(session: Session, analysis: Analysis) -> ExtractionRev
         original_snapshot=_snapshot(original),
         confirmed_revision_id=analysis.confirmed_review_id,
         is_confirmed=analysis.confirmed_review_id is not None,
-        can_edit=not blockers,
+        can_edit=not edit_blockers,
         can_confirm=not blockers,
         warnings=_warnings(presented),
         confirmation_blockers=blockers,
+        blocking_extraction_warning_ids=list(policy.blocking_warning_ids),
     )
 
 
@@ -625,6 +1148,8 @@ def append_extraction_review_revision(
             "A newer extraction-review revision was saved concurrently. Reload and try again."
         ) from exc
 
+    policy = _confirmation_policy(normalized)
+    confirmation_blockers = list(policy.blockers)
     return ExtractionReviewResponse(
         analysis_id=analysis.id,
         revision_id=revision.id,
@@ -635,9 +1160,10 @@ def append_extraction_review_revision(
         confirmed_revision_id=None,
         is_confirmed=False,
         can_edit=True,
-        can_confirm=True,
+        can_confirm=not confirmation_blockers,
         warnings=_warnings(normalized),
-        confirmation_blockers=[],
+        confirmation_blockers=confirmation_blockers,
+        blocking_extraction_warning_ids=list(policy.blocking_warning_ids),
     )
 
 
@@ -676,6 +1202,19 @@ def _require_exact_persisted_ids(
         )
 
 
+def _require_persisted_ids_preserved(
+    *,
+    collection: str,
+    rows: dict[UUID, Any],
+    expected_ids: set[UUID],
+) -> None:
+    missing = set(rows) - expected_ids
+    if missing:
+        raise ExtractionReviewSourceFaithfulnessError(
+            f"Persisted {collection} contain source records missing from the confirmed review."
+        )
+
+
 def _apply_confirmed_snapshot(
     session: Session, analysis_id: UUID, snapshot: ExtractionReviewSnapshot
 ) -> None:
@@ -683,11 +1222,31 @@ def _apply_confirmed_snapshot(
 
     Revision 1 remains the immutable machine-extraction audit record. The canonical source tables
     become the confirmed, included transcription consumed by deterministic and semantic stages.
-    No new source-row identity is ever created here.
+    Reviewer-added question rows are permitted only when they carry a selected PDF region and one
+    traceable exam question_text evidence record.
     """
 
     evidence_rows = _rows_by_id(session, Evidence, analysis_id)
     question_rows = _rows_by_id(session, Question, analysis_id)
+    option_rows = {
+        row.id: row
+        for row in session.execute(
+            select(QuestionOption).join(Question).where(Question.analysis_id == analysis_id)
+        ).scalars()
+    }
+    blank_rows = {
+        row.id: row
+        for row in session.execute(
+            select(QuestionBlank).join(Question).where(Question.analysis_id == analysis_id)
+        ).scalars()
+    }
+    source_span_rows = {
+        row.id: row
+        for row in session.execute(
+            select(QuestionSourceSpan).join(Question).where(Question.analysis_id == analysis_id)
+        ).scalars()
+    }
+    extraction_warning_rows = _rows_by_id(session, ExtractionWarning, analysis_id)
     clo_rows = _rows_by_id(session, Clo, analysis_id)
     topic_rows = _rows_by_id(session, Topic, analysis_id)
     record_rows = _rows_by_id(session, AssessmentRecord, analysis_id)
@@ -706,22 +1265,154 @@ def _apply_confirmed_snapshot(
         ).scalars()
     }
 
-    _require_exact_persisted_ids(
-        collection="evidence",
-        rows=evidence_rows,
-        expected_ids={item.source_record_id for item in snapshot.evidence},
-    )
-    _require_exact_persisted_ids(
+    snapshot_question_ids = {item.source_record_id for item in snapshot.questions}
+    snapshot_evidence_ids = {item.source_record_id for item in snapshot.evidence}
+    _require_persisted_ids_preserved(
         collection="questions",
         rows=question_rows,
-        expected_ids={item.source_record_id for item in snapshot.questions},
+        expected_ids=snapshot_question_ids,
+    )
+    _require_persisted_ids_preserved(
+        collection="evidence",
+        rows=evidence_rows,
+        expected_ids=snapshot_evidence_ids,
+    )
+
+    for question_item in snapshot.questions:
+        if question_item.source_record_id in question_rows or not question_item.included:
+            continue
+        question_row = Question(
+            id=question_item.source_record_id,
+            analysis_id=analysis_id,
+            parent_question_id=question_item.parent_source_record_id,
+            number_label=question_item.number_label,
+            question_text=question_item.question_text,
+            question_type=question_item.question_type,
+            instructions=question_item.instructions,
+            page_number=question_item.page_number,
+            marks=question_item.marks,
+            sequence=question_item.sequence,
+            confidence=question_item.extraction_confidence,
+            geometry=(
+                question_item.geometry.model_dump(mode="json")
+                if question_item.geometry is not None
+                else None
+            ),
+            extraction_method=question_item.extraction_method,
+            review_status=QuestionReviewStatus.REVIEWED,
+        )
+        session.add(question_row)
+        question_rows[question_item.source_record_id] = question_row
+    session.flush()
+
+    for evidence_item in snapshot.evidence:
+        if evidence_item.source_record_id in evidence_rows or not evidence_item.included:
+            continue
+        evidence_row = Evidence(
+            id=evidence_item.source_record_id,
+            analysis_id=analysis_id,
+            question_id=evidence_item.question_source_record_id,
+            source_document=evidence_item.source_document,
+            evidence_type=evidence_item.evidence_type,
+            page_number=evidence_item.page_number,
+            item_reference=evidence_item.item_reference,
+            extracted_text=evidence_item.extracted_text,
+            geometry=(
+                evidence_item.geometry.model_dump(mode="json")
+                if evidence_item.geometry is not None
+                else None
+            ),
+            confidence=evidence_item.extraction_confidence,
+        )
+        session.add(evidence_row)
+        evidence_rows[evidence_item.source_record_id] = evidence_row
+    session.flush()
+    for option_item in snapshot.question_options:
+        if option_item.source_record_id in option_rows or not option_item.included:
+            continue
+        option_row = QuestionOption(
+            id=option_item.source_record_id,
+            question_id=option_item.question_source_record_id,
+            option_label=option_item.option_label,
+            option_text=option_item.option_text,
+            sequence=option_item.sequence,
+            page_number=option_item.page_number,
+            confidence=option_item.extraction_confidence,
+            geometry=(
+                option_item.geometry.model_dump(mode="json")
+                if option_item.geometry is not None
+                else None
+            ),
+        )
+        session.add(option_row)
+        option_rows[option_item.source_record_id] = option_row
+    session.flush()
+    for clo_item in snapshot.clos:
+        if clo_item.source_record_id in clo_rows or not clo_item.included:
+            continue
+        clo_row = Clo(
+            id=clo_item.source_record_id,
+            analysis_id=analysis_id,
+            code=clo_item.code,
+            text=clo_item.text,
+            program_outcome_reference=clo_item.program_outcome_reference,
+            page_number=clo_item.page_number,
+            confidence=clo_item.extraction_confidence,
+            geometry=(
+                clo_item.geometry.model_dump(mode="json")
+                if clo_item.geometry is not None
+                else None
+            ),
+        )
+        session.add(clo_row)
+        clo_rows[clo_item.source_record_id] = clo_row
+    for topic_item in snapshot.topics:
+        if topic_item.source_record_id in topic_rows or not topic_item.included:
+            continue
+        topic_row = Topic(
+            id=topic_item.source_record_id,
+            analysis_id=analysis_id,
+            code=topic_item.code,
+            text=topic_item.text,
+            expected_hours=topic_item.expected_hours,
+            page_number=topic_item.page_number,
+            confidence=topic_item.extraction_confidence,
+            geometry=(
+                topic_item.geometry.model_dump(mode="json")
+                if topic_item.geometry is not None
+                else None
+            ),
+        )
+        session.add(topic_row)
+        topic_rows[topic_item.source_record_id] = topic_row
+    session.flush()
+
+    _require_exact_persisted_ids(
+        collection="question options",
+        rows=option_rows,
+        expected_ids={item.source_record_id for item in snapshot.question_options},
     )
     _require_exact_persisted_ids(
+        collection="question blanks",
+        rows=blank_rows,
+        expected_ids={item.source_record_id for item in snapshot.question_blanks},
+    )
+    _require_exact_persisted_ids(
+        collection="question source spans",
+        rows=source_span_rows,
+        expected_ids={item.source_record_id for item in snapshot.question_source_spans},
+    )
+    _require_exact_persisted_ids(
+        collection="extraction warnings",
+        rows=extraction_warning_rows,
+        expected_ids={item.source_record_id for item in snapshot.extraction_warnings},
+    )
+    _require_persisted_ids_preserved(
         collection="CLOs",
         rows=clo_rows,
         expected_ids={item.source_record_id for item in snapshot.clos},
     )
-    _require_exact_persisted_ids(
+    _require_persisted_ids_preserved(
         collection="topics",
         rows=topic_rows,
         expected_ids={item.source_record_id for item in snapshot.topics},
@@ -752,13 +1443,48 @@ def _apply_confirmed_snapshot(
         expected_ids={item.source_record_id for item in snapshot.reference_associations},
     )
 
+    excluded_reference_ids = {
+        item.source_record_id for item in snapshot.document_references if not item.included
+    }
+    excluded_material_ids = {
+        item.source_record_id for item in snapshot.supporting_materials if not item.included
+    }
+    excluded_question_ids = {
+        item.source_record_id for item in snapshot.questions if not item.included
+    }
+    for association_row in association_rows.values():
+        if (
+            association_row.reference_id in excluded_reference_ids
+            or association_row.target_material_id in excluded_material_ids
+            or association_row.target_question_id in excluded_question_ids
+        ):
+            # Delete explicitly before its target. Relying on ORM relationship
+            # synchronization would transiently NULL the polymorphic target and
+            # violate ck_reference_associations_one_target before the database's
+            # ON DELETE CASCADE can run.
+            session.delete(association_row)
+    session.flush()
+
     for evidence_item in snapshot.evidence:
-        evidence_row = evidence_rows[evidence_item.source_record_id]
+        evidence_row = evidence_rows.get(evidence_item.source_record_id)
+        if evidence_row is None:
+            # Reviewer-added evidence can be excluded before confirmation. It was never
+            # materialized, so there is no canonical row to delete.
+            if evidence_item.included:
+                raise ExtractionReviewSourceFaithfulnessError(
+                    "Included review evidence could not be materialized safely."
+                )
+            continue
         if not evidence_item.included:
             session.delete(evidence_row)
             continue
         evidence_row.item_reference = evidence_item.item_reference
         evidence_row.extracted_text = evidence_item.extracted_text
+        evidence_row.geometry = (
+            evidence_item.geometry.model_dump(mode="json")
+            if evidence_item.geometry is not None
+            else None
+        )
     session.flush()
 
     included_questions: list[ExtractionReviewQuestion] = []
@@ -770,9 +1496,39 @@ def _apply_confirmed_snapshot(
 
     for question_item in included_questions:
         question_row = question_rows[question_item.source_record_id]
+        question_row.parent_question_id = question_item.parent_source_record_id
         question_row.number_label = question_item.number_label
         question_row.question_text = question_item.question_text
         question_row.marks = question_item.marks
+        question_row.geometry = (
+            question_item.geometry.model_dump(mode="json")
+            if question_item.geometry is not None
+            else None
+        )
+        question_row.question_type = question_item.question_type
+        question_row.instructions = question_item.instructions
+        question_row.extraction_method = question_item.extraction_method
+        question_row.review_status = QuestionReviewStatus.REVIEWED
+
+    for option_item in snapshot.question_options:
+        option_row = option_rows[option_item.source_record_id]
+        if not option_item.included:
+            session.delete(option_row)
+            continue
+        option_row.option_label = option_item.option_label
+        option_row.option_text = option_item.option_text
+
+    for blank_item in snapshot.question_blanks:
+        blank_row = blank_rows[blank_item.source_record_id]
+        if not blank_item.included:
+            session.delete(blank_row)
+            continue
+        blank_row.source_text = blank_item.source_text
+
+    for warning_item in snapshot.extraction_warnings:
+        extraction_warning_rows[warning_item.source_record_id].resolved = warning_item.resolved
+
+    session.flush()
 
     questions_by_id = _record_map(snapshot.questions)
 
@@ -791,11 +1547,19 @@ def _apply_confirmed_snapshot(
         key=lambda value: (question_depth(value), value.sequence),
         reverse=True,
     ):
-        session.delete(question_rows[excluded_question.source_record_id])
+        question_row = question_rows.get(excluded_question.source_record_id)
+        if question_row is not None:
+            session.delete(question_row)
     session.flush()
 
     for clo_item in snapshot.clos:
-        clo_row = clo_rows[clo_item.source_record_id]
+        clo_row = clo_rows.get(clo_item.source_record_id)
+        if clo_row is None:
+            if clo_item.included:
+                raise ExtractionReviewSourceFaithfulnessError(
+                    "Included reviewer-added CLO could not be materialized safely."
+                )
+            continue
         if not clo_item.included:
             session.delete(clo_row)
             continue
@@ -804,7 +1568,13 @@ def _apply_confirmed_snapshot(
         clo_row.program_outcome_reference = clo_item.program_outcome_reference
 
     for topic_item in snapshot.topics:
-        topic_row = topic_rows[topic_item.source_record_id]
+        topic_row = topic_rows.get(topic_item.source_record_id)
+        if topic_row is None:
+            if topic_item.included:
+                raise ExtractionReviewSourceFaithfulnessError(
+                    "Included reviewer-added topic could not be materialized safely."
+                )
+            continue
         if not topic_item.included:
             session.delete(topic_row)
             continue
@@ -820,6 +1590,50 @@ def _apply_confirmed_snapshot(
         assessment_row.method = assessment_item.method
         assessment_row.activity = assessment_item.activity
         assessment_row.percentage = assessment_item.percentage
+        assessment_row.related_clo_codes = list(assessment_item.related_clo_codes)
+
+    session.flush()
+
+    # Structured extraction rows follow the same confirmation contract as
+    # questions/CLOs/topics above: revision 1 remains the immutable machine
+    # audit record, while the canonical tables become the reviewed,
+    # included transcription consumed by APIs, rules, previews, and reports.
+    # Delete references first so their association candidates are removed
+    # before a referenced material is deleted.
+    for reference_item in snapshot.document_references:
+        reference_row = reference_rows[reference_item.source_record_id]
+        if not reference_item.included:
+            session.delete(reference_row)
+            continue
+        reference_row.question_id = reference_item.question_source_record_id
+        reference_row.original_text = reference_item.original_text
+        reference_row.target_label = reference_item.target_label
+        reference_row.normalized_target_label = reference_item.normalized_target_label
+        reference_row.machine_resolution_status = reference_item.resolution_status
+
+    included_material_ids = {
+        item.source_record_id for item in snapshot.supporting_materials if item.included
+    }
+    for annotation_item in snapshot.supporting_annotations:
+        # An excluded material owns its annotations through delete-orphan;
+        # avoid scheduling the same child twice and let that cascade handle it.
+        material_id = annotation_item.material_source_record_id
+        if material_id is not None and material_id not in included_material_ids:
+            continue
+        annotation_row = annotation_rows[annotation_item.source_record_id]
+        if not annotation_item.included:
+            session.delete(annotation_row)
+            continue
+        annotation_row.original_text = annotation_item.original_text
+        annotation_row.normalized_label = annotation_item.normalized_label
+
+    for material_item in snapshot.supporting_materials:
+        material_row = material_rows[material_item.source_record_id]
+        if not material_item.included:
+            session.delete(material_row)
+            continue
+        material_row.question_id = material_item.question_source_record_id
+        material_row.source_text = material_item.source_text
 
     session.flush()
 
@@ -843,9 +1657,16 @@ def confirm_extraction_review(
             "Only the latest extraction-review revision can be confirmed."
         )
 
+    resolved_revision_snapshot = _resolve_deterministic_hierarchical_marks(
+        _snapshot(revision)
+    )
+    policy = _confirmation_policy(resolved_revision_snapshot)
+    if policy.blockers:
+        raise ExtractionReviewClosedError(policy.blockers[0])
+
     original = _original_review_revision(session, analysis.id)
     confirmed_snapshot = validate_source_faithful_snapshot(
-        _snapshot(revision),
+        resolved_revision_snapshot,
         _snapshot(original),
     )
     _apply_confirmed_snapshot(session, analysis.id, confirmed_snapshot)

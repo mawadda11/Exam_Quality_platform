@@ -155,3 +155,33 @@ describe('material relationship presentation', () => {
     expect(relationship.matchedMaterial?.material.id).toBe('nearby')
   })
 })
+
+it('treats a selected deictic geometry candidate as a resolved link', () => {
+  const materials = buildPhysicalMaterials([material('diagram', 6, 10)], [])
+  const contextualReference: DocumentReferenceResponse = {
+    ...reference('resolved', [
+      {
+        id: 'context',
+        target_material_id: 'diagram',
+        target_question_id: null,
+        review_revision_id: null,
+        basis: 'deictic_geometry',
+        confidence: 0.85,
+        proximity_distance: 10,
+        exact_label_match: false,
+        selected: true,
+        ambiguity_reason: null,
+      },
+    ]),
+    original_text: 'المخطط أدناه',
+    target_label: 'المخطط أدناه',
+    normalized_target_label: 'figure:unlabeled',
+    page_number: 6,
+  }
+
+  const relationship = buildMaterialRelationship(contextualReference, materials)
+
+  expect(relationship.result).toBe('linked')
+  expect(relationship.matchedMaterial?.material.id).toBe('diagram')
+  expect(relationship.contextCandidates).toHaveLength(1)
+})

@@ -10,7 +10,8 @@ Arabic, English, and mixed variants without inventing absent records.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+import unicodedata
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +64,15 @@ _TOPIC_EXPLICIT = re.compile(
     re.IGNORECASE,
 )
 _TOPIC_CODE = re.compile(rf"^(?:T|Topic)?\s*(?P<number>{_DIGITS})$", re.IGNORECASE)
+_TOPIC_INLINE_CODE = re.compile(
+    rf"(?<![A-Za-z0-9])(?:T|Topic)\s*(?P<number>{_DIGITS})(?![A-Za-z0-9-])",
+    re.IGNORECASE,
+)
+_CLO_INLINE_CODE = re.compile(
+    rf"(?<![A-Za-z0-9])CLO\s*(?P<number>{_DIGITS})(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+_PAGE_FOOTER = re.compile(r"\bpage\s+\d+\s+of\s+\d+\b", re.IGNORECASE)
 _HOURS_ONLY = re.compile(rf"^{_HOURS}$", re.IGNORECASE)
 
 _ASSESSMENT_FULL = re.compile(
@@ -82,6 +92,7 @@ _COMPACT_ASSESSMENT = re.compile(
 )
 _ASSESSMENT_ITEM = re.compile(rf"^(?P<method>.+?)\s+{_PERCENT}\s*$", re.IGNORECASE)
 _PERCENT_ONLY = re.compile(rf"^{_PERCENT}$", re.IGNORECASE)
+_ASSESSMENT_CLO_CODE = re.compile(r"\bCLO\s*([0-9٠-٩۰-۹]+)\b", re.IGNORECASE)
 
 _METADATA_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
@@ -115,8 +126,11 @@ _SECTION_ALIASES: dict[str, tuple[str, ...]] = {
         "course learning outcomes",
         "learning outcomes",
         "clo(s)",
+        "clos",
         "مخرجات تعلم المقرر",
         "مخرجات التعلم",
+        "نواتج تعلم المقرر",
+        "نواتج التعلم للمقرر",
         "نواتج التعلم",
     ),
     "topics": (
@@ -125,6 +139,7 @@ _SECTION_ALIASES: dict[str, tuple[str, ...]] = {
         "topics",
         "محتوى المقرر",
         "موضوعات المقرر",
+        "مواضيع المقرر",
         "الموضوعات",
     ),
     "assessment_records": (
@@ -134,6 +149,13 @@ _SECTION_ALIASES: dict[str, tuple[str, ...]] = {
         "طرق التقييم",
         "أساليب التقييم",
         "استراتيجيات التقويم",
+        "استراتيجيات التقييم",
+        "مواءمة التقييم",
+        "assessment alignment",
+        "alignment summary",
+        "assessment alignment summary",
+        "ملخص المواءمة",
+        "ملخص مواءمة التقييم",
         "التقييم",
     ),
 }
@@ -155,6 +177,7 @@ class CourseSpecificationLine:
     page_number: int
     confidence: float = 1.0
     geometry: Geometry | None = None
+    raw_text: str | None = None
     raw_cells: tuple[str, ...] = ()
     reading_cells: tuple[str, ...] = ()
     cell_roles: tuple[str | None, ...] = ()
@@ -194,6 +217,83 @@ def _canonical_po(value: str | None) -> str | None:
     return f"PLO{int(to_ascii_digits(digits.group()))}" if digits is not None else value.strip()
 
 
+_TRAILING_PLO = re.compile(
+    rf"^(?P<text>.+?)\s+(?:(?:Knowledge|Skills?|Values?|"
+    rf"المعارف?|المهارات?|القيم)\s+)?(?P<po>PLO\s*{_DIGITS})\s*$",
+    re.IGNORECASE,
+)
+_TRAILING_TOPIC_HOURS = re.compile(
+    rf"^(?P<text>.+?\D)\s+(?P<hours>{_NUMBER})\s*$",
+    re.IGNORECASE,
+)
+
+
+def _split_trailing_clo_metadata(value: str) -> tuple[str, str | None]:
+    """Separate a trailing domain/PLO token from the source-faithful CLO text.
+
+    Compact TP-153 tables sometimes collapse the description, domain and PLO
+    columns into one PDF text run (for example ``... constraints Knowledge
+    PLO1``). The PLO is structured metadata, not part of the learning-outcome
+    sentence. The source row remains preserved separately for audit.
+    """
+
+    compact = " ".join(value.split()).strip()
+    match = _TRAILING_PLO.match(compact)
+    if match is None:
+        return compact, None
+    text = match.group("text").rstrip(" -–—|,:;")
+    text = re.sub(r"(?:\band\b|\bو\b)\s*$", "", text, flags=re.IGNORECASE).rstrip(
+        " -–—|,:;"
+    )
+    return text, _canonical_po(match.group("po"))
+
+
+def _split_trailing_topic_hours(value: str) -> tuple[str, float | None]:
+    """Separate compact-table contact hours from topic text.
+
+    A bare trailing number is accepted only in a topic row and only within a
+    realistic course-hours range. This avoids stripping technical numbers from
+    ordinary free text while handling rows such as ``Normalization 6``.
+    """
+
+    compact = " ".join(value.split()).strip().lstrip("|:-–— ")
+    match = _TRAILING_TOPIC_HOURS.match(compact)
+    if match is None:
+        return compact, None
+    hours = parse_localized_number(match.group("hours"))
+    if hours <= 0 or hours > 60:
+        return compact, None
+    return match.group("text").rstrip(" -–—|,:;"), hours
+
+
+def _assessment_clo_codes(value: str | None) -> tuple[str, ...]:
+    if not value:
+        return ()
+    normalized = normalize_arabic_for_matching(value)
+    found: list[str] = []
+
+    # Expand explicit inclusive ranges such as CLO1-CLO4 or CLO1-4.
+    range_pattern = re.compile(
+        rf"\bCLO\s*(?P<start>{_DIGITS})\s*[-–—]\s*(?:CLO\s*)?(?P<end>{_DIGITS})\b",
+        re.IGNORECASE,
+    )
+    for match in range_pattern.finditer(normalized):
+        start = int(to_ascii_digits(match.group("start")))
+        end = int(to_ascii_digits(match.group("end")))
+        step = 1 if end >= start else -1
+        if abs(end - start) <= 50:
+            for number in range(start, end + step, step):
+                code = f"CLO{number}"
+                if code not in found:
+                    found.append(code)
+
+    for match in _ASSESSMENT_CLO_CODE.finditer(normalized):
+        code = _canonical_code("CLO", match.group(1))
+        if code not in found:
+            found.append(code)
+    return tuple(found)
+
+
 def _cells(text: str) -> list[str]:
     if "|" not in text and "\t" not in text and re.search(r"\s{2,}", text) is None:
         return []
@@ -201,16 +301,38 @@ def _cells(text: str) -> list[str]:
 
 
 def _section_for_header(text: str) -> str | None:
-    normalized = normalize_arabic_for_matching(text).casefold().strip(" :-–—")
+    normalized = normalize_arabic_for_matching(text).casefold().strip(" :-–—()")
     for section, aliases in _SECTION_ALIASES.items():
-        if any(normalized == alias.casefold() for alias in aliases):
-            return section
+        for alias in aliases:
+            candidate = normalize_arabic_for_matching(alias).casefold().strip(" :-–—()")
+            if normalized == candidate:
+                return section
+            # Bilingual headings commonly contain the same heading twice, e.g.
+            # "مخرجات تعلم المقرر - Course Learning Outcomes".  Accept the
+            # known heading at a boundary without treating arbitrary body text
+            # that merely mentions a keyword as a section break.
+            if normalized.startswith(candidate + " ") or normalized.endswith(" " + candidate):
+                return section
     return None
 
 
 def _header_role(value: str) -> str | None:
     normalized = normalize_arabic_for_matching(value).casefold()
-    if "assessment activity" in normalized or "نشاط التقييم" in normalized:
+    clo_header = _CLO_CODE.fullmatch(normalized.strip())
+    if clo_header is not None:
+        return f"clo:{_canonical_code('CLO', clo_header.group('number'))}"
+    if (
+        "assessment activity" in normalized
+        or "نشاط التقييم" in normalized
+        or normalized.strip(" /:-") in {
+            "assessment",
+            "assessment method",
+            "method",
+            "التقييم",
+            "طريقة التقييم",
+            "أسلوب التقييم",
+        }
+    ):
         return "method"
     if "weight" in normalized or "الوزن" in normalized or "النسبة" in normalized:
         return "percentage"
@@ -239,7 +361,11 @@ def _table_section(roles: tuple[str | None, ...]) -> str | None:
         return "clos"
     if {"topic", "hours", "week"}.issubset(role_set):
         return "topics"
-    if {"method", "percentage", "week"}.issubset(role_set):
+    if (
+        {"method", "percentage", "week"}.issubset(role_set)
+        or {"method", "related_clos"}.issubset(role_set)
+        or ("method" in role_set and any(role.startswith("clo:") for role in role_set))
+    ):
         return "assessment_records"
     return None
 
@@ -253,6 +379,48 @@ def _compact_cell(value: str) -> str:
     return re.sub(r"([\u0600-\u06ff])\s+ة\b", r"\1ة", compact)
 
 
+def _alignment_cell_selected(value: str) -> bool:
+    """Accept only explicit positive alignment markers.
+
+    Footer/header text must never become a positive CLO mapping merely because
+    the extracted cell is non-empty.
+    """
+    normalized = normalize_arabic_for_matching(value).casefold().strip()
+    if not normalized:
+        return False
+    compact = re.sub(r"\s+", "", normalized)
+    return compact in {
+        "✓", "✔", "☑", "x", "yes", "y", "true", "1", "نعم",
+    }
+
+
+def _clean_structured_assessment_method(reading: str, raw: str) -> str:
+    """Remove page/footer fragments accidentally merged into a method cell."""
+    raw_lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    kept: list[str] = []
+    skip_numeric_after_page_of = False
+    for raw_line in raw_lines:
+        normalized = normalize_arabic_for_matching(raw_line).casefold().strip()
+        if normalized in {"page of", "page"}:
+            skip_numeric_after_page_of = True
+            continue
+        if skip_numeric_after_page_of and re.fullmatch(
+            r"[0-9٠-٩۰-۹]+\s+[0-9٠-٩۰-۹]+", normalized
+        ):
+            skip_numeric_after_page_of = False
+            continue
+        skip_numeric_after_page_of = False
+        if _looks_like_page_footer(raw_line):
+            continue
+        kept.append(raw_line)
+    candidate = " ".join(kept).strip()
+    if candidate:
+        return _compact_cell(candidate)
+    cleaned = _PAGE_FOOTER.sub("", reading)
+    cleaned = re.sub(r"\bpage\s+of\b", "", cleaned, flags=re.IGNORECASE)
+    return _compact_cell(cleaned)
+
+
 def _restore_ltr_runs(reading: str, raw: str) -> str:
     restored = reading
     for raw_line in raw.splitlines():
@@ -263,6 +431,60 @@ def _restore_ltr_runs(reading: str, raw: str) -> str:
         reversed_value = " ".join(reversed(tokens))
         restored = restored.replace(reversed_value, original)
     return restored
+
+
+def _looks_like_page_footer(text: str) -> bool:
+    normalized = normalize_arabic_for_matching(text)
+    return _PAGE_FOOTER.search(normalized) is not None
+
+
+def _looks_like_table_header(text: str) -> bool:
+    normalized = normalize_arabic_for_matching(text).casefold()
+    header_markers = (
+        "clo النص",
+        "clo code",
+        "code description",
+        "الرمز ناتج التعلم",
+        "الرمز مخرج التعلم",
+        "topic الموضوع",
+        "topic code",
+        "الرمز الموضوع",
+        "أداة التقييم",
+        "assessment method",
+    )
+    return any(marker in normalized for marker in header_markers)
+
+
+def _display_text(value: str) -> str:
+    """Normalize compatibility glyphs for canonical reading text only.
+
+    The immutable PDF source remains available in ``raw_text``/evidence.  NFKC
+    is important for Arabic presentation-form fonts used by some exported
+    Course Specifications; it converts shaped glyphs into ordinary Unicode so
+    matching and browser display remain stable.
+    """
+
+    return unicodedata.normalize("NFKC", value).strip()
+
+
+def _union_geometry(first: Geometry | None, second: Geometry | None) -> Geometry | None:
+    if first is None:
+        return second
+    if second is None:
+        return first
+    return Geometry(
+        x0=min(first.x0, second.x0),
+        top=min(first.top, second.top),
+        x1=max(first.x1, second.x1),
+        bottom=max(first.bottom, second.bottom),
+    )
+
+
+def _append_source_text(existing: str | None, line: CourseSpecificationLine) -> str | None:
+    source = line.raw_text or line.text
+    if not source:
+        return existing
+    return f"{existing}\n{source}" if existing else source
 
 
 def _scaled_confidence(line: CourseSpecificationLine, parser_confidence: float) -> float:
@@ -298,17 +520,35 @@ class AdaptiveCourseSpecificationExtractor:
                 text = page.extract_text() or ""
                 quality = assess_text_quality(text)
                 if quality.usable:
-                    page_lines = [line.strip() for line in text.splitlines() if line.strip()]
-                    for line in page_lines:
-                        geometry = _geometry_for_text(page, line)
-                        source_lines.append(
-                            CourseSpecificationLine(
-                                text=line,
-                                page_number=page_number,
-                                confidence=_direct_confidence(geometry),
-                                geometry=geometry,
+                    # Use geometry-derived logical reading order for parsing.
+                    # ``page.extract_text`` remains only a quality signal/raw
+                    # audit source; using it directly regresses Arabic and
+                    # mixed RTL/LTR Course Specifications.
+                    layout_lines = extract_layout_lines(page, page_number=page_number)
+                    if layout_lines:
+                        for layout_line in layout_lines:
+                            source_lines.append(
+                                CourseSpecificationLine(
+                                    text=_display_text(layout_line.reading_text),
+                                    raw_text=layout_line.raw_text,
+                                    page_number=page_number,
+                                    confidence=_FULL_CONFIDENCE,
+                                    geometry=layout_line.geometry,
+                                )
                             )
-                        )
+                    else:
+                        page_lines = [line.strip() for line in text.splitlines() if line.strip()]
+                        for line in page_lines:
+                            geometry = _geometry_for_text(page, line)
+                            source_lines.append(
+                                CourseSpecificationLine(
+                                    text=_display_text(line),
+                                    raw_text=line,
+                                    page_number=page_number,
+                                    confidence=_direct_confidence(geometry),
+                                    geometry=geometry,
+                                )
+                            )
                     try:
                         tables = page.find_tables()
                     except Exception:
@@ -351,7 +591,7 @@ class AdaptiveCourseSpecificationExtractor:
                                 reading = "\n".join(
                                     line.reading_text for line in cell_lines
                                 ).strip() or _compact_cell(raw_cell)
-                                reading_cells.append(_restore_ltr_runs(reading, raw_cell))
+                                reading_cells.append(_display_text(_restore_ltr_runs(reading, raw_cell)))
                             x0, top, x1, bottom = row_object.bbox
                             row_geometry = Geometry(
                                 float(x0),
@@ -371,7 +611,10 @@ class AdaptiveCourseSpecificationExtractor:
                                     table_section=table_section,
                                 )
                             )
-                    detection = detect_text_language(text)
+                    detection = detect_text_language(
+                        "\n".join(item.text for item in source_lines if item.page_number == page_number)
+                        or text
+                    )
                     diagnostics.append(
                         PageExtractionDiagnostic(
                             page_number=page_number,
@@ -447,6 +690,9 @@ class AdaptiveCourseSpecificationExtractor:
                 header_seen = True
                 continue
 
+            # Structured rows are authoritative even when pdfplumber merges a
+            # page footer into the last table row. Parse the row first and
+            # sanitize individual cells instead of discarding the whole row.
             if line.table_section is not None:
                 table_seen = True
                 if line.table_section == "clos":
@@ -461,6 +707,10 @@ class AdaptiveCourseSpecificationExtractor:
                     assessment = self._parse_structured_assessment(line)
                     if assessment is not None:
                         assessment_records.append(assessment)
+                continue
+
+            if _looks_like_page_footer(source):
+                current_section = None
                 continue
 
             metadata = self._parse_metadata(line)
@@ -492,6 +742,33 @@ class AdaptiveCourseSpecificationExtractor:
             if records:
                 assessment_records.extend(records)
                 compact_seen = compact_seen or current_section != "assessment_records"
+                continue
+
+            # Some Course Specifications wrap a CLO/topic description onto a
+            # following visual line without repeating the code.  Preserve the
+            # continuation only while we remain in that section and only when
+            # the line is not a known column/header row.
+            if current_section == "clos" and clos and not _looks_like_table_header(source):
+                previous = clos[-1]
+                if previous.page_number == line.page_number:
+                    clos[-1] = replace(
+                        previous,
+                        text=f"{previous.text.rstrip()} {source.lstrip()}".strip(),
+                        confidence=min(previous.confidence, _scaled_confidence(line, 0.95)),
+                        geometry=_union_geometry(previous.geometry, line.geometry),
+                        source_text=previous.source_text,
+                    )
+                    continue
+            if current_section == "topics" and topics and not _looks_like_table_header(source):
+                previous = topics[-1]
+                if previous.page_number == line.page_number:
+                    topics[-1] = replace(
+                        previous,
+                        text=f"{previous.text.rstrip()} {source.lstrip()}".strip(),
+                        confidence=min(previous.confidence, _scaled_confidence(line, 0.95)),
+                        geometry=_union_geometry(previous.geometry, line.geometry),
+                        source_text=previous.source_text,
+                    )
 
         review_warnings: list[CourseSpecificationWarning] = []
         review_warnings.extend(self._duplicate_warnings(clos, "CLO"))
@@ -612,10 +889,11 @@ class AdaptiveCourseSpecificationExtractor:
             code_match = re.match(rf"^(?P<number>{_DIGITS})$", cells[0])
         if code_match is not None and len(cells) >= 2:
             po = next((cell for cell in cells[2:] if _PO_CODE.match(cell)), None)
+            clean_text, trailing_po = _split_trailing_clo_metadata(cells[1])
             return ExtractedClo(
                 code=_canonical_code("CLO", code_match.group("number")),
-                text=cells[1],
-                program_outcome_reference=_canonical_po(po),
+                text=clean_text,
+                program_outcome_reference=_canonical_po(po) or trailing_po,
                 page_number=line.page_number,
                 confidence=_scaled_confidence(line, 0.9),
                 geometry=line.geometry,
@@ -623,14 +901,31 @@ class AdaptiveCourseSpecificationExtractor:
 
         explicit = _CLO_EXPLICIT.match(line.text.strip())
         if explicit is not None:
+            clean_text, trailing_po = _split_trailing_clo_metadata(explicit.group("text"))
             return ExtractedClo(
                 code=_canonical_code("CLO", explicit.group("number")),
-                text=explicit.group("text").strip(),
-                program_outcome_reference=_canonical_po(explicit.group("po")),
+                text=clean_text,
+                program_outcome_reference=_canonical_po(explicit.group("po")) or trailing_po,
                 page_number=line.page_number,
                 confidence=_scaled_confidence(line, 1.0),
                 geometry=line.geometry,
             )
+
+        if current_section == "clos":
+            inline_codes = list(_CLO_INLINE_CODE.finditer(line.text))
+            if len(inline_codes) == 1 and not _looks_like_table_header(line.text):
+                match = inline_codes[0]
+                text = (line.text[: match.start()] + " " + line.text[match.end() :]).strip(" -–—|:;,. ")
+                if text:
+                    clean_text, trailing_po = _split_trailing_clo_metadata(text)
+                    return ExtractedClo(
+                        code=_canonical_code("CLO", match.group("number")),
+                        text=clean_text,
+                        program_outcome_reference=trailing_po,
+                        page_number=line.page_number,
+                        confidence=_scaled_confidence(line, 0.95),
+                        geometry=line.geometry,
+                    )
 
         return None
 
@@ -649,10 +944,11 @@ class AdaptiveCourseSpecificationExtractor:
         description = _compact_cell(cells.get("description", ("", ""))[0])
         if code_match is None or not description:
             return None
+        clean_text, trailing_po = _split_trailing_clo_metadata(description)
         return ExtractedClo(
             code=_canonical_code("CLO", code_match.group("number")),
-            text=description,
-            program_outcome_reference=None,
+            text=clean_text,
+            program_outcome_reference=trailing_po,
             page_number=line.page_number,
             confidence=_scaled_confidence(line, 0.98),
             geometry=line.geometry,
@@ -662,17 +958,25 @@ class AdaptiveCourseSpecificationExtractor:
 
     def _parse_structured_topic(self, line: CourseSpecificationLine) -> ExtractedTopic | None:
         cells = self._role_cells(line)
+        code_value = _compact_cell(cells.get("code", ("", ""))[0])
+        code_match = _TOPIC_CODE.match(code_value)
         text = _compact_cell(cells.get("topic", ("", ""))[0])
         hours_value = normalize_arabic_for_matching(cells.get("hours", ("", ""))[0])
         hours_match = re.search(_NUMBER, hours_value)
         if not text:
             return None
+        clean_text, trailing_hours = _split_trailing_topic_hours(text)
+        explicit_hours = (
+            parse_localized_number(hours_match.group()) if hours_match is not None else None
+        )
         return ExtractedTopic(
-            code=None,
-            text=text,
-            expected_hours=(
-                parse_localized_number(hours_match.group()) if hours_match is not None else None
+            code=(
+                _canonical_code("T", code_match.group("number"))
+                if code_match is not None
+                else None
             ),
+            text=clean_text,
+            expected_hours=explicit_hours if explicit_hours is not None else trailing_hours,
             page_number=line.page_number,
             confidence=_scaled_confidence(line, 0.98),
             geometry=line.geometry,
@@ -684,8 +988,18 @@ class AdaptiveCourseSpecificationExtractor:
         self, line: CourseSpecificationLine
     ) -> ExtractedAssessmentRecord | None:
         cells = self._role_cells(line)
-        method = _compact_cell(cells.get("method", ("", ""))[0])
+        method_reading, method_raw = cells.get("method", ("", ""))
+        method = _clean_structured_assessment_method(method_reading, method_raw)
         notes = _compact_cell(cells.get("notes", ("", ""))[0])
+        related_clos = _compact_cell(cells.get("related_clos", ("", ""))[0])
+        matrix_clos = [
+            role.split(":", 1)[1]
+            for role, (reading, raw) in cells.items()
+            if role.startswith("clo:") and _alignment_cell_selected(reading or raw)
+        ]
+        related_clo_codes = tuple(
+            dict.fromkeys([*_assessment_clo_codes(related_clos or notes), *matrix_clos])
+        )
         percentage_value = normalize_arabic_for_matching(cells.get("percentage", ("", ""))[0])
         percentage_match = re.search(_NUMBER, percentage_value)
         if not method:
@@ -703,6 +1017,7 @@ class AdaptiveCourseSpecificationExtractor:
             geometry=line.geometry,
             source_text=_row_source_text(line.raw_cells),
             extraction_method=line.extraction_method,
+            related_clo_codes=related_clo_codes,
         )
 
     def _parse_topic(
@@ -720,14 +1035,32 @@ class AdaptiveCourseSpecificationExtractor:
                 # The non-greedy text may still include the separator when a
                 # PDF text layer uses unusual spaces; remove only a trailing one.
                 text = text.rstrip(" -–—|")
+            clean_text, trailing_hours = _split_trailing_topic_hours(text)
+            explicit_hours = parse_localized_number(hours) if hours else None
             return ExtractedTopic(
                 code=_canonical_code("T", number),
-                text=text,
-                expected_hours=parse_localized_number(hours) if hours else None,
+                text=clean_text,
+                expected_hours=explicit_hours if explicit_hours is not None else trailing_hours,
                 page_number=line.page_number,
                 confidence=_scaled_confidence(line, 1.0),
                 geometry=line.geometry,
             )
+
+        if current_section == "topics" and not _looks_like_table_header(line.text):
+            inline_codes = list(_TOPIC_INLINE_CODE.finditer(line.text))
+            if len(inline_codes) == 1:
+                match = inline_codes[0]
+                text = (line.text[: match.start()] + " " + line.text[match.end() :]).strip(" -–—|:;,. ")
+                if text:
+                    clean_text, trailing_hours = _split_trailing_topic_hours(text)
+                    return ExtractedTopic(
+                        code=_canonical_code("T", match.group("number")),
+                        text=clean_text,
+                        expected_hours=trailing_hours,
+                        page_number=line.page_number,
+                        confidence=_scaled_confidence(line, 0.95),
+                        geometry=line.geometry,
+                    )
 
         if current_section != "topics" or len(cells) < 2:
             return None
@@ -739,10 +1072,12 @@ class AdaptiveCourseSpecificationExtractor:
             None,
         )
         hours = hours_match.group("hours") if hours_match is not None else None
+        clean_text, trailing_hours = _split_trailing_topic_hours(cells[1])
+        explicit_hours = parse_localized_number(hours) if hours else None
         return ExtractedTopic(
             code=_canonical_code("T", code_match.group("number")),
-            text=cells[1],
-            expected_hours=parse_localized_number(hours) if hours else None,
+            text=clean_text,
+            expected_hours=explicit_hours if explicit_hours is not None else trailing_hours,
             page_number=line.page_number,
             confidence=_scaled_confidence(line, 0.85),
             geometry=line.geometry,
@@ -780,6 +1115,33 @@ class AdaptiveCourseSpecificationExtractor:
                     geometry=line.geometry,
                 )
             ]
+
+        if current_section == "assessment_records":
+            inline_clos = _assessment_clo_codes(source)
+            if inline_clos:
+                method = _ASSESSMENT_CLO_CODE.sub("", source)
+                method = re.sub(r"[\s,،;|:/\-–—]+", " ", method).strip()
+                header_name = normalize_arabic_for_matching(method).casefold().strip()
+                if header_name in {
+                    "assessment", "assessments", "assessment activity",
+                    "assessment method", "method", "التقييم", "التقويم",
+                    "نشاط التقييم", "طريقة التقييم", "أسلوب التقييم",
+                }:
+                    return []
+                if method:
+                    return [
+                        ExtractedAssessmentRecord(
+                            method=method,
+                            activity=None,
+                            percentage=None,
+                            page_number=line.page_number,
+                            confidence=_scaled_confidence(line, 0.9),
+                            geometry=line.geometry,
+                            source_text=line.raw_text or line.text,
+                            extraction_method=line.extraction_method,
+                            related_clo_codes=inline_clos,
+                        )
+                    ]
 
         compact = _COMPACT_ASSESSMENT.match(source)
         if compact is not None:
@@ -835,22 +1197,133 @@ class AdaptiveCourseSpecificationExtractor:
 
     @staticmethod
     def _dedupe_clos(records: list[ExtractedClo]) -> list[ExtractedClo]:
+        """Keep the most source-faithful view when multiple parsers see one CLO.
+
+        Layout text and a detected table can describe the same row.  A slightly
+        higher line confidence must not beat a structured candidate that keeps
+        the complete raw source row, otherwise wrapped bilingual text can absorb
+        neighbouring page text and lose the reviewer-copy provenance.
+        """
+
+        def rank(record: ExtractedClo) -> tuple[bool, bool, bool, float, int]:
+            return (
+                bool(record.source_text),
+                bool(record.source_text and "\n" in record.source_text),
+                record.geometry is not None,
+                record.confidence,
+                len(record.text.strip()),
+            )
+
         by_code: dict[str, ExtractedClo] = {}
         for record in records:
             current = by_code.get(record.code)
-            if current is None or record.confidence > current.confidence:
+            if current is None or rank(record) > rank(current):
                 by_code[record.code] = record
         return list(by_code.values())
 
     @staticmethod
     def _dedupe_topics(records: list[ExtractedTopic]) -> list[ExtractedTopic]:
-        by_key: dict[str, ExtractedTopic] = {}
+        """Merge duplicate parser/recovery views of the same source topic.
+
+        A coded table row (``T2``) and an uncoded recovery of that exact row
+        used to receive unrelated keys (code vs. text) and both reached review.
+        Deduplication now uses source identity first and preserves conflicting
+        explicit codes rather than silently collapsing genuinely distinct rows.
+        """
+
+        def normalized_text(record: ExtractedTopic) -> str:
+            return " ".join(
+                normalize_arabic_for_matching(record.text).casefold().split()
+            )
+
+        def same_source(left: ExtractedTopic, right: ExtractedTopic) -> bool:
+            left_code = left.code.casefold() if left.code else None
+            right_code = right.code.casefold() if right.code else None
+            if left_code and right_code and left_code != right_code:
+                return False
+            if normalized_text(left) == normalized_text(right):
+                return True
+            if (
+                left.page_number != right.page_number
+                or left.geometry is None
+                or right.geometry is None
+            ):
+                return False
+            left_center = (
+                (left.geometry.x0 + left.geometry.x1) / 2,
+                (left.geometry.top + left.geometry.bottom) / 2,
+            )
+            right_center = (
+                (right.geometry.x0 + right.geometry.x1) / 2,
+                (right.geometry.top + right.geometry.bottom) / 2,
+            )
+            same_region = (
+                abs(left_center[0] - right_center[0]) <= 24
+                and abs(left_center[1] - right_center[1]) <= 18
+            )
+            if not same_region:
+                return False
+            left_text = normalized_text(left)
+            right_text = normalized_text(right)
+            return bool(
+                left_text
+                and right_text
+                and (left_text in right_text or right_text in left_text)
+            )
+
+        def preferred(left: ExtractedTopic, right: ExtractedTopic) -> ExtractedTopic:
+            ranked = sorted(
+                (left, right),
+                key=lambda item: (
+                    bool(item.source_text),
+                    item.code is not None,
+                    item.expected_hours is not None,
+                    item.geometry is not None,
+                    item.confidence,
+                    len(item.text.strip()),
+                ),
+                reverse=True,
+            )
+            best = ranked[0]
+            other = ranked[1]
+            return replace(
+                best,
+                code=best.code or other.code,
+                expected_hours=(
+                    best.expected_hours
+                    if best.expected_hours is not None
+                    else other.expected_hours
+                ),
+                source_text=best.source_text or other.source_text,
+            )
+
+        merged: list[ExtractedTopic] = []
         for record in records:
-            key = record.code or normalize_arabic_for_matching(record.text).casefold()
-            current = by_key.get(key)
-            if current is None or record.confidence > current.confidence:
-                by_key[key] = record
-        return list(by_key.values())
+            duplicate_index = next(
+                (index for index, current in enumerate(merged) if same_source(current, record)),
+                None,
+            )
+            if duplicate_index is None:
+                merged.append(record)
+                continue
+            merged[duplicate_index] = preferred(merged[duplicate_index], record)
+
+        # A second exact-code pass handles duplicate rows extracted through two
+        # table paths even when one representation contains harmless extra text.
+        by_code: dict[str, int] = {}
+        final: list[ExtractedTopic] = []
+        for record in merged:
+            if not record.code:
+                final.append(record)
+                continue
+            key = record.code.casefold()
+            existing_index = by_code.get(key)
+            if existing_index is None:
+                by_code[key] = len(final)
+                final.append(record)
+            else:
+                final[existing_index] = preferred(final[existing_index], record)
+        return final
 
     @staticmethod
     def _dedupe_assessments(
@@ -860,8 +1333,18 @@ class AdaptiveCourseSpecificationExtractor:
         for record in records:
             key = normalize_arabic_for_matching(record.method).casefold()
             current = by_key.get(key)
-            if current is None or record.confidence > current.confidence:
+            if current is None:
                 by_key[key] = record
+                continue
+            preferred = record if record.confidence > current.confidence else current
+            other = current if preferred is record else record
+            by_key[key] = replace(
+                preferred,
+                activity=preferred.activity or other.activity,
+                percentage=preferred.percentage if preferred.percentage is not None else other.percentage,
+                source_text=preferred.source_text or other.source_text,
+                related_clo_codes=tuple(dict.fromkeys([*current.related_clo_codes, *record.related_clo_codes])),
+            )
         return list(by_key.values())
 
     @staticmethod

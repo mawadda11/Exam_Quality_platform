@@ -96,3 +96,14 @@ def test_tesseract_language_resolution_prefers_arabic_and_english_but_falls_back
     assert resolve_tesseract_languages(available=("eng", "ara", "osd")) == "ara+eng"
     assert resolve_tesseract_languages(available=("eng", "osd")) == "eng"
     assert resolve_tesseract_languages(available=("osd",)) == ""
+
+
+def test_mixed_rtl_hierarchical_question_marker_is_classified() -> None:
+    item = classify_line(
+        "1.2 Q أي صيغة تُستخدم غالبًا لتبادل البيانات مع REST API؟ [1 درجة]",
+        "Q1",
+    )
+
+    assert item.kind is LineKind.SUBQUESTION
+    assert item.number_label == "Q1.2"
+    assert item.marks is not None and item.marks.value == 1.0

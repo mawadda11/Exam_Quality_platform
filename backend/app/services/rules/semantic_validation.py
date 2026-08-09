@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from uuid import UUID
 
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -31,6 +32,45 @@ from app.services.rules.semantic_types import (
 
 class SemanticOutputValidationError(RuntimeError):
     """Invalid model output is never released as an academic finding."""
+
+
+_RELATIONSHIP_ITEM_RULES = frozenset({"RULE001", "RULE007"})
+
+
+def _normalize_relationship_item_statuses(
+    items: tuple[SemanticItemJudgment, ...],
+    *,
+    rule_id: str,
+) -> tuple[tuple[SemanticItemJudgment, ...], bool]:
+    """Keep individual mapping judgments simple while preserving aggregate partial results.
+
+    For question-to-CLO and question-to-topic mapping, an individual relationship is either
+    supported, unsupported, or genuinely unverifiable. ``Partially Satisfied`` remains a valid
+    aggregate finding status when a set of questions contains mixed outcomes, but it is not
+    released for a single mapping row. A provider-supplied partial relationship that cites a
+    controlled target is treated as a supported relationship; malformed partial judgments without
+    a target are handled earlier by the relationship-required validation gate.
+    """
+
+    if rule_id not in _RELATIONSHIP_ITEM_RULES:
+        return items, False
+
+    changed = False
+    normalized: list[SemanticItemJudgment] = []
+    for item in items:
+        if item.status is AcademicStatus.PARTIALLY_SATISFIED and item.target_evidence_ids:
+            changed = True
+            normalized.append(
+                item.model_copy(
+                    update={
+                        "status": AcademicStatus.SATISFIED,
+                        "reasoning": item.reasoning,
+                    }
+                )
+            )
+            continue
+        normalized.append(item)
+    return tuple(normalized), changed
 
 
 def semantic_output_schema() -> dict[str, object]:
@@ -248,38 +288,56 @@ def validate_semantic_output(
     if output.kb_version != context.kb_version:
         raise SemanticOutputValidationError("Knowledge-base version does not match.")
 
-    output_ids = set(output.evidence_ids)
-    if not output_ids:
-        raise SemanticOutputValidationError("Semantic findings require at least one evidence ID.")
-    if not output_ids.issubset(context.allowed_evidence_ids):
-        raise SemanticOutputValidationError("Provider output cites evidence outside its context.")
+    items = tuple(
+        item.model_copy(
+            update={
+                "status": AcademicStatus.NOT_VERIFIED,
+                "reasoning": (
+                    "Not verified because the provider returned a positive "
+                    "relationship without a controlled target."
+                ),
+            }
+        )
+        if (
+            context.relationship_required
+            and item.status
+            in (
+                AcademicStatus.SATISFIED,
+                AcademicStatus.PARTIALLY_SATISFIED,
+            )
+            and not item.target_evidence_ids
+        )
+        else item
+        for item in output.items
+    )
 
-    item_ids: set[object] = set()
-    for item in output.items:
+    items, relationship_status_normalized = _normalize_relationship_item_statuses(
+        items, rule_id=spec.identifier.rule_id
+    )
+
+    item_ids: set[UUID] = set()
+    for item in items:
         item_ids.add(item.source_evidence_id)
         target_ids = set(item.target_evidence_ids)
         if not target_ids.issubset(context.allowed_target_evidence_ids):
             raise SemanticOutputValidationError(
                 "Provider output cites a target outside the governed target set."
             )
-        if (
-            context.relationship_required
-            and item.status in (AcademicStatus.SATISFIED, AcademicStatus.PARTIALLY_SATISFIED)
-            and not target_ids
-        ):
-            raise SemanticOutputValidationError(
-                "A positive semantic relationship requires at least one controlled target."
-            )
         item_ids.update(target_ids)
-    if output_ids != item_ids:
-        raise SemanticOutputValidationError(
-            "evidence_ids must exactly match the evidence cited by item judgments."
-        )
+
+    if not item_ids:
+        raise SemanticOutputValidationError("Semantic findings require at least one evidence ID.")
+    if not item_ids.issubset(context.allowed_evidence_ids):
+        raise SemanticOutputValidationError("Provider output cites evidence outside its context.")
+
+    # The authoritative evidence list is derived from the validated item
+    # judgments. The provider top-level evidence_ids field is advisory.
+    evidence_ids = sorted(item_ids, key=str)
 
     evidence_rows = list(
-        session.execute(select(Evidence).where(Evidence.id.in_(output_ids))).scalars().all()
+        session.execute(select(Evidence).where(Evidence.id.in_(item_ids))).scalars().all()
     )
-    if len(evidence_rows) != len(output_ids):
+    if len(evidence_rows) != len(item_ids):
         raise SemanticOutputValidationError("Provider output cites unknown evidence.")
     if any(row.analysis_id != context.analysis_id for row in evidence_rows):
         raise SemanticOutputValidationError(
@@ -291,8 +349,8 @@ def validate_semantic_output(
         )
     _validate_extraction_provenance(evidence_rows, session=session, context=context)
 
-    confidence_level, confidence_basis = _derive_confidence(items=output.items, context=context)
-    aggregate_status = aggregate_item_statuses(output.items)
+    confidence_level, confidence_basis = _derive_confidence(items=items, context=context)
+    aggregate_status = aggregate_item_statuses(items)
     final_status = (
         AcademicStatus.NOT_VERIFIED
         if confidence_level is SemanticConfidenceLevel.LOW
@@ -302,23 +360,23 @@ def validate_semantic_output(
         raise SemanticOutputValidationError(
             "The deterministically aggregated status is not allowed for this rule."
         )
-    if confidence_level is not SemanticConfidenceLevel.LOW and output.status is not final_status:
-        raise SemanticOutputValidationError(
-            "Provider aggregate status does not match its item judgments."
-        )
+    # The final status is derived deterministically from the validated
+    # item judgments. The provider top-level status is advisory and must
+    # not override or block the backend-attested result.
 
+    recommendation_id = None if relationship_status_normalized else output.recommendation_id
     eligible = {
         item.recommendation_id
         for item in get_recommendations_for(
             kb_source_dir.resolve(), spec.identifier.rule_id, final_status
         )
     }
-    if output.recommendation_id is not None and output.recommendation_id not in eligible:
+    if recommendation_id is not None and recommendation_id not in eligible:
         raise SemanticOutputValidationError(
             "Provider output cites a recommendation that does not apply to the final status."
         )
-    if output.recommendation_id is not None:
-        recommendation = get_recommendation_by_id(kb_source_dir.resolve(), output.recommendation_id)
+    if recommendation_id is not None:
+        recommendation = get_recommendation_by_id(kb_source_dir.resolve(), recommendation_id)
         if recommendation is None or recommendation.rule_id != spec.identifier.rule_id:
             raise SemanticOutputValidationError("Provider output cites an invalid recommendation.")
 
@@ -326,13 +384,14 @@ def validate_semantic_output(
         status=final_status,
         confidence_level=confidence_level,
         legacy_confidence=_legacy_confidence(confidence_level),
-        evidence_ids=output.evidence_ids,
+        evidence_ids=evidence_ids,
         explanation=output.explanation,
-        recommendation_id=output.recommendation_id,
+        explanation_ar=output.explanation_ar,
+        recommendation_id=recommendation_id,
         provider=output.provider,
         model=output.model,
         prompt_template_version=output.prompt_template_version,
         kb_version=output.kb_version,
-        items=tuple(output.items),
+        items=items,
         confidence_basis=confidence_basis,
     )

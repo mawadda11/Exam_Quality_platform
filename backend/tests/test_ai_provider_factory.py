@@ -27,12 +27,18 @@ def _settings(**overrides: object) -> Settings:
 
 def test_local_is_the_safe_default_provider() -> None:
     """AI_PROVIDER unset: the platform must default to the safe offline
-    provider, never to a live external or local-network adapter."""
+    provider, never to a live external or local-network adapter.
+
+    _env_file=None isolates this from any real .env a developer's machine
+    happens to have (e.g. one locally configured with AI_PROVIDER=ollama for
+    manual testing) - this test is specifically about the field's own
+    Python-level default, not whatever the ambient environment contains.
+    """
     values = {
         "secret_key": "test-secret-key-not-for-production",
         "database_url": "sqlite:///:memory:",
     }
-    settings = Settings(**values)  # type: ignore[arg-type]
+    settings = Settings(_env_file=None, **values)  # type: ignore[arg-type,call-arg]
     assert settings.ai_provider == "local"
     assert settings.ollama_base_url == "http://localhost:11434"
     provider = build_ai_provider(settings)

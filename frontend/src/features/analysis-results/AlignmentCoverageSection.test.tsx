@@ -186,6 +186,10 @@ function relationshipFinding(type: 'clo' | 'topic'): FindingResponse {
             type === 'clo'
               ? 'One normalized assessed concept is shared; the local evidence is limited.'
               : 'The question directly assesses database design.',
+          reasoning_ar:
+            type === 'clo'
+              ? 'يتناول السؤال مفهومًا مرتبطًا بناتج التعلم المقترح، لكن نطاق العلاقة محدود.'
+              : 'يقيس السؤال تصميم قواعد البيانات بشكل مباشر.',
         },
         {
           source_evidence_id: `${type}-q10`,
@@ -313,9 +317,11 @@ describe('AlignmentCoverageSection', () => {
     expect(
       within(cloTable).getAllByRole('rowheader').map((header) => header.textContent),
     ).toEqual(['CLO2', 'CLO10'])
-    expect(within(cloTable).getByText('Q2').closest('td')).toHaveTextContent(
-      'Q2, Q10',
-    )
+    const cloLinkedCell = within(cloTable).getByText('Q2').closest('td')!
+    expect(cloLinkedCell.querySelectorAll('.question-reference-chip')).toHaveLength(2)
+    expect(cloLinkedCell).toHaveTextContent('Q2')
+    expect(cloLinkedCell).toHaveTextContent('Q10')
+    expect(cloLinkedCell).not.toHaveTextContent('Q2, Q10')
 
     const topicTable = screen.getByRole('table', { name: 'Topic Analysis' })
     expect(
@@ -323,9 +329,11 @@ describe('AlignmentCoverageSection', () => {
         .getAllByRole('rowheader')
         .map((header) => header.textContent),
     ).toEqual(['Database design', 'Computer networks'])
-    expect(within(topicTable).getByText('Q2').closest('td')).toHaveTextContent(
-      'Q2, Q10',
-    )
+    const topicLinkedCell = within(topicTable).getByText('Q2').closest('td')!
+    expect(topicLinkedCell.querySelectorAll('.question-reference-chip')).toHaveLength(2)
+    expect(topicLinkedCell).toHaveTextContent('Q2')
+    expect(topicLinkedCell).toHaveTextContent('Q10')
+    expect(topicLinkedCell).not.toHaveTextContent('Q2, Q10')
   })
 
   it('shows total marks per CLO/topic from questions with a supported relationship only', () => {
@@ -499,6 +507,22 @@ describe('AlignmentCoverageSection', () => {
     expect(screen.queryByText('عرض المقارنة')).not.toBeInTheDocument()
     expect(screen.getAllByText('لم يظهر ارتباط واضح').length)
       .toBeGreaterThan(0)
+
+
+    const relationshipTable = screen.getByRole('table', {
+      name: 'علاقات الأسئلة بنواتج التعلم وموضوعات المقرر',
+    })
+    const q2Row = within(relationshipTable)
+      .getByRole('rowheader', { name: 'Q2' })
+      .closest('tr')!
+    fireEvent.click(within(q2Row).getByRole('button', { name: 'عرض تفاصيل الربط' }))
+    const dialog = screen.getByRole('dialog')
+    expect(
+      within(dialog).getByText('The question directly assesses database design.'),
+    ).toBeInTheDocument()
+    expect(
+      within(dialog).queryByText('يشترك السؤال والعنصر المقترح في محتوى مقيم ذي صلة.'),
+    ).not.toBeInTheDocument()
   })
 
   it('keeps successful sections available and retries a failed source resource', () => {

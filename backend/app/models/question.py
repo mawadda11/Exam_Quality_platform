@@ -4,14 +4,18 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.domain import QuestionReviewStatus, QuestionType, enum_values
 from app.db.base import Base
 from app.db.mixins import utcnow
 
 if TYPE_CHECKING:
     from app.models.analysis import Analysis
+    from app.models.question_blank import QuestionBlank
+    from app.models.question_option import QuestionOption
+    from app.models.question_source_span import QuestionSourceSpan
 
 
 class Question(Base):
@@ -34,11 +38,42 @@ class Question(Base):
     )
     number_label: Mapped[str] = mapped_column(String(50))
     question_text: Mapped[str] = mapped_column(Text)
+    question_type: Mapped[QuestionType] = mapped_column(
+        Enum(
+            QuestionType,
+            native_enum=False,
+            validate_strings=True,
+            values_callable=enum_values,
+        ),
+        default=QuestionType.UNKNOWN,
+    )
+    instructions: Mapped[str | None] = mapped_column(Text, default=None)
     page_number: Mapped[int] = mapped_column(Integer)
     marks: Mapped[float | None] = mapped_column(Float, default=None)
     sequence: Mapped[int] = mapped_column(Integer)
     confidence: Mapped[float] = mapped_column(Float)
     geometry: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    extraction_method: Mapped[str] = mapped_column(String(30), default="direct_text")
+    review_status: Mapped[QuestionReviewStatus] = mapped_column(
+        Enum(
+            QuestionReviewStatus,
+            native_enum=False,
+            validate_strings=True,
+            values_callable=enum_values,
+        ),
+        default=QuestionReviewStatus.MACHINE_EXTRACTED,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     analysis: Mapped[Analysis] = relationship(back_populates="questions")
+    options: Mapped[list[QuestionOption]] = relationship(
+        back_populates="question", cascade="all, delete-orphan", order_by="QuestionOption.sequence"
+    )
+    blanks: Mapped[list[QuestionBlank]] = relationship(
+        back_populates="question",
+        cascade="all, delete-orphan",
+        order_by="QuestionBlank.blank_index",
+    )
+    source_spans: Mapped[list[QuestionSourceSpan]] = relationship(
+        back_populates="question", cascade="all, delete-orphan"
+    )

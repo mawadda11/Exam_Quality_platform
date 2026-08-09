@@ -113,11 +113,6 @@ export function QuestionRelationshipDrawer({
             {renderTargets(row.topicJudgments, 'topic')}
           </section>
 
-          <p className="alignment-advisory-notice">
-            {t(
-              'The displayed relationships are analytical suggestions for review. They are not official mappings from the Course Specification and do not modify the original documents.',
-            )}
-          </p>
         </>
       )}
     </Drawer>

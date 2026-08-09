@@ -12,6 +12,10 @@ export const PILOT_REFINEMENT_ARABIC_MESSAGES: Readonly<
   'Possible matching material': 'عنصر مطابق محتمل',
   'Review how each question reference relates to the physical materials identified in the exam.':
     'راجع علاقة كل إحالة في السؤال بالمواد الداعمة المحددة في الاختبار.',
+  'Review how each question is linked to the supporting figures, tables, diagrams, or code identified in the exam.':
+    'راجع كيفية ارتباط كل سؤال بالأشكال أو الجداول أو الرسومات أو المقاطع البرمجية الداعمة المحددة في الاختبار.',
+  'This supporting context is directly associated with the confirmed question evidence.':
+    'هذا السياق المساند مرتبط مباشرة بأدلة السؤال المؤكدة.',
   'Question-to-material relationships': 'علاقات الأسئلة بالمواد الداعمة',
   'Referenced item': 'العنصر المشار إليه',
   'Matched material': 'العنصر المطابق',
@@ -22,6 +26,7 @@ export const PILOT_REFINEMENT_ARABIC_MESSAGES: Readonly<
   'Missing reference': 'مرجع مفقود',
   'Ambiguous reference': 'مرجع غامض',
   'Suggested nearby material': 'ارتباط مقترح بعنصر قريب',
+  'Proximity-based link': 'ارتباط قائم على القرب',
   'Original reference phrase': 'عبارة الإحالة الأصلية',
   'Candidate materials': 'العناصر المرشحة',
   'Relationship reason': 'سبب الارتباط',
@@ -31,6 +36,10 @@ export const PILOT_REFINEMENT_ARABIC_MESSAGES: Readonly<
   'Reference identity': 'هوية الإحالة',
   'Explicit labelled reference': 'إحالة صريحة ذات تسمية',
   'Implicit nearby reference': 'إحالة ضمنية إلى عنصر قريب',
+  'Contextual supporting-material reference': 'إحالة سياقية إلى مادة داعمة',
+  'Faculty review only': 'للمراجعة الأكاديمية فقط',
+  'This contextual reference is shown for faculty review and is excluded from automatic scoring.':
+    'تُعرض هذه الإحالة السياقية للمراجعة الأكاديمية فقط وهي مستبعدة من التقييم الآلي.',
   'Unknown question': 'سؤال غير معروف',
   '{question} refers to {reference}, which matches one uniquely labelled material.':
     'يشير {question} إلى {reference}، وهو يطابق عنصرًا واحدًا ذا تسمية فريدة.',
@@ -40,6 +49,8 @@ export const PILOT_REFINEMENT_ARABIC_MESSAGES: Readonly<
     'يشير {question} إلى {reference}، لكن {count} عناصر مختلفة تحمل التسمية نفسها.',
   '{question} uses an implicit nearby reference. The nearby material is shown for review but is not an official uniquely labelled mapping.':
     'يستخدم {question} إحالة ضمنية إلى عنصر قريب. يُعرض العنصر القريب للمراجعة، لكنه ليس ارتباطًا رسميًا ذا تسمية فريدة.',
+  '{question} uses a contextual reference that resolves to one supporting material from the reviewed page context.':
+    'يستخدم {question} إحالة سياقية حُسمت إلى مادة داعمة واحدة اعتمادًا على سياق الصفحة الذي تمت مراجعته.',
   '{count} possible matches': '{count} مطابقات محتملة',
   'Unlabelled figure or diagram': 'شكل أو رسم بلا تسمية',
   'Unlabelled table': 'جدول بلا تسمية',

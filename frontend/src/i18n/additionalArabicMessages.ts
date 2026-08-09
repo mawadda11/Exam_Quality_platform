@@ -3,6 +3,7 @@ import { BATCH5_REFINEMENT_ARABIC_MESSAGES } from './batch5RefinementArabicMessa
 import { METHODOLOGY_ARABIC_MESSAGES } from './methodologyArabicMessages'
 import { PILOT_REFINEMENT_ARABIC_MESSAGES } from './pilotRefinementArabicMessages'
 import { REPORTS_ARABIC_MESSAGES } from './reportsArabicMessages'
+import { OCR_ARABIC_MESSAGES } from './ocrArabicMessages'
 
 /**
  * Arabic presentation strings added during the Batch 3 bilingual UX completion.
@@ -45,6 +46,14 @@ export const ADDITIONAL_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
   'Processing state': 'حالة المعالجة',
   'Current step': 'الخطوة الحالية',
   'Overall Exam Quality Score': 'الدرجة الإجمالية لجودة الاختبار',
+  'Preliminary Local Quality Score': 'الدرجة المحلية الأولية لجودة الاختبار',
+  'No applicable checks were available': 'لا توجد فحوصات منطبقة متاحة',
+  'Based on 1 applicable check': 'استنادًا إلى فحص منطبق واحد',
+  'Based on {count} applicable checks': 'استنادًا إلى {count} فحوصات منطبقة',
+  '{count} local semantic suggestion(s) remain visible for review but are excluded from this preliminary score.':
+    'تبقى {count} اقتراحات دلالية محلية ظاهرة للمراجعة لكنها مستبعدة من هذه الدرجة الأولية.',
+  'Preliminary local result: {score}% based on {count} applicable checks.':
+    'النتيجة المحلية الأولية: {score}% استنادًا إلى {count} فحوصات منطبقة.',
   'No verified checks were available': 'لا توجد فحوصات متحقق منها',
   'Based on 1 verified check': 'استنادًا إلى فحص واحد متحقق منه',
   'Based on {count} verified checks': 'استنادًا إلى {count} فحوصات متحقق منها',
@@ -332,6 +341,44 @@ export const ADDITIONAL_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
   'This structural question groups the sub-questions below and is not scored as an independent semantic item.':
     'يجمع هذا السؤال البنيوي الأسئلة الفرعية أدناه، ولا يُقيّم بوصفه عنصرًا دلاليًا مستقلًا.',
   'Sub-question marks total': 'مجموع درجات الأسئلة الفرعية',
+  'The section total is authoritative; individual child marks may remain blank.':
+    'درجة القسم هي المعتمدة، ويمكن أن تبقى درجات الأسئلة الفرعية الفردية فارغة.',
+  'Covered by section total': 'مشمولة في درجة القسم',
+  'Review summary': 'ملخص المراجعة',
+  'assessed questions': 'أسئلة خاضعة للتقييم',
+  'structural containers': 'حاويات بنيوية',
+  'questions needing review': 'أسئلة تحتاج إلى مراجعة',
+  'true blockers': 'عوائق فعلية',
+  'Confirmation availability': 'إتاحة التأكيد',
+  'Available now': 'متاح الآن',
+  'Available after saving this revision': 'متاح بعد حفظ هذه النسخة',
+  'Not available yet': 'غير متاح بعد',
+  'Review flagged questions': 'مراجعة الأسئلة المشار إليها',
+  'Needs review': 'يحتاج إلى مراجعة',
+  'Why this question needs review': 'سبب احتياج هذا السؤال إلى المراجعة',
+  'Check the section and child marks against the PDF.':
+    'تحقق من درجة القسم ودرجات الأسئلة الفرعية بمقارنتها بملف PDF.',
+  'Check that this question is attached to the correct section.':
+    'تحقق من ارتباط هذا السؤال بالقسم الصحيح.',
+  'Check this question number against the PDF.':
+    'تحقق من رقم هذا السؤال بمقارنته بملف PDF.',
+  'Check the shared instructions for this question.':
+    'تحقق من التعليمات المشتركة لهذا السؤال.',
+  'Check the technical text and symbols against the PDF.':
+    'تحقق من النص التقني والرموز بمقارنتها بملف PDF.',
+  'Check that the correct figure belongs with this question.':
+    'تحقق من ارتباط الشكل الصحيح بهذا السؤال.',
+  'Check this question against the PDF because extraction confidence is lower.':
+    'تحقق من هذا السؤال بمقارنته بملف PDF لأن ثقة الاستخراج منخفضة.',
+  'Confirm the question type manually against the PDF.':
+    'تحقق يدويًا من نوع السؤال بمقارنته بملف PDF.',
+  'Check this question against the original PDF.':
+    'تحقق من هذا السؤال بمقارنته بملف PDF الأصلي.',
+  'Technical extraction details': 'تفاصيل الاستخراج التقنية',
+  'These records are grouped by type and page for audit. Review recommendations do not block confirmation unless listed above.':
+    'جُمعت هذه السجلات حسب النوع والصفحة لأغراض التدقيق. لا تمنع توصيات المراجعة التأكيد ما لم تكن مدرجة أعلاه.',
+  record: 'سجل',
+  records: 'سجلات',
   'Question number': 'رقم السؤال',
   'Question text': 'نص السؤال',
   'CLO code': 'رمز ناتج التعلم',
@@ -553,6 +600,27 @@ export const ADDITIONAL_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
   'Materials & References': 'المواد والإحالات',
   'Supporting Materials & References': 'المواد المساندة والإحالات المرجعية',
   'Supporting materials': 'المواد المساندة',
+  'Linked supporting context': 'السياق المساند المرتبط',
+  'Linked Supporting Context': 'السياق المساند المرتبط',
+  'View details in Linked Supporting Context': 'عرض التفاصيل في صفحة السياق المساند المرتبط',
+  'Review the confirmed visual, table, or code context linked to each question.':
+    'راجع الرسم أو الجدول أو الكود المؤكد والمرتبط بكل سؤال.',
+  'Confirmed question-to-context links': 'ارتباطات الأسئلة بالسياق المؤكدة',
+  'Supporting context': 'السياق المساند',
+  'Extracted description': 'الوصف المستخرج',
+  'No confirmed question-to-context links were identified.':
+    'لم يتم تحديد ارتباطات مؤكدة بين الأسئلة والسياق المساند.',
+  'Missing questions can still be added from the PDF inside the review screen.':
+    'يمكن إضافة الأسئلة المفقودة من ملف PDF داخل شاشة المراجعة.',
+  'Technical diagnostics': 'التشخيصات التقنية',
+  'Possible missing question content': 'محتوى محتمل لسؤال مفقود',
+  '{assessed} assessed questions + {containers} structural containers':
+    '{assessed} سؤالًا مقيمًا + {containers} أسئلة هيكلية',
+  'Structural container': 'سؤال هيكلي',
+  'Only high-confidence figures, tables, or code context explicitly needed by a question are shown. Confirm the linked question or exclude the item before continuing.':
+    'تظهر فقط الأشكال أو الجداول أو مقاطع الشفرة عالية الثقة التي يحتاجها سؤال بشكل صريح. أكد السؤال المرتبط أو استبعد العنصر قبل المتابعة.',
+  'No question-linked supporting context was detected.':
+    'لم يُكتشف سياق مساند مرتبط بسؤال.',
   'Labels and captions': 'التسميات والعناوين التوضيحية',
   'Explicit references': 'الإحالات الصريحة',
   'Association candidates': 'مرشحو الارتباط',
@@ -609,9 +677,304 @@ export const ADDITIONAL_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
   proximity_support: 'دليل قرب مساند',
   direct_text: 'نص مباشر',
   ocr: 'تعرّف ضوئي',
+  'Top-level question': 'سؤال من المستوى الأعلى',
+  'Extraction candidates': 'مرشحو الاستخراج',
+  'Canonical proposed value': 'القيمة الأساسية المقترحة',
+  'Source/provenance': 'المصدر وسجل المنشأ',
+  'Local-only extraction': 'استخراج محلي فقط',
+  'Unassigned visible candidates': 'مرشحات مرئية غير مرتبطة',
+  'These candidates are retained for audit and require resolution before confirmation.':
+    'تُحفظ هذه المرشحات للتدقيق وتتطلب المعالجة قبل التأكيد.',
+  'Original question from PDF': 'السؤال الأصلي من ملف PDF',
+  'This image is the source reference. The editable text below is only a proposed transcription.':
+    'هذه الصورة هي المرجع الأصلي، أما النص القابل للتعديل أدناه فهو تفريغ مقترح فقط.',
+  'Editable extracted data': 'بيانات الاستخراج القابلة للتعديل',
+  'Correct the proposal only when it differs from the original image.':
+    'صحح المقترح فقط عندما يختلف عن الصورة الأصلية.',
+  'Review question': 'مراجعة السؤال',
+  'Hide review details': 'إخفاء تفاصيل المراجعة',
+  'Marks not detected': 'لم تُكتشف الدرجة',
+  'Detected blanks': 'الفراغات المكتشفة',
+  'No answer options were detected for this question.':
+    'لم تُكتشف خيارات إجابة لهذا السؤال.',
+  'Blank details are optional review aids and are not a replacement for the original question image.':
+    'تفاصيل الفراغات وسيلة مساعدة اختيارية ولا تستبدل صورة السؤال الأصلية.',
+  'Advanced structure and extraction details': 'تفاصيل البنية والاستخراج المتقدمة',
+  'Adjust question area': 'تعديل حدود السؤال',
+  'Cancel area adjustment': 'إلغاء تعديل الحدود',
+  'Drag over the complete original question, including its table, figure, or answer area.':
+    'اسحب فوق السؤال الأصلي كاملًا، بما في ذلك الجدول أو الشكل أو مساحة الإجابة.',
+  'The original question image is unavailable until a question area is selected.':
+    'لا تتوفر صورة السؤال الأصلية حتى يتم تحديد منطقة السؤال.',
+  'Loading original question image…': 'جارٍ تحميل صورة السؤال الأصلية…',
+  'Could not render the original question image.': 'تعذر عرض صورة السؤال الأصلية.',
+  'Not detected': 'غير مكتشف',
+  'No questions were detected automatically': 'لم تُكتشف أسئلة تلقائيًا',
+  'Use the original PDF to add each visible question region before analysis.':
+    'استخدم ملف PDF الأصلي لإضافة منطقة كل سؤال ظاهر قبل بدء التحليل.',
+  'No reliable questions were extracted automatically. Add the visible question regions from the original PDF, rerun extraction, or replace the exam file.':
+    'لم تُستخرج أسئلة موثوقة تلقائيًا. أضف مناطق الأسئلة الظاهرة من ملف PDF الأصلي، أو أعد الاستخراج، أو استبدل ملف الاختبار.',
+  'Human-assisted visual review': 'مراجعة بصرية بمساعدة النظام',
+  'Add or correct question regions using the original PDF before saving.':
+    'أضف الأسئلة المفقودة أو صحح حدودها بالاعتماد على ملف PDF الأصلي قبل الحفظ.',
+  'Add missing question from PDF': 'إضافة سؤال مفقود من ملف PDF',
+  'New question': 'سؤال جديد',
+  'Split / add second part': 'تقسيم / إضافة جزء ثانٍ',
+  'Merge with previous question': 'دمج مع السؤال السابق',
+  'Remove added question': 'حذف السؤال المضاف',
+  'Complete the added question': 'أكمل بيانات السؤال المضاف',
+  'Select its complete region in the PDF, then enter the question text before saving.':
+    'حدد منطقة السؤال كاملة في ملف PDF، ثم أدخل نص السؤال قبل الحفظ.',
+  'Complete the added questions before saving': 'أكمل الأسئلة المضافة قبل الحفظ',
+  'Each added question needs a question number, editable text, and a selected region from the original PDF.':
+    'يحتاج كل سؤال مضاف إلى رقم ونص قابل للتعديل ومنطقة محددة من ملف PDF الأصلي.',
+  'Complete every added question by selecting its PDF region and entering its number and text.':
+    'أكمل كل سؤال مضاف بتحديد منطقته في ملف PDF وإدخال رقمه ونصه.',
+  'A parent question with included child questions cannot be merged.':
+    'لا يمكن دمج سؤال رئيسي ما دامت تحته أسئلة فرعية مضمنة.',
+  'No previous included question is available on this page.':
+    'لا يوجد سؤال سابق مضمن في هذه الصفحة يمكن الدمج معه.',
+  'Question blanks': 'فراغات السؤال',
+  'Include blank': 'تضمين الفراغ',
+  'Blank source text': 'نص مصدر الفراغ',
+  'Associated question': 'السؤال المرتبط',
+  Unassigned: 'غير مرتبط',
+  'Requires manual review': 'يتطلب مراجعة يدوية',
+  'Analysis incomplete': 'التحليل غير مكتمل',
+  'A quality score is hidden until confirmed question evidence is available.':
+    'تم إخفاء درجة الجودة حتى تتوفر أدلة أسئلة مؤكدة.',
+  'Checking confirmed question evidence': 'جارٍ التحقق من أدلة الأسئلة المؤكدة',
+  'Academic results are shown only after confirmed questions are available.':
+    'تظهر النتائج الأكاديمية فقط بعد توفر أسئلة مؤكدة.',
+  'Confirmed question evidence could not be loaded, so academic results and the score are hidden.':
+    'تعذر تحميل أدلة الأسئلة المؤكدة، لذلك تم إخفاء النتائج الأكاديمية والدرجة.',
+  'No confirmed questions are available. Return to extraction review before relying on academic results.':
+    'لا توجد أسئلة مؤكدة. ارجع إلى مراجعة الاستخراج قبل الاعتماد على النتائج الأكاديمية.',
+  'How should questions be prepared?': 'كيف تريد تجهيز أسئلة الاختبار؟',
+  'Choose the safest workflow for the uploaded exam. The academic analysis starts only after you confirm the questions.':
+    'اختر المسار الأنسب للاختبار المرفوع. لا يبدأ التحليل الأكاديمي إلا بعد تأكيد الأسئلة.',
+  'Assisted extraction from PDF': 'استخراج مساعد من ملف PDF',
+  'Best for clear digital exams. The platform proposes questions and you correct every boundary and transcription.':
+    'مناسب للاختبارات الرقمية الواضحة. تقترح المنصة الأسئلة، ثم تراجع حدود كل سؤال ونصه.',
+  'Structured question template': 'قالب أسئلة منظم',
+  'Most reliable. Import a controlled CSV in Extraction Review, then compare it with the original PDF.':
+    'المسار الأكثر موثوقية. استورد ملف CSV منظمًا في مراجعة الاستخراج، ثم قارنه بملف PDF الأصلي.',
+  'Recommended for dependable results': 'موصى به للنتائج الموثوقة',
+  'Manual visual review from PDF': 'مراجعة بصرية يدوية من ملف PDF',
+  'Use for irregular layouts. Add each visible question by selecting its region in the original PDF.':
+    'استخدمه للتنسيقات غير المنتظمة. أضف كل سؤال ظاهر بتحديد منطقته في ملف PDF الأصلي.',
+  'No structured questions have been imported': 'لم تُستورد أسئلة منظمة',
+  'No manual questions have been added': 'لم تُضف أسئلة يدويًا',
+  'Import the completed CSV template above, then review every question against the original PDF.':
+    'استورد قالب CSV المكتمل أعلاه، ثم راجع كل سؤال مقابل ملف PDF الأصلي.',
+  'Structured question review': 'مراجعة الأسئلة المنظمة',
+  'Compare every imported row with the original PDF. Marks may remain empty when they are not visibly written.':
+    'قارن كل صف مستورد بملف PDF الأصلي. يمكن ترك الدرجة فارغة عندما لا تكون مكتوبة بوضوح.',
+  'These source lines are retained for audit. Review them only when they contain missing question content.':
+    'تُحفظ هذه الأسطر للتدقيق. راجعها فقط عندما تحتوي جزءًا مفقودًا من سؤال.',
+  'The structured template identifies the source page but does not invent a precise PDF region.':
+    'يحدد القالب المنظم صفحة المصدر دون اختراع منطقة دقيقة داخل ملف PDF.',
+  'Show source page': 'عرض صفحة المصدر',
+  'Structured question template imported. Review every question before saving.':
+    'تم استيراد قالب الأسئلة المنظم. راجع كل سؤال قبل الحفظ.',
+  'Could not import the structured question template.': 'تعذر استيراد قالب الأسئلة المنظم.',
+  'Import confirmed question text, type, visible marks, page number, and multiple-choice options. Empty marks remain unknown and are never invented.':
+    'استورد نص السؤال المؤكد ونوعه والدرجة الظاهرة ورقم الصفحة وخيارات الاختيار من متعدد. تبقى الدرجة الفارغة غير معروفة ولا تُخترع.',
+  'Download CSV template': 'تنزيل قالب CSV',
+  'Import completed CSV': 'استيراد ملف CSV المكتمل',
+  'Manual visual question preparation': 'تجهيز الأسئلة بالمراجعة البصرية اليدوية',
+  'No automatic questions are trusted in this mode. Select a page region, add the visible question, enter only the text shown in the PDF, and save the revision.':
+    'لا تُعتمد أسئلة تلقائية في هذا المسار. حدد منطقة في الصفحة، وأضف السؤال الظاهر، وأدخل فقط النص الموجود في PDF، ثم احفظ المراجعة.',
+  'Assisted PDF extraction': 'الاستخراج المساعد من PDF',
+  'Automatic extraction is a proposal only. Correct incomplete text and question regions before confirmation.':
+    'الاستخراج التلقائي مجرد اقتراح. صحح النصوص الناقصة وحدود الأسئلة قبل التأكيد.',
+  'Import the question template to continue': 'استورد قالب الأسئلة للمتابعة',
+  'Download the CSV template, complete one row per confirmed question, and import it here.':
+    'نزّل قالب CSV، وأكمل صفًا لكل سؤال مؤكد، ثم استورده هنا.',
+  'Complete every imported question by entering its number and text.':
+    'أكمل كل سؤال مستورد بإدخال رقمه ونصه.',
+  'Each imported question needs a question number and editable source-faithful text.':
+    'يحتاج كل سؤال مستورد إلى رقم ونص قابل للتعديل مطابق للمصدر.',
+  'The CSV contains an unclosed quoted field.': 'يحتوي ملف CSV على حقل مقتبس غير مغلق.',
+  'Marks must be empty or a non-negative number.': 'يجب أن تكون الدرجة فارغة أو رقمًا غير سالب.',
+  'Page number must be a positive whole number.': 'يجب أن يكون رقم الصفحة عددًا صحيحًا موجبًا.',
+  'The template must contain a header and at least one question row.':
+    'يجب أن يحتوي القالب على ترويسة وصف واحد للأسئلة على الأقل.',
+  'Question number is required.': 'رقم السؤال مطلوب.',
+  'Question text is required.': 'نص السؤال مطلوب.',
+  'Question type must be multiple_choice, true_false, fill_in_blank, short_answer, or essay.':
+    'يجب أن يكون نوع السؤال اختيارًا من متعدد أو صح وخطأ أو فراغًا أو إجابة قصيرة أو مقاليًا.',
+  'A multiple-choice question needs at least two answer options.':
+    'يحتاج سؤال الاختيار من متعدد إلى خيارين على الأقل.',
+  'Answer-option columns must be empty unless the question type is multiple_choice.':
+    'يجب أن تبقى أعمدة الخيارات فارغة ما لم يكن السؤال اختيارًا من متعدد.',
+  'Question numbers must be unique in the structured template:':
+    'يجب ألا تتكرر أرقام الأسئلة في القالب المنظم:',
+  'Missing required columns': 'الأعمدة المطلوبة مفقودة',
+  'Question numbers must be unique in the structured template':
+    'يجب ألا تتكرر أرقام الأسئلة في القالب المنظم',
+  'A referenced parent question was not found in the template.':
+    'لم يتم العثور على السؤال الرئيسي المشار إليه داخل القالب.',
+  'Best for clear digital exams. The platform proposes questions and you correct only the items that need attention.':
+    'مناسب للاختبارات الرقمية الواضحة. تقترح المنصة الأسئلة، وتصحح فقط العناصر التي تحتاج إلى مراجعة.',
+  'Recommended starting point': 'نقطة البداية الموصى بها',
+  'Paste or import question list': 'لصق أو استيراد قائمة الأسئلة',
+  'Paste questions copied from Word or import a simple CSV. Only number, text, and visible marks are required.':
+    'الصق الأسئلة المنسوخة من Word أو استورد ملف CSV بسيطًا. المطلوب فقط رقم السؤال ونصه والدرجة الظاهرة.',
+  'Add questions manually from PDF': 'إضافة أسئلة يدويًا من ملف PDF',
+  'Use only when automatic extraction misses a question or the layout is highly irregular.':
+    'استخدمه فقط عندما يفوّت الاستخراج التلقائي سؤالًا أو يكون التنسيق غير منتظم بدرجة كبيرة.',
+  'Paste questions copied from Word or PDF, or import the simple CSV. Only question number, text, and visible marks are required. Type and options are optional.':
+    'الصق الأسئلة المنسوخة من Word أو PDF، أو استورد ملف CSV البسيط. المطلوب فقط رقم السؤال ونصه والدرجة الظاهرة، أما النوع والخيارات فاختيارية.',
+  'Paste questions': 'لصق الأسئلة',
+  'Paste numbered questions here. Keep answer options on lines beginning with A, B, C, or D.':
+    'الصق الأسئلة المرقمة هنا. اجعل خيارات الإجابة في أسطر تبدأ بـ A أو B أو C أو D.',
+  'Import pasted questions': 'استيراد الأسئلة الملصقة',
+  'Download simple CSV': 'تنزيل ملف CSV بسيط',
+  'Import CSV': 'استيراد CSV',
+  'Pasted questions imported. Review every question before saving.':
+    'تم استيراد الأسئلة الملصقة. راجع كل سؤال قبل الحفظ.',
+  'Could not import the pasted questions.': 'تعذر استيراد الأسئلة الملصقة.',
+  'Paste at least one question before importing.': 'الصق سؤالًا واحدًا على الأقل قبل الاستيراد.',
+  'No pasted or imported questions are available': 'لا توجد أسئلة ملصقة أو مستوردة',
+  'Paste questions or import the simple CSV above, then review them against the original PDF.':
+    'الصق الأسئلة أو استورد ملف CSV البسيط أعلاه، ثم راجعها مقابل ملف PDF الأصلي.',
+  'Paste or import questions to continue': 'الصق الأسئلة أو استوردها للمتابعة',
+  'Paste questions copied from Word or import the simple CSV to continue.':
+    'الصق الأسئلة المنسوخة من Word أو استورد ملف CSV البسيط للمتابعة.',
+  'Use the PDF as the source reference': 'استخدم ملف PDF كمرجع أصلي',
+  'The original page is shown on the left. Use Show in PDF to verify the complete question and adjust the highlighted region only when needed.':
+    'تظهر الصفحة الأصلية في الجهة اليسرى. استخدم زر العرض في PDF للتحقق من السؤال كاملًا، وعدّل منطقة التحديد عند الحاجة فقط.',
+  'Correct the proposal only when it differs from the original PDF shown on the left.':
+    'صحح الاقتراح فقط عندما يختلف عن ملف PDF الأصلي الظاهر في الجهة اليسرى.',
+  'Automatic question draft first': 'ابدأ بمسودة أسئلة تلقائية',
+  'The platform will first extract a draft question list from the Examination PDF. In Review Extraction, you can correct only what is missing, add questions, or start over with pasted questions before academic analysis begins.':
+    'ستستخرج المنصة أولًا مسودة للأسئلة من ملف الاختبار. وفي مراجعة الاستخراج يمكنك تصحيح النقص فقط، أو إضافة أسئلة، أو البدء من جديد بأسئلة ملصقة قبل بدء التحليل الأكاديمي.',
+  'Keep the automatic draft or start over': 'احتفظ بالمسودة التلقائية أو ابدأ من جديد',
+  'Usually, keep the extracted questions and correct only what is missing. If the draft is not useful, you can replace the visible question list with questions pasted from the original PDF or with the simple CSV.':
+    'عادةً احتفظ بالأسئلة المستخرجة وصحح النقص فقط. وإذا لم تكن المسودة مفيدة، يمكنك استبدال قائمة الأسئلة الظاهرة بأسئلة منسوخة من ملف PDF الأصلي أو بملف CSV البسيط.',
+  'For small corrections': 'للتصحيحات البسيطة',
+  'Use Copy text in the PDF pane, copy only the missing words, and paste them exactly where you want inside any editable field. You do not need to start over.':
+    'استخدم وضع نسخ النص في نافذة PDF، وانسخ الكلمات الناقصة فقط ثم الصقها في الموضع الذي تريده داخل أي حقل قابل للتحرير. لا تحتاج إلى البدء من جديد.',
+  'Start over / paste questions': 'ابدأ من جديد / الصق الأسئلة',
+  'Cancel start over': 'إلغاء البدء من جديد',
+  'Replace the visible automatic draft': 'استبدال المسودة التلقائية الظاهرة',
+  'Importing here will exclude the current automatic questions from the working revision and replace them with the pasted or imported list. The original machine records remain preserved for audit until you save.':
+    'الاستيراد هنا سيستبعد الأسئلة التلقائية الحالية من نسخة العمل ويستبدلها بالقائمة الملصقة أو المستوردة. وتبقى السجلات الآلية الأصلية محفوظة للتدقيق حتى الحفظ.',
+  'Replace draft with pasted questions': 'استبدال المسودة بالأسئلة الملصقة',
+  'Replace draft from CSV': 'استبدال المسودة من CSV',
+  'The automatic draft was replaced with the pasted question list. Review it before saving.':
+    'تم استبدال المسودة التلقائية بقائمة الأسئلة الملصقة. راجعها قبل الحفظ.',
+  'The automatic draft was replaced with the imported question list. Review it before saving.':
+    'تم استبدال المسودة التلقائية بقائمة الأسئلة المستوردة. راجعها قبل الحفظ.',
+  'Copy text': 'نسخ النص',
+  'Region view': 'عرض منطقة السؤال',
+  'Selectable examination PDF': 'ملف الاختبار القابل لتحديد النص',
+  'Select text in the PDF, copy it, then paste it into the exact editable field you want on the right.':
+    'حدد النص داخل ملف PDF وانسخه، ثم الصقه في الحقل القابل للتحرير الذي تريده تحديدًا في الجهة اليمنى.',
+  'Complete the pasted question': 'أكمل السؤال الملصق',
+  'Enter the source-faithful question text before saving.': 'أدخل نص السؤال المطابق للمصدر قبل الحفظ.',
+  Row: 'الصف',
+  local_only: 'محلي فقط',
+  local: 'محلي',
+  unknown: 'غير معروف',
+  fresh_gemini: 'Gemini جديد',
+  cache: 'نسخة Gemini مخزنة مؤقتًا',
+  targeted_ocr: 'تعرف ضوئي موجه',
+  ...OCR_ARABIC_MESSAGES,
   ...BATCH5_ARABIC_MESSAGES,
   ...BATCH5_REFINEMENT_ARABIC_MESSAGES,
   ...PILOT_REFINEMENT_ARABIC_MESSAGES,
   ...METHODOLOGY_ARABIC_MESSAGES,
   ...REPORTS_ARABIC_MESSAGES,
+  'The rendered page image could not be displayed. Use the PDF fallback below or try again.': 'تعذّر عرض صورة الصفحة. استخدمي نسخة PDF الاحتياطية أدناه أو أعيدي المحاولة.',
+  'The original PDF remains available while the page image is retried.': 'يبقى ملف PDF الأصلي متاحًا أثناء إعادة محاولة عرض صورة الصفحة.',
+  'Manual visual review required': 'تتطلب مراجعة بصرية يدوية',
+  'CLOs represented': 'نواتج التعلم الممثلة',
+  'Topics represented': 'موضوعات المقرر الممثلة',
+  'This is an advisory estimate of exam quality based on the criteria that could be verified. It is not the exam mark or a student pass rate.':
+    'هذه نسبة تقديرية لجودة الاختبار بناءً على المعايير التي أمكن التحقق منها، وليست درجة للاختبار أو نسبة لنجاح الطلاب.',
+  'No individual mark specified; section total': 'لم تُحدد درجة فردية؛ مجموع القسم',
+  'Validating files': 'التحقق من الملفات',
+  'Extracting questions': 'استخراج الأسئلة',
+  'Reviewing extraction': 'مراجعة الاستخراج',
+  'Preparing evidence': 'تجهيز الأدلة',
+  'Retrieving evaluation knowledge': 'استرجاع معرفة التقييم',
+  'Applying evaluation criteria': 'تطبيق معايير التقييم',
+  'Generating results': 'إنشاء النتائج',
+  'Checking the uploaded Exam and Course Specification files.':
+    'يجري التحقق من ملفي الاختبار وتوصيف المقرر المرفوعين.',
+  'Reading questions, marks, and visible exam structure.':
+    'تجري قراءة الأسئلة والدرجات والبنية الظاهرة للاختبار.',
+  'Preparing the extracted questions for faculty review.':
+    'يجري تجهيز الأسئلة المستخرجة لمراجعة عضو هيئة التدريس.',
+  'Preparing the confirmed extraction as analysis evidence.':
+    'يجري تجهيز الاستخراج المؤكد بوصفه دليلًا للتحليل.',
+  'Retrieving the validated evaluation knowledge.':
+    'يجري استرجاع معرفة التقييم المتحقق منها.',
+  'Linking questions with evaluation criteria.':
+    'يجري ربط الأسئلة بمعايير التقييم.',
+  'Generating the findings and results.': 'يجري إنشاء النتائج والمخرجات.',
+  'Checking uploaded files': 'التحقق من الملفات المرفوعة',
+  'Reading the examination': 'قراءة الاختبار',
+  'Reading the Course Specification': 'قراءة توصيف المقرر',
+  'Preparing confirmed evidence': 'إعداد الأدلة المؤكدة',
+  'Preparing reference knowledge': 'إعداد المعرفة المرجعية',
+  'Evaluating exam quality': 'تقييم جودة الاختبار',
+  'Finalizing results': 'إنهاء النتائج',
+  'The uploaded Exam and Course Specification are being checked.':
+    'يجري التحقق من ملف الاختبار وتوصيف المقرر المرفوعين.',
+  'The examination questions, marks, and visible structure are being read.':
+    'تجري قراءة أسئلة الاختبار ودرجاته وبنيته الظاهرة.',
+  'Course outcomes, topics, and assessment information are being read.':
+    'تجري قراءة نواتج المقرر وموضوعاته ومعلومات التقييم.',
+  'Your confirmed extraction is being prepared for analysis.':
+    'يجري إعداد الاستخراج الذي أكدته للتحليل.',
+  'The controlled reference knowledge is being prepared.':
+    'يجري إعداد المعرفة المرجعية المنضبطة.',
+  'The analyzer is applying the available evidence-based quality checks.':
+    'يطبق المحلل فحوصات الجودة المتاحة القائمة على الأدلة.',
+  'The findings and results are being finalized.': 'يجري إنهاء النتائج والمخرجات.',
+  'Current stage': 'المرحلة الحالية',
+  'Elapsed time': 'الوقت المنقضي',
+  'Progress check timed out': 'انتهت مهلة التحقق من التقدم',
+  'The analysis is still running. Progress will be checked again automatically.':
+    'لا يزال التحليل جاريًا، وسيُتحقق من التقدم مرة أخرى تلقائيًا.',
+  'Stage needing attention': 'المرحلة التي تحتاج إلى معالجة',
+
+  'Review the extracted questions': 'راجع الأسئلة المستخرجة',
+  'Ready for faculty review': 'جاهز لمراجعة عضو هيئة التدريس',
+  'Review every extracted question against the PDF, correct anything that is incomplete or inaccurate, then confirm the extraction.': 'راجع كل سؤال مستخرج مقابل ملف PDF، وصحح أي نقص أو عدم دقة، ثم أكد الاستخراج.',
+  'Automatic extraction is a proposal only. Review every question against the PDF and correct only what differs from the source.': 'الاستخراج التلقائي مسودة أولية فقط. راجع كل سؤال مقابل ملف PDF وصحح فقط ما يختلف عن المصدر.',
+  'Copy from PDF': 'النسخ من PDF',
+  'Use Copy text in the PDF pane, select any text you need, then paste it exactly where you want inside an editable field.': 'استخدم خيار نسخ النص في معاينة PDF، وحدد أي نص تحتاجه، ثم الصقه في المكان الذي تريده داخل أي حقل قابل للتعديل.',
+  'Question Type': 'نوع السؤال',
+  'Multiple Choice': 'اختيار من متعدد',
+  'True / False': 'صح / خطأ',
+  'Fill in the Blank': 'أكمل الفراغ',
+  'Matching': 'مطابقة',
+  'Short Answer': 'إجابة قصيرة',
+  'Essay': 'مقالي',
+  'Calculation': 'مسألة حسابية',
+  'Code Question': 'سؤال برمجي',
+  'Table-based Question': 'سؤال يعتمد على جدول',
+  'Figure-based Question': 'سؤال يعتمد على شكل',
+  'Mixed': 'مختلط',
+  'Unknown': 'غير محدد',
+  'Original Course Specification PDF': 'ملف توصيف المقرر الأصلي',
+  'Selectable Course Specification PDF': 'ملف توصيف المقرر القابل لتحديد النص',
+  'Review against the Course Specification PDF': 'مراجعة البيانات مقابل ملف توصيف المقرر',
+  'The Course Specification PDF is shown on the left. Use Copy text to copy exact wording. If a CLO or topic is missing, add a new record, paste or type only what appears in the PDF, then select its source area.': 'يظهر ملف توصيف المقرر في الجهة اليسرى. استخدم نسخ النص لنسخ الصياغة كما وردت في الملف. إذا كان أحد نواتج التعلم أو الموضوعات مفقودًا، أضف سجلًا جديدًا وأدخل فقط ما يظهر في الملف ثم حدّد منطقة المصدر الخاصة به.',
+  'Could not load Course Specification PDF': 'تعذّر تحميل ملف توصيف المقرر',
+  'Add missing CLO from Course Specification PDF': 'إضافة ناتج تعلم مفقود من ملف توصيف المقرر',
+  'Add missing topic from Course Specification PDF': 'إضافة موضوع مفقود من ملف توصيف المقرر',
+  'Show in Course Specification PDF': 'عرض في ملف توصيف المقرر',
+  'Added CLO': 'ناتج تعلم مضاف',
+  'Added topic': 'موضوع مضاف',
+  'Adjust source area': 'تحديد منطقة المصدر',
+  'Drag over the complete source record in the Course Specification PDF.': 'حدّد بالسحب كامل السجل الأصلي داخل ملف توصيف المقرر.',
+  'Complete the added records before saving': 'أكمل السجلات المضافة قبل الحفظ',
+  'Complete every added CLO or topic by entering its source-faithful text and selecting its Course Specification PDF region.': 'أكمل كل ناتج تعلم أو موضوع مضاف بإدخال النص المطابق للمصدر وتحديد منطقته في ملف توصيف المقرر.',
+  'Each added CLO or topic needs editable source-faithful text and a selected region from the Course Specification PDF.': 'يحتاج كل ناتج تعلم أو موضوع مضاف إلى نص قابل للتعديل مطابق للمصدر ومنطقة محددة من ملف توصيف المقرر.',
+
 }

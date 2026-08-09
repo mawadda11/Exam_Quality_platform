@@ -24,6 +24,12 @@ semantic/hybrid evaluators, deterministic mapping coverage, and complete rule-ca
 - OCR/layout adapters: provider-neutral extraction interfaces.
 
 ## Currently implemented review-gated processing flow
+
+The detailed provider-neutral OCR, reconciliation, structure parsing, source
+provenance, and review-v2 contracts are documented in
+[`EXTRACTION_ARCHITECTURE.md`](EXTRACTION_ARCHITECTURE.md). Native pdfplumber
+and local Tesseract remain independent evidence paths; no cloud OCR provider is
+part of this release.
 1. `queued`
 2. `validating`
 3. `extracting_exam`

@@ -4,7 +4,6 @@ import { Card } from '../components/ui/Card'
 import { PageHeader } from '../components/ui/PageHeader'
 import {
   LIMITED_EVALUATION_SCOPE,
-  PLANNED_EVALUATION_SCOPE,
   SUPPORTED_EVALUATION_SCOPE,
   type EvaluationScopeItem,
 } from '../features/platform-scope/platformScopeData'
@@ -26,7 +25,7 @@ interface MethodologySectionProps {
 
 interface ScopeEntry {
   item: EvaluationScopeItem
-  availability: 'available' | 'limited' | 'planned'
+  availability: 'available' | 'limited'
 }
 
 const QUICK_NAVIGATION = [
@@ -48,7 +47,7 @@ const STATUS_EXPLANATIONS: Readonly<Record<AcademicStatus, string>> = {
   'Not Satisfied':
     'Reliable evidence shows that the requirement is not met.',
   'Not Verified':
-    'The evidence is missing, unreadable, conflicting, or insufficient for a judgment.',
+    'Available evidence is missing, unreadable, or insufficient to support a reliable judgment.',
   'Not Applicable':
     'The requirement does not apply to the context of this analysis.',
 }
@@ -209,9 +208,6 @@ function scopeGroups(): Array<{
     ...LIMITED_EVALUATION_SCOPE.map(
       (item) => [item.ruleId, { item, availability: 'limited' }] as const,
     ),
-    ...PLANNED_EVALUATION_SCOPE.map(
-      (item) => [item.ruleId, { item, availability: 'planned' }] as const,
-    ),
   ])
 
   return SCOPE_GROUP_DEFINITIONS.map((group) => ({
@@ -250,11 +246,6 @@ function EvaluationScopeGroups() {
                 {availability === 'limited' && (
                   <span className="methodology-scope-badge methodology-scope-badge--limited">
                     {t('Defined limitation')}
-                  </span>
-                )}
-                {availability === 'planned' && (
-                  <span className="methodology-scope-badge methodology-scope-badge--planned">
-                    {t('Planned, not scored')}
                   </span>
                 )}
               </li>
@@ -527,10 +518,6 @@ export function EvaluationScopeRoute() {
             <strong>{LIMITED_EVALUATION_SCOPE.length}</strong>
             <span>{t('Checks with defined limitations')}</span>
           </article>
-          <article>
-            <strong>{PLANNED_EVALUATION_SCOPE.length}</strong>
-            <span>{t('Planned checks')}</span>
-          </article>
         </div>
         <EvaluationScopeGroups />
       </MethodologySection>
@@ -601,7 +588,7 @@ export function EvaluationScopeRoute() {
             <StatusBadge status="Not Verified" />
             <p>
               {t(
-                'Evidence is missing, unreadable, conflicting, or insufficient for a reliable judgment.',
+                'Evidence is missing, unreadable, or insufficient for a reliable judgment.',
               )}
             </p>
           </article>
@@ -635,7 +622,7 @@ export function EvaluationScopeRoute() {
         <ul className="methodology-compact-list">
           <li>
             {t(
-              'Low-confidence semantic evidence must not produce a positive or negative academic judgment.',
+              'When available evidence cannot support a reliable semantic judgment, the result is Not Verified.',
             )}
           </li>
           <li>
@@ -679,11 +666,6 @@ export function EvaluationScopeRoute() {
             {t("Users cannot access another owner's analysis.")}
           </li>
           <li>{t('Original evidence is preserved.')}</li>
-          <li>
-            {t(
-              'Technical logs must not expose document contents or secrets.',
-            )}
-          </li>
         </ul>
       </MethodologySection>
 
@@ -728,9 +710,6 @@ export function EvaluationScopeRoute() {
           <li>{t('Suggested relationships require faculty review.')}</li>
           <li>
             {t('The analyzer does not approve, certify, or reject an exam.')}
-          </li>
-          <li>
-            {t('Planned capabilities are not counted as exam failures.')}
           </li>
           <li>
             {t(

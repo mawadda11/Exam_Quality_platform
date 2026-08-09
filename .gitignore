@@ -1,6 +1,7 @@
 .env
 .env.*
 !.env.example
+!.env.production.example
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -41,3 +42,54 @@ knowledge_base/chroma/
 ~$*.xlsx
 
 *.tsbuildinfo
+
+# Deployment: backups, database dumps, and TLS private material must never
+# be committed. deploy/backups/ is the default location backup.sh writes to
+# (outside any web-served directory); Caddy's own certificate/key storage
+# lives in Docker named volumes (caddy_data/caddy_config), not the repo tree.
+deploy/backups/
+*.sql
+*.sql.gz
+*.dump
+*.pgdump
+*.tar.gz
+*.tar.zst
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python / Node
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+node_modules/
+dist/
+build/
+.next/
+
+# Runtime data - not source code
+storage/uploads/
+storage/huggingface/
+
+# Local temporary files
+*.log
+*.bak
+
+# Local patch/intermediate artifacts
+CURRENT_BALANCED_FINDINGS_INPUT_20260809/
+CURRENT_BALANCED_FINDINGS_INPUT_20260809.zip
+CURRENT_REFERENCE_FIX_INPUT_20260809/
+CURRENT_REFERENCE_FIX_INPUT_20260809.zip
+
+# Keep deployment env templates
+!.env.example
+!.env.production.example

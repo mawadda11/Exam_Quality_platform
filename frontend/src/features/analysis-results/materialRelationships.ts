@@ -22,6 +22,7 @@ export interface MaterialRelationshipView {
   reference: DocumentReferenceResponse
   result: MaterialRelationshipResult
   exactCandidates: PhysicalMaterialView[]
+  contextCandidates: PhysicalMaterialView[]
   nearbyCandidates: PhysicalMaterialView[]
   matchedMaterial: PhysicalMaterialView | null
 }
@@ -115,6 +116,11 @@ export function buildMaterialRelationship(
     materialsById,
     (candidate) => candidate.exact_label_match,
   )
+  const contextCandidates = distinctMaterialCandidates(
+    reference.association_candidates,
+    materialsById,
+    (candidate) => !candidate.exact_label_match,
+  )
   const nearbyCandidates = distinctMaterialCandidates(
     reference.association_candidates,
     materialsById,
@@ -124,19 +130,21 @@ export function buildMaterialRelationship(
   const selected = distinctMaterialCandidates(
     reference.association_candidates,
     materialsById,
-    (candidate) => candidate.exact_label_match && candidate.selected,
+    (candidate) => candidate.selected,
   )
 
   let result: MaterialRelationshipResult
   if (reference.resolution_status === 'ambiguous' || exactCandidates.length > 1) {
     result = 'ambiguous'
-  } else if (
-    reference.resolution_status === 'resolved' &&
-    exactCandidates.length === 1 &&
-    selected.length === 1
-  ) {
+  } else if (reference.resolution_status === 'resolved' && selected.length === 1) {
+    // A reviewed geometry or bounded AI decision is a real link even though
+    // it is intentionally not an exact label match.
     result = 'linked'
-  } else if (exactCandidates.length === 0 && nearbyCandidates.length > 0) {
+  } else if (
+    reference.resolution_status === 'unresolved' &&
+    exactCandidates.length === 0 &&
+    nearbyCandidates.length > 0
+  ) {
     result = 'nearby'
   } else {
     result = 'missing'
@@ -146,6 +154,7 @@ export function buildMaterialRelationship(
     reference,
     result,
     exactCandidates,
+    contextCandidates,
     nearbyCandidates,
     matchedMaterial:
       result === 'linked'

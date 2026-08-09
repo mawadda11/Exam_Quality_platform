@@ -1,10 +1,16 @@
 # Database Schema
 
+Migration `0013` adds governed question type, instructions, extraction method,
+and review status to `questions`, with backward-compatible defaults for
+historical rows. It adds `question_options`, `question_blanks`,
+`question_source_spans`, and analysis-owned `extraction_warnings`. New
+Extraction Review revisions use schema version 2 while immutable historical
+version-1 JSON remains readable.
+
 This file lists the currently implemented schema. Milestone M2 added the minimum durable
 Extraction Review foundation in migration `0008`. M3 creates revision 1 and pauses processing.
 M4-M5 reuse the same schema to append immutable review revisions, bind the exact confirmed revision,
-and continue processing. M6-M9 reuse the same nullable semantic columns and populate them; no new
-database migration is required.
+and continue processing. M6-M9 reuse the same nullable semantic columns and populate them.
 
 ## Core tables
 - `users`: Faculty Member identity, institution, department, password hash, activation state, token version, and last login. Version 1 does not require multi-role authorization.

@@ -231,10 +231,15 @@ export function ReportPreviewContent({ analysisId, report }: ReportPreviewConten
         </p>
         <p>
           {score.score !== null
-            ? t('Overall result: {score}% based on {count} verified applicable checks.', {
-                score: score.score,
-                count: score.denominator,
-              })
+            ? score.score_mode === 'local_preliminary'
+              ? t('Preliminary local result: {score}% based on {count} applicable checks.', {
+                  score: score.score,
+                  count: score.denominator,
+                })
+              : t('Overall result: {score}% based on {count} verified applicable checks.', {
+                  score: score.score,
+                  count: score.denominator,
+                })
             : t('Overall result: {label}.', { label: t(score.label ?? 'Insufficient Evidence') })}
         </p>
         {grouped.strengths.length > 0 && (
@@ -265,8 +270,26 @@ export function ReportPreviewContent({ analysisId, report }: ReportPreviewConten
       </section>
 
       <section aria-labelledby="report-section-3" className="report-preview-section">
-        <h2 id="report-section-3">3. {t('Overall Exam Quality Score')}</h2>
-        <ScoreRing score={score.score} denominator={score.denominator} emptyLabel={t(score.label ?? 'Insufficient Evidence')} />
+        <h2 id="report-section-3">
+          3. {t(
+            score.score_mode === 'local_preliminary'
+              ? 'Preliminary Local Quality Score'
+              : 'Overall Exam Quality Score',
+          )}
+        </h2>
+        <ScoreRing
+          score={score.score}
+          denominator={score.denominator}
+          emptyLabel={t(score.label ?? 'Insufficient Evidence')}
+          label={
+            score.score_mode === 'local_preliminary'
+              ? t('Preliminary Local Quality Score')
+              : t('Overall Exam Quality Score')
+          }
+          denominatorKind={
+            score.score_mode === 'local_preliminary' ? 'applicable' : 'verified'
+          }
+        />
       </section>
 
       <section aria-labelledby="report-section-4" className="report-preview-section">

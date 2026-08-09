@@ -60,6 +60,75 @@ def _material_type(target_type: ReferenceTargetType) -> SupportingMaterialType |
     return SupportingMaterialType(target_type.value)
 
 
+def _deictic_candidates(
+    reference: DocumentReference,
+    materials: Sequence[SupportingMaterial],
+    target_type: SupportingMaterialType,
+) -> list[tuple[float, SupportingMaterial]]:
+    """Return plausible candidates for a non-numbered contextual reference.
+
+    Same-page evidence is always preferred over neighboring pages. Directional
+    words (below/above and Arabic equivalents) narrow the pool when they are
+    usable, but they are hints rather than a closed vocabulary requirement.
+    This prevents an unlabeled diagram on the question page from becoming
+    ambiguous merely because other diagrams exist on the previous/next page.
+    """
+
+    phrase = reference.original_text.casefold()
+    wants_below = any(
+        token in phrase
+        for token in ("below", "following", "next", "أدناه", "التالي", "الآتي", "الاتي")
+    )
+    wants_above = any(
+        token in phrase
+        for token in ("above", "previous", "preceding", "أعلاه", "السابق")
+    )
+
+    typed = [
+        material
+        for material in materials
+        if material.material_type is target_type
+        and abs(material.page_number - reference.page_number) <= 1
+    ]
+    if not typed:
+        return []
+
+    same_page = [
+        material for material in typed if material.page_number == reference.page_number
+    ]
+    pool = same_page or typed
+
+    if (wants_below or wants_above) and reference.geometry is not None:
+        directional: list[SupportingMaterial] = []
+        for material in pool:
+            if material.page_number != reference.page_number or material.geometry is None:
+                directional.append(material)
+                continue
+            if wants_below and float(material.geometry["bottom"]) >= float(
+                reference.geometry["top"]
+            ):
+                directional.append(material)
+            elif wants_above and float(material.geometry["top"]) <= float(
+                reference.geometry["bottom"]
+            ):
+                directional.append(material)
+        if directional:
+            pool = directional
+
+    ranked: list[tuple[float, SupportingMaterial]] = []
+    for material in pool:
+        distance = _distance(reference.geometry, material.geometry)
+        # Page offset matters only when no same-page material exists.
+        score = (distance if distance is not None else 1000.0) + (
+            abs(material.page_number - reference.page_number) * 10000.0
+        )
+        ranked.append((score, material))
+    return sorted(ranked, key=lambda item: item[0])
+
+def _is_deictic(reference: DocumentReference) -> bool:
+    return reference.normalized_target_label.endswith(":unlabeled")
+
+
 def materialize_reference_associations(
     session: Session,
     *,
@@ -120,15 +189,22 @@ def materialize_reference_associations(
             )
 
         exact_count = len(exact_material_ids) + len(exact_question_ids)
-        status = (
-            ReferenceResolutionStatus.RESOLVED
-            if exact_count == 1
-            else (
-                ReferenceResolutionStatus.AMBIGUOUS
-                if exact_count > 1
-                else ReferenceResolutionStatus.UNRESOLVED
-            )
+        target_material_type = _material_type(reference.target_type)
+        deictic = (
+            _deictic_candidates(reference, materials, target_material_type)
+            if exact_count == 0 and target_material_type is not None and _is_deictic(reference)
+            else []
         )
+        if exact_count == 1:
+            status = ReferenceResolutionStatus.RESOLVED
+        elif exact_count > 1:
+            status = ReferenceResolutionStatus.AMBIGUOUS
+        elif len(deictic) == 1:
+            status = ReferenceResolutionStatus.RESOLVED
+        elif len(deictic) > 1:
+            status = ReferenceResolutionStatus.AMBIGUOUS
+        else:
+            status = ReferenceResolutionStatus.UNRESOLVED
         if review_revision_id is None:
             reference.machine_resolution_status = status
         ambiguity_reason = (
@@ -164,6 +240,26 @@ def materialize_reference_associations(
             )
             session.add(association)
             created.append(association)
+
+        if exact_count == 0 and len(deictic) == 1:
+            distance, material = deictic[0]
+            association = ReferenceAssociation(
+                reference_id=reference.id, target_material_id=material.id, target_question_id=None,
+                review_revision_id=review_revision_id, basis=AssociationBasis.DEICTIC_GEOMETRY,
+                confidence=min(reference.confidence, material.confidence, 0.9), proximity_distance=distance,
+                exact_label_match=False, selected=True, ambiguity_reason=None,
+            )
+            session.add(association); created.append(association)
+            continue
+        elif exact_count == 0 and len(deictic) > 1:
+            for distance, material in deictic[:3]:
+                association = ReferenceAssociation(
+                    reference_id=reference.id, target_material_id=material.id, target_question_id=None,
+                    review_revision_id=review_revision_id, basis=AssociationBasis.PROXIMITY_SUPPORT,
+                    confidence=min(reference.confidence, material.confidence, 0.5), proximity_distance=distance,
+                    exact_label_match=False, selected=False, ambiguity_reason="Multiple plausible geometric targets.",
+                )
+                session.add(association); created.append(association)
 
         target_material_type = _material_type(reference.target_type)
         if target_material_type is None:
@@ -238,11 +334,101 @@ def materialize_confirmed_reference_associations(
         item.source_record_id: item for item in snapshot.questions if item.included
     }
     created: list[ReferenceAssociation] = []
+    reviewed_associations_by_reference: dict[UUID, list] = {}
+    for reviewed_association in snapshot.reference_associations:
+        reviewed_associations_by_reference.setdefault(
+            reviewed_association.reference_source_record_id, []
+        ).append(reviewed_association)
 
     for reviewed_reference in snapshot.document_references:
         if not reviewed_reference.included:
             continue
         reference = references[reviewed_reference.source_record_id]
+
+        # Contextual/unlabeled references have no exact textual identity to
+        # rebuild after confirmation. Preserve the reviewed geometry/AI
+        # candidate so a valid link does not revert to "missing".
+        if _is_deictic(reference):
+            reviewed_candidates = [
+                item
+                for item in reviewed_associations_by_reference.get(
+                    reviewed_reference.source_record_id, []
+                )
+                if item.target_material_source_record_id in included_material_ids
+            ]
+            if reviewed_candidates:
+                for item in reviewed_candidates:
+                    target_id = item.target_material_source_record_id
+                    if target_id is None:
+                        continue
+                    row = ReferenceAssociation(
+                        reference_id=reference.id,
+                        target_material_id=target_id,
+                        target_question_id=None,
+                        review_revision_id=review_revision_id,
+                        basis=item.basis,
+                        confidence=item.extraction_confidence,
+                        proximity_distance=item.proximity_distance,
+                        exact_label_match=False,
+                        selected=item.selected,
+                        ambiguity_reason=item.ambiguity_reason,
+                    )
+                    session.add(row)
+                    created.append(row)
+                continue
+
+            target_material_type = _material_type(reviewed_reference.target_type)
+            if target_material_type is not None:
+                included_materials = [
+                    material
+                    for material_id, material in materials.items()
+                    if material_id in included_material_ids
+                ]
+                deictic = _deictic_candidates(
+                    reference, included_materials, target_material_type
+                )
+                if len(deictic) == 1:
+                    distance, material = deictic[0]
+                    row = ReferenceAssociation(
+                        reference_id=reference.id,
+                        target_material_id=material.id,
+                        target_question_id=None,
+                        review_revision_id=review_revision_id,
+                        basis=AssociationBasis.DEICTIC_GEOMETRY,
+                        confidence=min(
+                            reviewed_reference.extraction_confidence,
+                            material.confidence,
+                            0.9,
+                        ),
+                        proximity_distance=distance,
+                        exact_label_match=False,
+                        selected=True,
+                        ambiguity_reason=None,
+                    )
+                    session.add(row)
+                    created.append(row)
+                elif len(deictic) > 1:
+                    for distance, material in deictic[:3]:
+                        row = ReferenceAssociation(
+                            reference_id=reference.id,
+                            target_material_id=material.id,
+                            target_question_id=None,
+                            review_revision_id=review_revision_id,
+                            basis=AssociationBasis.PROXIMITY_SUPPORT,
+                            confidence=min(
+                                reviewed_reference.extraction_confidence,
+                                material.confidence,
+                                0.5,
+                            ),
+                            proximity_distance=distance,
+                            exact_label_match=False,
+                            selected=False,
+                            ambiguity_reason="Multiple plausible geometric targets.",
+                        )
+                        session.add(row)
+                        created.append(row)
+            continue
+
         material_ids: list[UUID] = []
         question_ids: list[UUID] = []
         if reviewed_reference.target_type is ReferenceTargetType.QUESTION:

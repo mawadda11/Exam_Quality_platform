@@ -261,3 +261,104 @@ def test_failed_post_confirmation_analysis_reuses_confirmed_revision_on_retry(
     completed = _poll_until_terminal(client, analysis_id, headers)
     assert completed["state"] == "completed"
     assert calls == 2
+
+
+@pytest.mark.parametrize(
+    ("mode", "expects_questions"),
+    [
+        ("assisted_pdf", True),
+        ("manual_pdf", False),
+        ("structured_template", False),
+    ],
+)
+def test_run_persists_selected_question_preparation_mode(
+    client: TestClient,
+    mode: str,
+    expects_questions: bool,
+) -> None:
+    email = f"preparation-{mode}@kau.edu.sa"
+    analysis_id = _make_ready_analysis(client, email)
+    headers = auth_header(email)
+
+    response = client.post(
+        f"/api/v1/analyses/{analysis_id}/run",
+        headers=headers,
+        json={"question_preparation_mode": mode},
+    )
+
+    assert response.status_code == 202, response.text
+    assert _poll_until_terminal(client, analysis_id, headers)["state"] == "review_ready"
+    review = client.get(
+        f"/api/v1/analyses/{analysis_id}/extraction-review",
+        headers=headers,
+    )
+    assert review.status_code == 200, review.text
+    body = review.json()
+    snapshot = body["snapshot"]
+    assert snapshot["preparation_mode"] == mode
+    assert bool(snapshot["questions"]) is expects_questions
+    if mode == "manual_pdf":
+        assert body["can_confirm"] is False
+        assert "Add and review at least one question region" in body["confirmation_blockers"][0]
+    elif mode == "structured_template":
+        assert body["can_confirm"] is False
+        assert (
+            "Import and review at least one structured question"
+            in body["confirmation_blockers"][0]
+        )
+
+
+def test_run_without_mode_defaults_to_assisted_pdf(client: TestClient) -> None:
+    email = "preparation-default@kau.edu.sa"
+    analysis_id = _make_ready_analysis(client, email)
+    headers = auth_header(email)
+
+    response = client.post(f"/api/v1/analyses/{analysis_id}/run", headers=headers)
+
+    assert response.status_code == 202, response.text
+    assert _poll_until_terminal(client, analysis_id, headers)["state"] == "review_ready"
+    review = client.get(
+        f"/api/v1/analyses/{analysis_id}/extraction-review",
+        headers=headers,
+    ).json()
+    assert review["snapshot"]["preparation_mode"] == "assisted_pdf"
+    assert review["snapshot"]["questions"]
+
+
+def test_retry_preserves_selected_mode_when_failure_occurs_before_exam_extraction(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = stages.STAGE_HANDLERS[ProcessingStage.VALIDATING]
+    calls = 0
+
+    def fail_once(analysis: Analysis, session: object, settings: object) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("private validation failure")
+        original(analysis, session, settings)
+
+    monkeypatch.setitem(stages.STAGE_HANDLERS, ProcessingStage.VALIDATING, fail_once)
+    email = "preparation-retry-manual@kau.edu.sa"
+    analysis_id = _make_ready_analysis(client, email)
+    headers = auth_header(email)
+
+    started = client.post(
+        f"/api/v1/analyses/{analysis_id}/run",
+        headers=headers,
+        json={"question_preparation_mode": "manual_pdf"},
+    )
+    assert started.status_code == 202
+    assert _poll_until_terminal(client, analysis_id, headers)["state"] == "failed"
+
+    retried = client.post(f"/api/v1/analyses/{analysis_id}/retry", headers=headers)
+    assert retried.status_code == 202
+    assert _poll_until_terminal(client, analysis_id, headers)["state"] == "review_ready"
+
+    review = client.get(
+        f"/api/v1/analyses/{analysis_id}/extraction-review",
+        headers=headers,
+    ).json()
+    assert review["snapshot"]["preparation_mode"] == "manual_pdf"
+    assert review["snapshot"]["questions"] == []

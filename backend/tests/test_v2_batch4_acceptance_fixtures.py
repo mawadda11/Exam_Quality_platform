@@ -29,6 +29,10 @@ from app.models.reference_association import ReferenceAssociation
 from app.models.supporting_material_annotation import SupportingMaterialAnnotation
 from app.models.user import User
 from app.services.extraction.digital_pdf_extractor import PdfPlumberExamExtractor
+from app.services.extraction.exam_structure import (
+    DeterministicExamStructureParser,
+    apply_exam_structure_parser,
+)
 from app.services.extraction.digital_tp153_extractor import PdfPlumberTp153Extractor
 from app.services.extraction.line_classification import parse_declared_total
 from app.services.extraction.persistence import persist_extraction_result
@@ -164,6 +168,23 @@ def test_exact_fixtures_complete_the_public_api_workflow_and_bilingual_reports(
     assert len(declared) == 1
     assert parse_declared_total(declared[0]["extracted_text"]) == 40
 
+    # The full native/Tesseract reconciliation intentionally blocks silent
+    # critical disagreements. This acceptance path represents the faculty
+    # reviewer checking the highlighted source evidence and explicitly
+    # resolving those diagnostics in a new immutable revision.
+    for warning in snapshot.get("extraction_warnings", []):
+        if warning["severity"] == "critical":
+            warning["resolved"] = True
+    if not review["can_confirm"]:
+        saved_review = client.put(
+            f"/api/v1/analyses/{analysis_id}/extraction-review",
+            headers=auth_header(email),
+            json={"base_revision_id": review["revision_id"], "snapshot": snapshot},
+        )
+        assert saved_review.status_code == 201, saved_review.text
+        review = saved_review.json()
+        assert review["can_confirm"] is True
+
     confirmed = client.post(
         f"/api/v1/analyses/{analysis_id}/extraction-review/confirm",
         headers=auth_header(email),
@@ -180,11 +201,11 @@ def test_exact_fixtures_complete_the_public_api_workflow_and_bilingual_reports(
     assert findings_response.status_code == 200
     findings = {item["rule_id"]: item for item in findings_response.json()}
     assert findings["RULE018"]["status"] == "Satisfied"
-    assert findings["RULE014"]["status"] == "Not Verified"
+    assert findings["RULE014"]["status"] == "Not Satisfied"
     assert "Figure 2" in findings["RULE014"]["explanation"]
     assert "الشكل 5" in findings["RULE014"]["explanation"]
-    assert findings["RULE016"]["status"] == "Not Verified"
-    assert findings["RULE022"]["status"] == "Not Verified"
+    assert findings["RULE016"]["status"] == "Not Satisfied"
+    assert findings["RULE022"]["status"] == "Not Satisfied"
 
     materials = client.get(
         f"/api/v1/analyses/{analysis_id}/supporting-materials",
@@ -204,9 +225,14 @@ def test_exact_fixtures_complete_the_public_api_workflow_and_bilingual_reports(
     assert by_target["figure:5"]["association_candidates"] == []
     assert by_target["figure:2"]["resolution_status"] == "ambiguous"
     assert len(by_target["figure:2"]["association_candidates"]) == 2
-    assert by_target["figure:unlabeled"]["resolution_status"] == "unresolved"
+    assert by_target["figure:unlabeled"]["resolution_status"] == "resolved"
     assert len(by_target["figure:unlabeled"]["association_candidates"]) == 1
-    assert not by_target["figure:unlabeled"]["association_candidates"][0]["selected"]
+    assert by_target["figure:unlabeled"]["association_candidates"][0]["selected"]
+    assert (
+        by_target["figure:unlabeled"]["association_candidates"][0]["basis"]
+        == "deictic_geometry"
+    )
+    assert "table:unlabeled" not in by_target
     assert (
         client.get(
             f"/api/v1/analyses/{analysis_id}/question-types",
@@ -235,6 +261,71 @@ def test_exact_fixtures_complete_the_public_api_workflow_and_bilingual_reports(
         headers=auth_header("pilot-fixture-intruder@example.test"),
     )
     assert denied.status_code == 404
+
+
+
+
+def test_batch4_question_text_excludes_supporting_captions_and_page_noise() -> None:
+    extracted = PdfPlumberExamExtractor().extract(EXAM)
+    structured = apply_exam_structure_parser(
+        extracted,
+        DeterministicExamStructureParser(),
+        pdf_path=EXAM,
+    )
+    by_question = {question.number_label: question for question in structured.questions}
+    by_label = {label: question.text for label, question in by_question.items()}
+
+    # Administrative fill-in fields above a question are page chrome, not answer blanks.
+    assert "الرقم الجامعي" not in by_label["Q1"]
+    assert "اسم الطالب" not in by_label["Q1"]
+    assert by_question["Q1"].blanks == ()
+
+    # Explicit source references must beat incidental keywords and remain typed even
+    # when the referenced material is missing or ambiguous.
+    assert by_question["Q2"].question_type.value == "figure_based"
+    assert by_question["Q3"].question_type.value == "table_based"
+    assert by_question["Q4"].question_type.value == "code_question"
+    assert by_question["Q5"].question_type.value == "figure_based"
+    assert by_question["Q6"].question_type.value == "figure_based"
+    assert by_question["Q7"].question_type.value == "figure_based"
+
+    assert "الشكل 1" in by_label["Q2"]
+    assert "Relational Database Schema" not in by_label["Q2"]
+    assert "Figure -" not in by_label["Q2"]
+
+    assert "Using Table 1" in by_label["Q3"]
+    assert "class average" in by_label["Q3"]
+    assert "Sample Student Scores" not in by_label["Q3"]
+    assert "الجدول:1" not in by_label["Q3"]
+
+    assert "add_student" in by_label["Q4"]
+    assert "Parameterized insert" not in by_label["Q4"]
+    assert "def __init__" not in by_label["Q4"]
+
+    assert "الشكل 5" in by_label["Q5"]
+    assert "مرجع غير موجود" in by_label["Q5"]
+
+    assert "Refer to Figure 2" in by_label["Q6"]
+    assert "Network Structure" not in by_label["Q6"]
+    assert "Validation Flowchart" not in by_label["Q6"]
+
+    assert "المخطط أدناه" in by_label["Q7"]
+    assert "محلل جودة الاختبارات" not in by_label["Q7"]
+    assert "Batch" not in by_label["Q7"]
+    assert "7 / 7" not in by_label["Q7"]
+
+    # Supporting context remains separately available after cleaning the prompt.
+    assert len(structured.supporting_materials) == 6
+    references = {
+        (item.question_number_label, item.normalized_target_label)
+        for item in structured.document_references
+    }
+    assert ("Q2", "figure:1") in references
+    assert ("Q3", "table:1") in references
+    assert ("Q4", "code_block:1") in references
+    assert ("Q5", "figure:5") in references
+    assert ("Q6", "figure:2") in references
+    assert ("Q7", "figure:unlabeled") in references
 
 
 def test_exact_exam_fixture_extracts_hierarchy_marks_materials_and_references() -> None:
@@ -437,7 +528,7 @@ def test_exact_exam_fixture_associations_follow_approved_policy(db_engine: Engin
         )
         assert (
             by_target["figure:unlabeled"].machine_resolution_status
-            is ReferenceResolutionStatus.UNRESOLVED
+            is ReferenceResolutionStatus.RESOLVED
         )
 
         figure_two = list(
@@ -459,9 +550,9 @@ def test_exact_exam_fixture_associations_follow_approved_policy(db_engine: Engin
                 )
             )
         )
-        assert unlabeled
-        assert all(item.basis is AssociationBasis.PROXIMITY_SUPPORT for item in unlabeled)
-        assert not any(item.selected for item in unlabeled)
+        assert len(unlabeled) == 1
+        assert unlabeled[0].basis is AssociationBasis.DEICTIC_GEOMETRY
+        assert unlabeled[0].selected is True
 
 
 def test_exact_exam_fixture_findings_name_missing_and_ambiguous_references(
@@ -508,7 +599,7 @@ def test_exact_exam_fixture_findings_name_missing_and_ambiguous_references(
     assert cross_references.status is AcademicStatus.NOT_VERIFIED
     assert "Figure 2" in cross_references.explanation
     assert "الشكل 5" in cross_references.explanation
-    assert "proximity alone" in cross_references.explanation
+    assert "proximity alone" not in cross_references.explanation
 
 
 def test_exact_course_specification_fixture_extracts_only_genuine_records() -> None:

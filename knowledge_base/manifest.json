@@ -1,5 +1,5 @@
 {
-  "aggregate_record_hash": "c86346f0685bc4098227b03dfb29c9e3a7697885bf623efea08bc37db89a8b38",
+  "aggregate_record_hash": "e7e7d3e5f2e4323a488ff547db0b0e21985fdba2402bf52484cd745d27124742",
   "files": [
     {
       "name": "01_references.xlsx",
@@ -18,8 +18,8 @@
     },
     {
       "name": "04_requirements.xlsx",
-      "sha256": "568415b3589eac2168e929ed23de0d485408b0e6f749b1999353e0742bbf4904",
-      "size_bytes": 9024
+      "sha256": "1c1ef14be35aea82850c1bcd21a17f371e7345f228492cfd7cdd400a35524305",
+      "size_bytes": 9268
     },
     {
       "name": "05_evidence_types.xlsx",
@@ -28,18 +28,18 @@
     },
     {
       "name": "06_evidence_mapping.xlsx",
-      "sha256": "25e37775ba0cb7c475caa511afa395fc614032adfd7352f348811b8abb1657de",
-      "size_bytes": 9646
+      "sha256": "6fd723b6e4767def35a68703304900e7acd0b36f2157bbcb0993ab965ae23607",
+      "size_bytes": 10005
     },
     {
       "name": "07_evaluation_rules.xlsx",
-      "sha256": "60e800182cdd6f3f0b4c865c652d5f191f166ba59c4cfd3a0332d8979b4bc9ca",
-      "size_bytes": 9158
+      "sha256": "ded158181c6fdada48588087a2c05760ac07986e01a7e1daea2e1d5cef71ed80",
+      "size_bytes": 9257
     },
     {
       "name": "08_recommendations.xlsx",
-      "sha256": "0adcc275c5f45b451bab3eac75936b682f2e65672d9c69c1e271322d9e9316fb",
-      "size_bytes": 8495
+      "sha256": "54d4186e6dd2e6d6395534aa3626e53f01804dd6cc22d2af9845f57ab5aac89a",
+      "size_bytes": 8614
     },
     {
       "name": "09_relationships.xlsx",
@@ -53,8 +53,8 @@
     },
     {
       "name": "11_scoring_policy.xlsx",
-      "sha256": "22e888082a550fa7a42181e2040f77f6da4b0c4213eafd975b7177b8001e0991",
-      "size_bytes": 7063
+      "sha256": "6a6fcd4c555029721cbbe28228f0e3827b430fca6234ace0fc5e5de7b440076c",
+      "size_bytes": 7186
     }
   ],
   "generation_schema_version": "1.0",
@@ -63,16 +63,16 @@
     "derived requirement": 23,
     "official criterion": 14,
     "official reference": 3,
-    "system policy": 357,
+    "system policy": 361,
     "system rule": 30,
     "template evidence": 10
   },
   "record_counts_by_entity_type": {
     "Criterion": 20,
     "EvidenceType": 25,
-    "Mapping": 71,
+    "Mapping": 74,
     "Metadata": 53,
-    "Policy": 30,
+    "Policy": 31,
     "Recommendation": 35,
     "Reference": 3,
     "Relationship": 130,
@@ -86,14 +86,14 @@
     "03_criteria.xlsx": 20,
     "04_requirements.xlsx": 30,
     "05_evidence_types.xlsx": 25,
-    "06_evidence_mapping.xlsx": 71,
+    "06_evidence_mapping.xlsx": 74,
     "07_evaluation_rules.xlsx": 30,
     "08_recommendations.xlsx": 35,
     "09_relationships.xlsx": 130,
     "10_metadata.xlsx": 53,
-    "11_scoring_policy.xlsx": 30
+    "11_scoring_policy.xlsx": 31
   },
   "status": "valid",
-  "total_normalized_records": 437,
+  "total_normalized_records": 441,
   "version": "1.0"
 }

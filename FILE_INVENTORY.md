@@ -35,15 +35,19 @@
 - `docs/IMPLEMENTATION_ROADMAP.md`
 - `docs/V1_TRACEABILITY_MATRIX.md`
 - `docs/FRONTEND_DESIGN_SYSTEM.md`
+- `docs/QUESTION_PREPARATION_AND_REVIEW_PLAN.md`
+- `docs/HUMAN_ASSISTED_EXTRACTION_REVIEW.md`
+- `docs/STRUCTURED_QUESTION_TEMPLATE.md`
 
 ## Implemented application
 
-- React/TypeScript frontend with upload, processing, extraction review, history, results,
-  evidence, recommendations, concise analysis-completion messaging, a separate **What the Platform Evaluates**
-  page, and reports.
-- Python/FastAPI backend with owner-scoped analysis APIs, secure PDF upload, bilingual
-  digital/OCR extraction, adaptive Course Specification parsing, extraction review, governed
-  deterministic/semantic evaluation, scoring, coverage audit, and PDF reporting.
+- React/TypeScript frontend with upload, preparation-mode selection, structured CSV import,
+  human-assisted extraction review, history, results, evidence, recommendations, concise
+  analysis-completion messaging, a separate **What the Platform Evaluates** page, and reports.
+- Python/FastAPI backend with owner-scoped analysis APIs, secure PDF upload, three persisted
+  question-preparation modes, bilingual digital/OCR extraction, adaptive Course Specification
+  parsing, immutable extraction review, governed deterministic/semantic evaluation, scoring,
+  coverage audit, and PDF reporting.
 - PostgreSQL application persistence, ChromaDB adapter, offline deterministic development vector
   store, and offline local/fake AI adapters for tests and safe development.
 - Docker Compose and GitHub Actions gates.

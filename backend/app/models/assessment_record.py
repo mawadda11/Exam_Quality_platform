@@ -28,6 +28,7 @@ class AssessmentRecord(Base):
     method: Mapped[str] = mapped_column(String(200))
     activity: Mapped[str | None] = mapped_column(String(200), default=None)
     percentage: Mapped[float | None] = mapped_column(Float, default=None)
+    related_clo_codes: Mapped[list[str]] = mapped_column(JSON, default=list)
     page_number: Mapped[int] = mapped_column(Integer)
     confidence: Mapped[float] = mapped_column(Float)
     geometry: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)

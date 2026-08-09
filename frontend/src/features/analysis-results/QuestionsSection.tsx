@@ -11,6 +11,7 @@ import {
   type QuestionFilterValues,
 } from './questionPresentation'
 import type { ResultResource } from './useAnalysisResultsData'
+import { displayQuestionText } from '../../utils/questionText'
 
 interface QuestionsSectionProps {
   questions: QuestionResponse[]
@@ -21,6 +22,25 @@ function readyData<T>(resource: ResultResource<T> | undefined, fallback: T): T {
   return resource?.status === 'ready' ? resource.data : fallback
 }
 
+const QUESTION_TYPE_LABELS: Record<string, string> = {
+  multiple_choice: 'Multiple Choice',
+  true_false: 'True / False',
+  fill_in_blank: 'Fill in the Blank',
+  matching: 'Matching',
+  short_answer: 'Short Answer',
+  essay: 'Essay',
+  calculation: 'Calculation',
+  code_question: 'Code Question',
+  table_based: 'Table-based Question',
+  figure_based: 'Figure-based Question',
+  mixed: 'Mixed',
+  unknown: 'Unknown',
+}
+
+function questionTypeLabel(question: QuestionResponse): string {
+  return QUESTION_TYPE_LABELS[question.question_type ?? 'unknown'] ?? 'Unknown'
+}
+
 export function QuestionsSection({
   questions,
   findings: findingsResource,
@@ -29,7 +49,7 @@ export function QuestionsSection({
   const [filters, setFilters] = useState<QuestionFilterValues>(EMPTY_QUESTION_FILTERS)
 
   const evaluatedQuestions = useMemo(
-    () => sortQuestionsForFaculty(independentlyScorableQuestions(questions)),
+    () => independentlyScorableQuestions(sortQuestionsForFaculty(questions)),
     [questions],
   )
   const findings = readyData(findingsResource, [] as FindingResponse[])
@@ -71,8 +91,9 @@ export function QuestionsSection({
           <thead>
             <tr>
               <th scope="col">{t('Question')}</th>
-              <th scope="col">{t('Page')}</th>
+              <th scope="col">{t('Question Type')}</th>
               <th scope="col">{t('Marks')}</th>
+              <th scope="col">{t('Page')}</th>
               <th scope="col">{t('Text')}</th>
             </tr>
           </thead>
@@ -82,10 +103,11 @@ export function QuestionsSection({
                 <th scope="row" data-label={t('Question')}>
                   <bdi>{question.number_label}</bdi>
                 </th>
-                <td data-label={t('Page')}>{question.page_number}</td>
+                <td data-label={t('Question Type')}>{t(questionTypeLabel(question))}</td>
                 <td data-label={t('Marks')}>{question.marks ?? '—'}</td>
+                <td data-label={t('Page')}>{question.page_number}</td>
                 <td data-label={t('Text')}>
-                  <span dir="auto">{question.question_text}</span>
+                  <span dir="auto" className="bidi-plaintext">{displayQuestionText(question.question_text, question.number_label)}</span>
                 </td>
               </tr>
             ))}

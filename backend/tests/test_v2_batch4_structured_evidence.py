@@ -13,6 +13,7 @@ from app.core.domain import (
     AcademicStatus,
     AssociationBasis,
     ExamType,
+    ProcessingStage,
     ReferenceResolutionStatus,
     ReferenceTargetType,
     SupportingAnnotationType,
@@ -32,8 +33,13 @@ from app.services.extraction.associations import (
 from app.services.extraction.digital_pdf_extractor import PdfPlumberExamExtractor
 from app.services.extraction.persistence import persist_extraction_result
 from app.services.extraction.review_snapshot import materialize_initial_review_revision
+from app.services.extraction.review_workflow import (
+    append_extraction_review_revision,
+    confirm_extraction_review,
+)
 from app.services.extraction.structured_evidence import (
     extract_question_references,
+    is_code_line,
     normalize_annotation_label,
 )
 from app.services.extraction.types import (
@@ -49,6 +55,13 @@ from app.services.rules.structured_evidence import (
     evaluate_resolvable_cross_references,
     evaluate_supporting_material_association,
 )
+
+
+
+def test_nested_method_call_is_detected_as_code_line() -> None:
+    assert is_code_line("self.connection.execute(query, (student_id, name))")
+    assert is_code_line("cursor.execute(query, (value_a, value_b))")
+    assert not is_code_line("Q1 (8 marks).")
 
 
 def _analysis(session: Session) -> Analysis:
@@ -89,6 +102,7 @@ def _result(
     include_reference: bool = True,
     material_type: SupportingMaterialType = SupportingMaterialType.FIGURE,
     source_text: str = "",
+    link_to_question: bool = True,
 ) -> ExtractionResult:
     materials = [
         ExtractedSupportingMaterial(
@@ -99,7 +113,7 @@ def _result(
             confidence=0.96,
             geometry=Geometry(20 + index * 5, 80, 180 + index * 5, 160),
             extraction_method="direct_text",
-            question_number_label="Q1",
+            question_number_label="Q1" if link_to_question else None,
         )
         for index in range(material_count)
     ]
@@ -199,6 +213,35 @@ def test_bilingual_reference_normalization_preserves_original_wording() -> None:
     assert all(item.confidence == 0.82 for item in references)
 
 
+
+def test_generic_noun_without_source_cue_does_not_create_false_reference() -> None:
+    references = extract_question_references(
+        text=(
+            "بالاعتماد على الشكل 1، حدّد نوع العلاقة بين STUDENT و COURSE، "
+            "ثم فسّر دور جدول ENROLLMENT."
+        ),
+        question_number_label="Q2",
+        page_number=2,
+        geometry=None,
+        confidence=0.9,
+        extraction_method="direct_text",
+    )
+    assert [item.normalized_target_label for item in references] == ["figure:1"]
+
+
+def test_contextual_diagram_phrase_is_preserved_as_unlabeled_reference() -> None:
+    references = extract_question_references(
+        text="اشرح الخطوات الموضحة في المخطط أدناه، ثم اقترح تحققًا إضافيًا.",
+        question_number_label="Q7",
+        page_number=6,
+        geometry=None,
+        confidence=0.9,
+        extraction_method="direct_text",
+    )
+    assert len(references) == 1
+    assert references[0].normalized_target_label == "figure:unlabeled"
+    assert "المخطط أدناه" in references[0].original_text
+
 def test_exact_unique_label_is_selected_and_proximity_is_only_supporting(
     db_engine: Engine,
 ) -> None:
@@ -272,40 +315,104 @@ def test_proximity_without_exact_label_is_never_selected(
         assert candidates[0].proximity_distance is not None
 
 
-def test_structured_source_rows_remain_immutable_when_review_snapshot_is_corrected(
+def test_confirmed_structured_edits_and_exclusions_are_materialized_without_rewriting_revision_one(
+    db_engine: Engine,
+) -> None:
+    with Session(db_engine) as session:
+        analysis = _analysis(session)
+        persist_extraction_result(session, analysis.id, _result(material_count=2))
+        initial = materialize_initial_review_revision(session, analysis.id)
+        snapshot = ExtractionReviewSnapshot.model_validate_json(json.dumps(initial.snapshot))
+        analysis.state = ProcessingStage.REVIEW_READY
+        corrected = snapshot.model_copy(deep=True)
+        kept_material = corrected.supporting_materials[0]
+        excluded_material = corrected.supporting_materials[1]
+        kept_annotation = next(
+            item
+            for item in corrected.supporting_annotations
+            if item.material_source_record_id == kept_material.source_record_id
+        )
+        excluded_annotation = next(
+            item
+            for item in corrected.supporting_annotations
+            if item.material_source_record_id == excluded_material.source_record_id
+        )
+        kept_material.source_text = "Reviewed figure description"
+        kept_material.question_source_record_id = None
+        kept_annotation.original_text = "Figure 1: Reviewed caption"
+        corrected.document_references[0].target_label = "Figure 1 (reviewed)"
+        corrected.document_references[0].question_source_record_id = None
+        excluded_material.included = False
+        excluded_annotation.included = False
+
+        saved = append_extraction_review_revision(
+            session,
+            analysis,
+            base_revision_id=initial.id,
+            candidate_snapshot=corrected,
+        )
+        confirm_extraction_review(session, analysis, revision_id=saved.revision_id)
+        session.flush()
+
+        materials = session.scalars(
+            select(SupportingMaterial).where(SupportingMaterial.analysis_id == analysis.id)
+        ).all()
+        annotations = session.scalars(
+            select(SupportingMaterialAnnotation).where(
+                SupportingMaterialAnnotation.analysis_id == analysis.id
+            )
+        ).all()
+        references = session.scalars(
+            select(DocumentReference).where(DocumentReference.analysis_id == analysis.id)
+        ).all()
+
+        assert len(materials) == 1
+        assert materials[0].source_text == "Reviewed figure description"
+        assert materials[0].question_id is None
+        assert len(annotations) == 1
+        assert annotations[0].original_text == "Figure 1: Reviewed caption"
+        assert annotations[0].normalized_label == "figure:1"
+        assert len(references) == 1
+        assert references[0].target_label == "Figure 1 (reviewed)"
+        assert references[0].normalized_target_label == "figure:1"
+        assert references[0].question_id is None
+
+        immutable_initial = ExtractionReviewSnapshot.model_validate_json(
+            json.dumps(initial.snapshot)
+        )
+        assert immutable_initial.supporting_materials[0].source_text == ""
+        assert immutable_initial.supporting_annotations[0].original_text == "Figure 1"
+        assert immutable_initial.document_references[0].target_label == "Figure 1"
+
+
+def test_confirmed_structured_reference_exclusion_removes_canonical_row(
     db_engine: Engine,
 ) -> None:
     with Session(db_engine) as session:
         analysis = _analysis(session)
         persist_extraction_result(session, analysis.id, _result())
         initial = materialize_initial_review_revision(session, analysis.id)
-        snapshot = ExtractionReviewSnapshot.model_validate_json(json.dumps(initial.snapshot))
-        original_annotation = session.scalars(
-            select(SupportingMaterialAnnotation).where(
-                SupportingMaterialAnnotation.analysis_id == analysis.id
-            )
-        ).one()
-        original_reference = session.scalars(
-            select(DocumentReference).where(DocumentReference.analysis_id == analysis.id)
-        ).one()
+        analysis.state = ProcessingStage.REVIEW_READY
+        candidate = ExtractionReviewSnapshot.model_validate_json(
+            json.dumps(initial.snapshot)
+        ).model_copy(deep=True)
+        candidate.document_references[0].included = False
 
-        corrected = snapshot.model_copy(deep=True)
-        corrected.supporting_annotations[0].original_text = "Figure 1: Reviewed caption"
-        corrected.document_references[0].target_label = "Figure 1 (reviewed)"
-        materialize_confirmed_reference_associations(
+        saved = append_extraction_review_revision(
             session,
-            analysis_id=analysis.id,
-            snapshot=corrected,
-            review_revision_id=initial.id,
+            analysis,
+            base_revision_id=initial.id,
+            candidate_snapshot=candidate,
         )
+        confirm_extraction_review(session, analysis, revision_id=saved.revision_id)
         session.flush()
 
-        assert original_annotation.original_text == "Figure 1"
-        assert original_reference.target_label == "Figure 1"
         assert (
-            corrected.supporting_annotations[0].original_text != original_annotation.original_text
+            session.scalars(
+                select(DocumentReference).where(DocumentReference.analysis_id == analysis.id)
+            ).all()
+            == []
         )
-        assert corrected.document_references[0].target_label != original_reference.target_label
 
 
 def test_historical_analysis_has_empty_structured_review_collections(
@@ -345,7 +452,7 @@ def test_governed_rules_exact_unique_and_not_applicable_branches(
                 snapshot=snapshot,
                 confirmed_revision_id=revision_id,
             ).status
-            is AcademicStatus.SATISFIED
+            is AcademicStatus.NOT_APPLICABLE
         )
         assert (
             evaluate_resolvable_cross_references(
@@ -354,7 +461,7 @@ def test_governed_rules_exact_unique_and_not_applicable_branches(
                 snapshot=snapshot,
                 confirmed_revision_id=revision_id,
             ).status
-            is AcademicStatus.SATISFIED
+            is AcademicStatus.NOT_APPLICABLE
         )
 
         no_reference_analysis, no_reference_snapshot, no_reference_revision = (
@@ -391,8 +498,28 @@ def test_governed_rules_exact_unique_and_not_applicable_branches(
             is AcademicStatus.NOT_APPLICABLE
         )
 
+        layout_material_analysis, layout_material_snapshot, layout_material_revision = (
+            _persist_and_confirm_candidates(
+                session,
+                _result(
+                    material_count=1,
+                    include_label=False,
+                    include_reference=False,
+                    link_to_question=False,
+                ),
+            )
+        )
+        association = evaluate_supporting_material_association(
+            session,
+            analysis_id=layout_material_analysis.id,
+            snapshot=layout_material_snapshot,
+            confirmed_revision_id=layout_material_revision,
+        )
+        assert association.status is AcademicStatus.NOT_APPLICABLE
+        assert "outside automatic pilot scoring" in association.explanation
 
-def test_governed_rules_ambiguous_and_proximity_only_are_not_verified(
+
+def test_governed_rules_use_verified_defect_statuses_for_ambiguity_and_proximity(
     db_engine: Engine,
 ) -> None:
     with Session(db_engine) as session:
@@ -400,20 +527,33 @@ def test_governed_rules_ambiguous_and_proximity_only_are_not_verified(
             session,
             _result(material_count=2),
         )
-        for evaluator in (
-            evaluate_referenced_material_availability,
-            evaluate_supporting_material_association,
-            evaluate_resolvable_cross_references,
-        ):
-            assert (
-                evaluator(
-                    session,
-                    analysis_id=ambiguous.id,
-                    snapshot=ambiguous_snapshot,
-                    confirmed_revision_id=ambiguous_revision,
-                ).status
-                is AcademicStatus.NOT_VERIFIED
-            )
+        assert (
+            evaluate_referenced_material_availability(
+                session,
+                analysis_id=ambiguous.id,
+                snapshot=ambiguous_snapshot,
+                confirmed_revision_id=ambiguous_revision,
+            ).status
+            is AcademicStatus.NOT_SATISFIED
+        )
+        assert (
+            evaluate_supporting_material_association(
+                session,
+                analysis_id=ambiguous.id,
+                snapshot=ambiguous_snapshot,
+                confirmed_revision_id=ambiguous_revision,
+            ).status
+            is AcademicStatus.NOT_APPLICABLE
+        )
+        assert (
+            evaluate_resolvable_cross_references(
+                session,
+                analysis_id=ambiguous.id,
+                snapshot=ambiguous_snapshot,
+                confirmed_revision_id=ambiguous_revision,
+            ).status
+            is AcademicStatus.NOT_APPLICABLE
+        )
 
         proximity, proximity_snapshot, proximity_revision = _persist_and_confirm_candidates(
             session,
@@ -426,7 +566,7 @@ def test_governed_rules_ambiguous_and_proximity_only_are_not_verified(
                 snapshot=proximity_snapshot,
                 confirmed_revision_id=proximity_revision,
             ).status
-            is AcademicStatus.NOT_VERIFIED
+            is AcademicStatus.NOT_APPLICABLE
         )
         assert (
             evaluate_referenced_material_availability(
@@ -479,6 +619,38 @@ def test_persistence_keeps_page_geometry_confidence_and_extraction_method(
         assert material.extraction_method == "direct_text"
 
 
+def test_plain_exam_questions_do_not_create_code_block(
+    tmp_path: Path,
+) -> None:
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=12)
+
+    lines = (
+        "CS101 Midterm Examination (Sample)",
+        "Course: Introduction to Programming",
+        "Total Marks: 30",
+        "Q1 (10): Define an algorithm and explain two characteristics.",
+        "Q2 (10): Write a Python function to calculate the factorial of n.",
+        "Q3 (10): Compare lists and tuples with two examples.",
+    )
+
+    for line in lines:
+        pdf.cell(text=line)
+        pdf.ln(8)
+
+    pdf_path = tmp_path / "plain-question-exam.pdf"
+    pdf.output(pdf_path)
+
+    extracted = PdfPlumberExamExtractor().extract(pdf_path)
+
+    assert not any(
+        item.material_type is SupportingMaterialType.CODE_BLOCK
+        for item in extracted.supporting_materials
+    )
+    assert extracted.supporting_materials == []
+
+
 def test_real_pdf_pipeline_extracts_persists_and_verifies_unique_table(
     db_engine: Engine,
     tmp_path: Path,
@@ -526,7 +698,7 @@ def test_real_pdf_pipeline_extracts_persists_and_verifies_unique_table(
                 snapshot=snapshot,
                 confirmed_revision_id=revision_id,
             ).status
-            is AcademicStatus.SATISFIED
+            is AcademicStatus.NOT_APPLICABLE
         )
         assert (
             evaluate_resolvable_cross_references(
@@ -535,5 +707,69 @@ def test_real_pdf_pipeline_extracts_persists_and_verifies_unique_table(
                 snapshot=snapshot,
                 confirmed_revision_id=revision_id,
             ).status
-            is AcademicStatus.SATISFIED
+            is AcademicStatus.NOT_APPLICABLE
         )
+
+
+def test_directly_linked_context_is_satisfied_without_explicit_label(
+    db_engine: Engine,
+) -> None:
+    with Session(db_engine) as session:
+        analysis, snapshot, revision_id = _persist_and_confirm_candidates(
+            session,
+            _result(include_label=False, include_reference=False, source_text="schema"),
+        )
+
+        result = evaluate_supporting_material_association(
+            session,
+            analysis_id=analysis.id,
+            snapshot=snapshot,
+            confirmed_revision_id=revision_id,
+        )
+
+        assert result.status is AcademicStatus.NOT_APPLICABLE
+
+
+def test_code_literal_in_wrapped_question_is_not_swallowed_by_prior_code_block(
+    tmp_path: Path,
+) -> None:
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=9)
+
+    lines = (
+        "Q4. [8 marks] Study the following code and determine its time complexity. Explain your answer.",
+        "for (int i = 0; i < n; i++) {",
+        "for (int j = 1; j < n; j *= 2) {",
+        "count++;",
+        "}",
+        "}",
+        "Q5. [6 marks] A queue initially contains A, B, and C, with A at the front. Perform the operations enqueue(D),",
+        "dequeue(), enqueue(E), and dequeue(). Show the queue after each operation.",
+        "Q6. [8 marks] Explain graph traversal.",
+    )
+    for line in lines:
+        pdf.cell(text=line)
+        pdf.ln(6)
+
+    pdf_path = tmp_path / "wrapped-code-literal-question.pdf"
+    pdf.output(pdf_path)
+
+    extracted = PdfPlumberExamExtractor().extract(pdf_path)
+    q5 = next(question for question in extracted.questions if question.number_label == "Q5")
+
+    assert q5.text == (
+        "Q5. [6 marks] A queue initially contains A, B, and C, with A at the front. "
+        "Perform the operations enqueue(D), dequeue(), enqueue(E), and dequeue(). "
+        "Show the queue after each operation."
+    )
+    code_blocks = [
+        item
+        for item in extracted.supporting_materials
+        if item.material_type is SupportingMaterialType.CODE_BLOCK
+    ]
+    assert len(code_blocks) == 1
+    assert "dequeue(), enqueue(E)" not in code_blocks[0].source_text
+    assert code_blocks[0].geometry is not None
+    assert q5.geometry is not None
+    assert code_blocks[0].geometry.bottom < q5.geometry.top

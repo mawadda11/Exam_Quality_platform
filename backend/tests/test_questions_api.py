@@ -87,6 +87,115 @@ def test_questions_returned_in_sequence_order(client: TestClient, db_engine: Eng
     assert [q["sequence"] for q in body] == [1, 2]
 
 
+def test_questions_use_page_root_child_and_source_order(
+    client: TestClient,
+    db_engine: Engine,
+) -> None:
+    email = "hierarchy-order@kau.edu.sa"
+    analysis_id = _create_analysis(client, email)
+    with Session(db_engine) as session:
+        q2 = Question(
+            analysis_id=uuid.UUID(analysis_id),
+            number_label="Q2",
+            question_text="Second root",
+            page_number=1,
+            marks=5,
+            sequence=2,
+            confidence=1,
+        )
+        q3 = Question(
+            analysis_id=uuid.UUID(analysis_id),
+            number_label="Q3",
+            question_text="Third root",
+            page_number=1,
+            marks=5,
+            sequence=5,
+            confidence=1,
+        )
+        page_two = Question(
+            analysis_id=uuid.UUID(analysis_id),
+            number_label="Q1",
+            question_text="Later page",
+            page_number=2,
+            marks=5,
+            sequence=1,
+            confidence=1,
+        )
+        session.add_all([q3, page_two, q2])
+        session.flush()
+        session.add_all(
+            [
+                Question(
+                    analysis_id=uuid.UUID(analysis_id),
+                    parent_question_id=q2.id,
+                    number_label="Q2(b)",
+                    question_text="Child b",
+                    page_number=1,
+                    marks=None,
+                    sequence=4,
+                    confidence=1,
+                ),
+                Question(
+                    analysis_id=uuid.UUID(analysis_id),
+                    parent_question_id=q2.id,
+                    number_label="Q2(a)",
+                    question_text="Child a",
+                    page_number=1,
+                    marks=None,
+                    sequence=3,
+                    confidence=1,
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get(
+        f"/api/v1/analyses/{analysis_id}/questions",
+        headers=auth_header(email),
+    )
+
+    assert response.status_code == 200
+    assert [item["number_label"] for item in response.json()] == [
+        "Q2",
+        "Q2(a)",
+        "Q2(b)",
+        "Q3",
+        "Q1",
+    ]
+
+
+def test_questions_use_natural_subquestion_order_before_sequence_tiebreakers(
+    client: TestClient,
+    db_engine: Engine,
+) -> None:
+    email = "natural-subquestion-order@kau.edu.sa"
+    analysis_id = _create_analysis(client, email)
+    with Session(db_engine) as session:
+        session.add_all(
+            [
+                Question(
+                    analysis_id=uuid.UUID(analysis_id),
+                    number_label=number_label,
+                    question_text=f"{number_label} text",
+                    page_number=1,
+                    marks=1,
+                    sequence=sequence,
+                    confidence=1,
+                )
+                for number_label, sequence in (("Q1.10", 2), ("Q1.2", 3), ("Q1.9", 1))
+            ]
+        )
+        session.commit()
+
+    response = client.get(
+        f"/api/v1/analyses/{analysis_id}/questions",
+        headers=auth_header(email),
+    )
+
+    assert response.status_code == 200
+    assert [item["number_label"] for item in response.json()] == ["Q1.2", "Q1.9", "Q1.10"]
+
+
 def test_questions_response_schema_fields(client: TestClient, db_engine: Engine) -> None:
     email = "schema@kau.edu.sa"
     analysis_id = _create_analysis(client, email)
@@ -114,3 +223,41 @@ def test_questions_empty_list_when_none_extracted_yet(client: TestClient) -> Non
     response = client.get(f"/api/v1/analyses/{analysis_id}/questions", headers=auth_header(email))
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_questions_allow_visual_blank_without_source_text(
+    client: TestClient, db_engine: Engine
+) -> None:
+    from app.models.question_blank import QuestionBlank
+
+    email = "visual-blank@kau.edu.sa"
+    analysis_id = _create_analysis(client, email)
+    with Session(db_engine) as session:
+        question = Question(
+            analysis_id=uuid.UUID(analysis_id),
+            number_label="Q1",
+            question_text="Complete the visible blank.",
+            page_number=1,
+            marks=1.0,
+            sequence=1,
+            confidence=0.9,
+        )
+        session.add(question)
+        session.flush()
+        session.add(
+            QuestionBlank(
+                question_id=question.id,
+                blank_index=1,
+                source_text=None,
+                page_number=1,
+                geometry={"x0": 10.0, "top": 20.0, "x1": 40.0, "bottom": 30.0},
+            )
+        )
+        session.commit()
+
+    response = client.get(
+        f"/api/v1/analyses/{analysis_id}/questions", headers=auth_header(email)
+    )
+
+    assert response.status_code == 200
+    assert response.json()[0]["blanks"][0]["source_text"] is None

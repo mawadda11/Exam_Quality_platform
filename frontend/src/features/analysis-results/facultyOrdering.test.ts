@@ -46,7 +46,7 @@ describe('faculty natural ordering', () => {
       .toEqual(['٢', '٢-أ', '٢-ب', '٣'])
   })
 
-  it('prefers confirmed sequence and enforces parent-before-child hierarchy', () => {
+  it('uses natural root order and enforces parent-before-child hierarchy', () => {
     const parent = question('parent', 'Q2', { sequence: 2 })
     const child = question('child', 'Q2.1', {
       parent_question_id: 'parent',
@@ -56,6 +56,35 @@ describe('faculty natural ordering', () => {
 
     expect(sortQuestionsForFaculty([child, parent, first]).map((item) => item.id))
       .toEqual(['first', 'parent', 'child'])
+  })
+
+  it('places Q1.10 after Q1.9 even when sequence values are misleading', () => {
+    const ordered = sortQuestionsForFaculty([
+      question('q110', 'Q1.10', { sequence: 2 }),
+      question('q12', 'Q1.2', { sequence: 3 }),
+      question('q19', 'Q1.9', { sequence: 1 }),
+    ])
+
+    expect(ordered.map((item) => item.number_label)).toEqual(['Q1.2', 'Q1.9', 'Q1.10'])
+  })
+
+  it('keeps each root hierarchy together and orders siblings by source appearance', () => {
+    const q2 = question('q2', 'Q2', { sequence: 2, page_number: 1 })
+    const q2a = question('q2a', 'Q2(a)', {
+      parent_question_id: q2.id,
+      sequence: 3,
+      page_number: 1,
+    })
+    const q2b = question('q2b', 'Q2(b)', {
+      parent_question_id: q2.id,
+      sequence: 4,
+      page_number: 1,
+    })
+    const q3 = question('q3', 'Q3', { sequence: 5, page_number: 1 })
+    const pageTwo = question('page-two', 'Q1', { sequence: 1, page_number: 2 })
+
+    expect(sortQuestionsForFaculty([q2b, pageTwo, q3, q2a, q2]).map((item) => item.id))
+      .toEqual(['q2', 'q2a', 'q2b', 'q3', 'page-two'])
   })
 
   it('returns only the lowest independently scorable question level', () => {

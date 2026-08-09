@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,6 +23,17 @@ class Settings(BaseSettings):
     upload_root: str = "../storage/uploads"
     kb_source_dir: str = "../knowledge_base/source"
     report_root: str = "../storage/reports"
+    exam_ocr_provider: str = "tesseract"
+    exam_ocr_fallback_enabled: bool = True
+    extraction_ai_enabled: bool = False
+    extraction_ai_provider: str = "gemini"
+    extraction_ai_model: str = "gemini-3.6-flash"
+    extraction_ai_validation_retries: int = Field(default=1, ge=0, le=2)
+    extraction_ai_page_dpi: int = Field(default=144, ge=96, le=200)
+    extraction_ai_max_pages_per_document: int = Field(default=25, ge=1, le=100)
+    extraction_ai_cache_enabled: bool = True
+    extraction_ai_targeted_ocr_enabled: bool = True
+    extraction_ai_candidate_min_confidence: float = Field(default=0.55, ge=0, le=1)
     # "localhost"/8001: the host-published port for running natively (matches
     # database_url's native-friendly-default convention above).
     # docker-compose.yml overrides these to the "chromadb" Compose hostname
@@ -40,7 +51,19 @@ class Settings(BaseSettings):
     # itself on any public network interface.
     ollama_base_url: str = "http://localhost:11434"
     ollama_timeout_seconds: int = Field(default=60, ge=1, le=300)
+    # SecretStr (not plain str): never rendered by repr()/str()/logging of a
+    # Settings instance - an extra guard against accidental exposure on top
+    # of the existing rule that no provider ever logs its credential.
+    # Optional adapter, gated only by AI_PROVIDER=gemini (see
+    # app.services.ai.factory) - blank by default, like ai_api_key.
+    gemini_api_key: SecretStr = SecretStr("")
     ai_validation_retries: int = Field(default=1, ge=0, le=2)
+    # Sticky per-analysis failover: every new analysis starts on AI_MODEL.
+    # Availability failures downgrade that analysis only to GEMINI_FALLBACK_MODEL,
+    # then to the governed local baseline. A later analysis starts from primary again.
+    ai_failover_enabled: bool = True
+    gemini_fallback_model: str = "gemini-3.5-flash-lite"
+    ai_local_fallback_model: str = "local-governed-baseline-v1"
 
     # First-party faculty authentication. Access tokens are short-lived signed
     # bearer tokens; password reset tokens are random, hashed, single-use DB rows.
@@ -64,7 +87,24 @@ class Settings(BaseSettings):
 def validate_runtime_settings(settings: Settings) -> None:
     """Fail closed when a pilot/production environment lacks auth essentials."""
 
-    if settings.app_env.lower() not in {"staging", "production"}:
+    if settings.exam_ocr_provider.strip().casefold() != "tesseract":
+        raise RuntimeError("EXAM_OCR_PROVIDER must be 'tesseract' in this release.")
+    if settings.extraction_ai_enabled:
+        if settings.extraction_ai_provider.strip().casefold() != "gemini":
+            raise RuntimeError("EXTRACTION_AI_PROVIDER must be 'gemini' when enabled.")
+        if not settings.gemini_api_key.get_secret_value().strip():
+            raise RuntimeError("GEMINI_API_KEY is required when extraction AI is enabled.")
+    if (
+        settings.ai_failover_enabled
+        and (
+            settings.extraction_ai_provider.strip().casefold() == "gemini"
+            or settings.ai_provider.strip().casefold() == "gemini"
+        )
+        and not settings.gemini_fallback_model.strip()
+    ):
+        raise RuntimeError("GEMINI_FALLBACK_MODEL is required when AI failover is enabled.")
+
+    if settings.app_env.strip().casefold() not in {"staging", "production"}:
         return
     insecure_defaults = {
         "development-only-change-me",

@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Tabs } from '../../components/ui/Tabs'
+import { PageState } from '../../components/ui/PageState'
+import { Button } from '../../components/ui/Button'
 import type {
   AnalysisResponse,
   RecommendationResponse,
@@ -17,6 +19,48 @@ import { ResultsHeader } from './ResultsHeader'
 import { RESULTS_SECTIONS, type ResultsSectionId } from './resultSections'
 import { useAnalysisResultsData } from './useAnalysisResultsData'
 import { useI18n } from '../../i18n/I18nProvider'
+
+
+function QuestionEvidenceGate({
+  resource,
+  onRetry,
+  children,
+}: {
+  resource: ReturnType<typeof useAnalysisResultsData>['resources']['questions']
+  onRetry: () => void
+  children: ReactNode
+}) {
+  const { t } = useI18n()
+  if (resource.status === 'loading') {
+    return (
+      <PageState
+        state="loading"
+        title={t('Checking confirmed question evidence')}
+        message={t('Academic results are shown only after confirmed questions are available.')}
+      />
+    )
+  }
+  if (resource.status === 'error') {
+    return (
+      <PageState
+        state="error"
+        title={t('Analysis incomplete')}
+        message={t('Confirmed question evidence could not be loaded, so academic results and the score are hidden.')}
+        action={<Button variant="secondary" onClick={onRetry}>{t('Try again')}</Button>}
+      />
+    )
+  }
+  if (resource.data.length === 0) {
+    return (
+      <PageState
+        state="empty"
+        title={t('Insufficient Evidence')}
+        message={t('No confirmed questions are available. Return to extraction review before relying on academic results.')}
+      />
+    )
+  }
+  return <>{children}</>
+}
 
 interface AnalysisResultsProps {
   analysis: AnalysisResponse
@@ -83,6 +127,7 @@ export function AnalysisResults({
         analysis={analysis}
         score={resources.score}
         onRetryScore={() => retryResource('score')}
+        questions={resources.questions}
       />
 
       {hasAiAssistedFindings && (
@@ -105,20 +150,25 @@ export function AnalysisResults({
         aria-labelledby={`tab-${section}`}
       >
         {section === 'overview' && (
-          <ResultResourceState
-            resource={resources.score}
-            loadingMessage={t('Loading score summary…')}
-            errorTitle={t('Could not load score summary')}
-            onRetry={() => retryResource('score')}
+          <QuestionEvidenceGate
+            resource={resources.questions}
+            onRetry={() => retryResource('questions')}
           >
-            {(score) => (
-              <OverviewSection
-                score={score}
-                ruleCoverage={resources.ruleCoverage}
-                onRetryRuleCoverage={() => retryResource('ruleCoverage')}
-              />
-            )}
-          </ResultResourceState>
+            <ResultResourceState
+              resource={resources.score}
+              loadingMessage={t('Loading score summary…')}
+              errorTitle={t('Could not load score summary')}
+              onRetry={() => retryResource('score')}
+            >
+              {(score) => (
+                <OverviewSection
+                  score={score}
+                  ruleCoverage={resources.ruleCoverage}
+                  onRetryRuleCoverage={() => retryResource('ruleCoverage')}
+                />
+              )}
+            </ResultResourceState>
+          </QuestionEvidenceGate>
         )}
 
         {section === 'questions' && (
@@ -138,62 +188,72 @@ export function AnalysisResults({
         )}
 
         {section === 'alignment-coverage' && (
-          <AlignmentCoverageSection
-            findings={resources.findings}
-            questions={resources.questions}
-            clos={resources.clos}
-            topics={resources.topics}
-            onRetry={retryResource}
-          />
+          <QuestionEvidenceGate resource={resources.questions} onRetry={() => retryResource('questions')}>
+            <AlignmentCoverageSection
+              findings={resources.findings}
+              questions={resources.questions}
+              clos={resources.clos}
+              topics={resources.topics}
+              onRetry={retryResource}
+            />
+          </QuestionEvidenceGate>
         )}
 
         {section === 'marks-structure' && (
-          <ResultResourceState
-            resource={resources.findings}
-            loadingMessage={t('Loading marks and structure findings…')}
-            errorTitle={t('Could not load marks and structure findings')}
-            onRetry={() => retryResource('findings')}
-          >
-            {(findings) => (
-              <MarksStructureSection
-                findings={findings}
-                lookups={lookups}
-                unavailableLookups={unavailableLookups}
-              />
-            )}
-          </ResultResourceState>
+          <QuestionEvidenceGate resource={resources.questions} onRetry={() => retryResource('questions')}>
+            <ResultResourceState
+              resource={resources.findings}
+              loadingMessage={t('Loading marks and structure findings…')}
+              errorTitle={t('Could not load marks and structure findings')}
+              onRetry={() => retryResource('findings')}
+            >
+              {(findings) => (
+                <MarksStructureSection
+                  findings={findings}
+                  lookups={lookups}
+                  unavailableLookups={unavailableLookups}
+                />
+              )}
+            </ResultResourceState>
+          </QuestionEvidenceGate>
         )}
 
         {section === 'supporting-evidence' && (
-          <StructuredEvidenceSection analysisId={analysis.id} />
+          <QuestionEvidenceGate resource={resources.questions} onRetry={() => retryResource('questions')}>
+            <StructuredEvidenceSection analysisId={analysis.id} />
+          </QuestionEvidenceGate>
         )}
 
         {section === 'findings-recommendations' && (
-          <ResultResourceState
-            resource={resources.findings}
-            loadingMessage={t('Loading findings…')}
-            errorTitle={t('Could not load findings')}
-            onRetry={() => retryResource('findings')}
-          >
-            {(findings) => (
-              <FindingsRecommendationsSection
-                findings={findings}
-                recommendations={resources.recommendations}
-                recommendationsByFinding={recommendationsByFinding}
-                lookups={lookups}
-                onRetryRecommendations={() => retryResource('recommendations')}
-              />
-            )}
-          </ResultResourceState>
+          <QuestionEvidenceGate resource={resources.questions} onRetry={() => retryResource('questions')}>
+            <ResultResourceState
+              resource={resources.findings}
+              loadingMessage={t('Loading findings…')}
+              errorTitle={t('Could not load findings')}
+              onRetry={() => retryResource('findings')}
+            >
+              {(findings) => (
+                <FindingsRecommendationsSection
+                  findings={findings}
+                  recommendations={resources.recommendations}
+                  recommendationsByFinding={recommendationsByFinding}
+                  lookups={lookups}
+                  onRetryRecommendations={() => retryResource('recommendations')}
+                />
+              )}
+            </ResultResourceState>
+          </QuestionEvidenceGate>
         )}
 
         {section === 'report' && (
-          <ReportSection
-            analysisId={analysis.id}
-            reports={resources.reports}
-            onRetryReports={() => retryResource('reports')}
-            onRefreshReports={() => refreshResource('reports')}
-          />
+          <QuestionEvidenceGate resource={resources.questions} onRetry={() => retryResource('questions')}>
+            <ReportSection
+              analysisId={analysis.id}
+              reports={resources.reports}
+              onRetryReports={() => retryResource('reports')}
+              onRefreshReports={() => refreshResource('reports')}
+            />
+          </QuestionEvidenceGate>
         )}
       </div>
     </div>

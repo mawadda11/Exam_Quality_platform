@@ -253,13 +253,34 @@ def _evaluate_relationship_coverage(
     unsupported = target_ids - fully_supported - limited_support
     references = {item.id: item.item_reference for item in target_evidence}
 
-    if unsupported and unresolved_source:
+    local_only = mapping.evaluator_type == "local_semantic_baseline"
+    if unsupported and (unresolved_source or local_only):
         missing = ", ".join(sorted(references[item] for item in unsupported))
+        if fully_supported or limited_support:
+            reason = (
+                "some question-level semantic judgments were unavailable"
+                if unresolved_source
+                else "the local semantic baseline found support for only part of the target set"
+            )
+            return RuleFindingResult(
+                status=AcademicStatus.PARTIALLY_SATISFIED,
+                explanation=(
+                    f"Some {target_noun}s have supporting question evidence, while "
+                    f"{missing} remain unsupported or unresolved because {reason}."
+                ),
+                confidence=mapping.confidence,
+                evidence_ids=trace_ids,
+            )
+        reason = (
+            "the local-only semantic baseline cannot prove non-coverage from missing "
+            "lexical overlap"
+            if local_only
+            else "all potentially supporting questions remain semantically unresolved"
+        )
         return RuleFindingResult(
             status=AcademicStatus.NOT_VERIFIED,
             explanation=(
-                f"Coverage for {target_noun}(s) {missing} remains unresolved because at least "
-                "one confirmed question could not be semantically judged."
+                f"Coverage for {target_noun}(s) {missing} remains unresolved because {reason}."
             ),
             confidence=0.0,
             evidence_ids=trace_ids,
@@ -295,13 +316,20 @@ def _evaluate_relationship_coverage(
 
 
 def evaluate_applicable_clo_coverage_from_relationships(
-    evidence: Sequence[Evidence], mapping: SemanticRuleEvaluation
+    evidence: Sequence[Evidence],
+    mapping: SemanticRuleEvaluation,
+    *,
+    applicable_clo_codes: frozenset[str] | None = None,
 ) -> RuleFindingResult:
     from app.services.rules.semantic_evaluators import SemanticRuleEvaluation
 
     if not isinstance(mapping, SemanticRuleEvaluation):
         raise TypeError("mapping must be a SemanticRuleEvaluation")
-    targets = [item for item in evidence if item.evidence_type == "clo"]
+    targets = [
+        item for item in evidence
+        if item.evidence_type == "clo"
+        and (applicable_clo_codes is None or item.item_reference.strip().upper() in applicable_clo_codes)
+    ]
     return _evaluate_relationship_coverage(
         targets,
         mapping,
@@ -318,11 +346,14 @@ def evaluate_applicable_topic_coverage_from_relationships(
 
     if not isinstance(mapping, SemanticRuleEvaluation):
         raise TypeError("mapping must be a SemanticRuleEvaluation")
-    targets = [item for item in evidence if item.evidence_type == "topic"]
-    return _evaluate_relationship_coverage(
-        targets,
-        mapping,
-        target_noun="topic",
-        no_targets_status=AcademicStatus.NOT_APPLICABLE,
-        no_targets_explanation="No topic set is designated for the uploaded exam.",
+    return RuleFindingResult(
+        status=AcademicStatus.NOT_APPLICABLE,
+        explanation=(
+            "Topic coverage is informational for a Midterm/Final unless the course "
+            "specification provides an explicit assessment-to-topic scope. It is therefore "
+            "shown for faculty review but excluded from automatic pilot scoring."
+        ),
+        confidence=1.0,
+        evidence_ids=list(dict.fromkeys(mapping.evidence_ids)),
     )
+

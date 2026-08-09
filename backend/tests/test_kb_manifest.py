@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from kb_fixtures import build_valid_kb
@@ -9,6 +10,7 @@ from app.services.knowledge_base.normalizer import normalize_all
 from app.services.knowledge_base.validator import load_and_validate
 
 REAL_KB_SOURCE = Path(__file__).resolve().parents[2] / "knowledge_base" / "source"
+REAL_KB_MANIFEST = Path(__file__).resolve().parents[2] / "knowledge_base" / "manifest.json"
 
 
 def _manifest_for(source_dir: Path) -> dict[str, object]:
@@ -54,12 +56,21 @@ def test_manifest_generation_is_byte_for_byte_deterministic(tmp_path: Path) -> N
 
 def test_real_kb_manifest_counts_match_known_totals() -> None:
     manifest = _manifest_for(REAL_KB_SOURCE)
-    assert manifest["total_normalized_records"] == 437
+    assert manifest["total_normalized_records"] == 441
     assert manifest["status"] == "valid"
-    assert sum(manifest["record_counts_by_workbook"].values()) == 437
-    assert sum(manifest["provenance_category_counts"].values()) == 437
+    assert sum(manifest["record_counts_by_workbook"].values()) == 441
+    assert sum(manifest["provenance_category_counts"].values()) == 441
     assert manifest["provenance_category_counts"]["system rule"] == 30
     assert manifest["provenance_category_counts"]["official reference"] == 3
+    assert manifest["record_counts_by_workbook"]["06_evidence_mapping.xlsx"] == 74
+    assert manifest["record_counts_by_workbook"]["11_scoring_policy.xlsx"] == 31
+    assert manifest["record_counts_by_entity_type"]["Mapping"] == 74
+    assert manifest["record_counts_by_entity_type"]["Policy"] == 31
+
+
+def test_checked_in_manifest_matches_current_authoritative_workbooks() -> None:
+    checked_in = json.loads(REAL_KB_MANIFEST.read_text(encoding="utf-8"))
+    assert checked_in == _manifest_for(REAL_KB_SOURCE)
 
 
 def test_real_kb_manifest_is_deterministic_across_runs() -> None:

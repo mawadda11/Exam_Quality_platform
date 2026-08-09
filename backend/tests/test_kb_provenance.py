@@ -20,7 +20,7 @@ def _real_records() -> list:
 
 def test_real_kb_every_row_maps_to_one_of_six_categories() -> None:
     records = _real_records()
-    assert len(records) == 437
+    assert len(records) == 441
     valid_categories = set(ProvenanceCategory)
     assert all(r.provenance_category in valid_categories for r in records)
 
@@ -36,8 +36,8 @@ def test_real_kb_provenance_category_counts_match_all_six() -> None:
     assert counts[ProvenanceCategory.TEMPLATE_EVIDENCE] == 10
     assert counts[ProvenanceCategory.DERIVED_REQUIREMENT] == 23
     assert counts[ProvenanceCategory.SYSTEM_RULE] == 30
-    assert counts[ProvenanceCategory.SYSTEM_POLICY] == 357
-    assert sum(counts.values()) == 437
+    assert counts[ProvenanceCategory.SYSTEM_POLICY] == 361
+    assert sum(counts.values()) == 441
 
 
 @pytest.mark.parametrize(

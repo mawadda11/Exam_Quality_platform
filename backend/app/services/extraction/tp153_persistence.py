@@ -21,6 +21,8 @@ def _assessment_record_summary(record: ExtractedAssessmentRecord) -> str:
         parts.append(f"Activity: {record.activity}")
     if record.percentage is not None:
         parts.append(f"Percentage: {record.percentage}%")
+    if record.related_clo_codes:
+        parts.append("Related CLOs: " + ", ".join(record.related_clo_codes))
     return " | ".join(parts)
 
 
@@ -143,6 +145,7 @@ def persist_tp153_extraction_result(
                 method=record.method,
                 activity=record.activity,
                 percentage=record.percentage,
+                related_clo_codes=list(record.related_clo_codes),
                 page_number=record.page_number,
                 confidence=record.confidence,
                 geometry=geometry,

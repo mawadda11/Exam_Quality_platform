@@ -151,15 +151,30 @@
   padding: var(--space-6);
 }
 
-.overview-score-layout {
+.overview-summary-stack {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.overview-score-detail-grid {
   display: grid;
   grid-template-columns: minmax(16rem, 0.7fr) minmax(0, 1.3fr);
+  align-items: center;
   gap: var(--space-6);
 }
 
-.overview-score-card {
+.overview-score-ring-wrap {
   display: grid;
   place-items: center;
+  min-width: 0;
+}
+
+.overview-score-detail-grid .score-transparency {
+  padding-block-start: 0;
+  padding-inline-start: var(--space-6);
+  margin-block-start: 0;
+  border-block-start: 0;
+  border-inline-start: var(--border-width) solid var(--color-border);
 }
 
 .overview-status-card h3 {
@@ -178,8 +193,11 @@
 .status-count-grid li {
   display: grid;
   justify-items: center;
+  grid-template-rows: auto minmax(2rem, auto);
+  align-content: center;
   gap: var(--space-2);
-  padding: var(--space-4);
+  min-height: 8.5rem;
+  padding: var(--space-4) var(--space-3);
   text-align: center;
   background: var(--color-canvas);
   border: var(--border-width) solid var(--color-border);
@@ -191,8 +209,34 @@
   font-size: var(--font-size-xl);
 }
 
+.questions-table {
+  min-width: 60rem;
+}
+
+.questions-table :is(th, td):nth-child(1) {
+  width: 7rem;
+  min-width: 7rem;
+  white-space: nowrap;
+}
+
+.questions-table :is(th, td):nth-child(2) {
+  width: 11rem;
+  min-width: 11rem;
+}
+
+.questions-table :is(th, td):nth-child(3),
+.questions-table :is(th, td):nth-child(4) {
+  width: 6rem;
+  min-width: 6rem;
+  white-space: nowrap;
+}
+
+.questions-table :is(th, td):nth-child(5) {
+  min-width: 26rem;
+}
+
 .questions-table td:last-child {
-  min-width: 22rem;
+  min-width: 26rem;
 }
 
 .question-filters {
@@ -429,6 +473,29 @@
   background: transparent;
   border: 0;
   cursor: pointer;
+}
+
+.details-icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  color: var(--color-brand-navy);
+  background: transparent;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.details-icon-action:hover {
+  background: var(--color-surface-muted);
+  border-color: var(--color-border);
+}
+
+.details-icon-action:focus-visible {
+  box-shadow: var(--focus-ring);
 }
 
 .faculty-determination-details {
@@ -778,7 +845,7 @@
 }
 
 .material-relationships-table {
-  min-width: 62rem;
+  min-width: 58rem;
 }
 
 .material-relationship-status {
@@ -861,6 +928,25 @@
   margin: 0;
 }
 
+.question-reference-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.question-reference-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75rem;
+  padding: 0.15rem 0.55rem;
+  color: var(--color-brand-navy);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  background: var(--color-surface-muted);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
 .academic-table-section {
   display: grid;
   gap: var(--space-3);
@@ -876,13 +962,16 @@
 }
 
 .combined-relationship-table {
-  min-width: 76rem;
+  width: 100%;
+  min-width: 58rem;
   table-layout: fixed;
 }
 
 .combined-relationship-table th,
 .combined-relationship-table td {
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
   border-block-end: var(--border-width) solid var(--color-border-strong);
 }
 
@@ -909,24 +998,79 @@
 }
 
 .combined-relationship-table :is(th, td):nth-child(1) {
-  width: 8%;
+  width: 10%;
 }
 
 .combined-relationship-table :is(th, td):nth-child(2),
 .combined-relationship-table :is(th, td):nth-child(3) {
-  width: 15%;
+  width: 22%;
 }
 
 .combined-relationship-table :is(th, td):nth-child(4) {
-  width: 20%;
+  width: 34%;
 }
 
 .combined-relationship-table :is(th, td):nth-child(5) {
-  width: 30%;
+  width: 12%;
 }
 
-.combined-relationship-table :is(th, td):nth-child(6) {
-  width: 12%;
+/* Shared faculty-facing table system. All primary app tables use the same
+   header, row, grid and identifier-column treatment. */
+.faculty-data-table {
+  width: 100%;
+  background: var(--color-surface);
+  border-collapse: collapse;
+}
+
+.faculty-data-table thead th {
+  color: var(--color-surface);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: var(--color-brand-navy);
+}
+
+.faculty-data-table th,
+.faculty-data-table td {
+  vertical-align: top;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+  border-block-end: var(--border-width) solid var(--color-border-strong);
+}
+
+.faculty-data-table th + th,
+.faculty-data-table td + td,
+.faculty-data-table th + td,
+.faculty-data-table td + th {
+  border-inline-start: var(--border-width) solid var(--color-border);
+}
+
+.faculty-data-table tbody td,
+.faculty-data-table tbody tr:nth-child(even) td {
+  background: var(--color-surface);
+}
+
+.faculty-data-table tbody th[scope="row"] {
+  color: var(--color-brand-navy);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  letter-spacing: normal;
+  text-transform: none;
+  background: var(--color-canvas);
+}
+
+.faculty-data-table tbody tr:last-child > * {
+  border-block-end: 0;
+}
+
+.overview-limited-check-note {
+  margin: 0;
+  padding-inline-start: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  border-inline-start: 0.2rem solid var(--color-border-strong);
 }
 
 .relationship-status-list,
@@ -1326,7 +1470,7 @@
 
   .results-header-main,
   .results-header-metadata,
-  .overview-score-layout,
+  .overview-score-detail-grid,
   .alignment-source-grid,
   .finding-filter-fields,
   .evidence-item dl {
@@ -1335,6 +1479,14 @@
 
   .results-header-score {
     min-height: 0;
+  }
+
+  .overview-score-detail-grid .score-transparency {
+    padding-block-start: var(--space-4);
+    padding-inline-start: 0;
+    margin-block-start: var(--space-4);
+    border-block-start: var(--border-width) solid var(--color-border);
+    border-inline-start: 0;
   }
 
   .results-section-heading,
@@ -1628,7 +1780,7 @@
 
 @media (max-width: 48rem) {
   .results-header-main,
-  .overview-score-layout,
+  .overview-score-detail-grid,
   .alignment-source-grid {
     grid-template-columns: 1fr;
   }
@@ -1859,6 +2011,27 @@
 }
 
 .ui-drawer-section p {
+  margin: 0;
+}
+
+.material-drawer-card,
+.material-drawer-metadata-card {
+  padding: var(--space-4);
+  background: var(--color-surface-muted);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.material-drawer-card {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.material-drawer-card h3 {
+  margin: 0;
+}
+
+.material-drawer-metadata-card {
   margin: 0;
 }
 

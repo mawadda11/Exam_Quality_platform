@@ -353,7 +353,7 @@ def test_semantic_clo_coverage_uses_validated_relationships_without_code_citatio
     assert set(result.evidence_ids) == {source.id, target.id}
 
 
-def test_semantic_coverage_marks_missing_target_not_satisfied_when_mapping_is_complete() -> None:
+def test_local_semantic_coverage_with_some_supported_targets_is_partial() -> None:
     from app.services.rules.clo_topic_coverage import (
         evaluate_applicable_clo_coverage_from_relationships,
     )
@@ -375,8 +375,9 @@ def test_semantic_coverage_marks_missing_target_not_satisfied_when_mapping_is_co
 
     result = evaluate_applicable_clo_coverage_from_relationships([source, first, second], mapping)
 
-    assert result.status is AcademicStatus.NOT_SATISFIED
+    assert result.status is AcademicStatus.PARTIALLY_SATISFIED
     assert "CLO2" in result.explanation
+    assert "support" in result.explanation.lower()
     assert second.id in result.evidence_ids
 
 
@@ -401,5 +402,5 @@ def test_semantic_coverage_preserves_limited_support_as_partial() -> None:
 
     result = evaluate_applicable_topic_coverage_from_relationships([source, target], mapping)
 
-    assert result.status is AcademicStatus.PARTIALLY_SATISFIED
-    assert "limited" in result.explanation.lower()
+    assert result.status is AcademicStatus.NOT_APPLICABLE
+    assert "informational" in result.explanation.lower()

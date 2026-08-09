@@ -20,6 +20,7 @@ class FindingItemJudgmentDetails(BaseModel):
     target_evidence_ids: list[UUID] = Field(default_factory=list)
     status: AcademicStatus
     reasoning: str = Field(min_length=1, max_length=2000)
+    reasoning_ar: str | None = Field(default=None, min_length=1, max_length=2000)
 
     @field_validator("target_evidence_ids")
     @classmethod
@@ -38,6 +39,7 @@ class FindingEvaluationDetails(BaseModel):
     decision: AcademicStatus
     evidence_used: list[UUID]
     reasoning: str = Field(min_length=1, max_length=4000)
+    reasoning_ar: str | None = Field(default=None, min_length=1, max_length=4000)
     recommendation: str | None
     confidence_basis: list[str] = Field(default_factory=list)
     item_judgments: list[FindingItemJudgmentDetails] = Field(default_factory=list)

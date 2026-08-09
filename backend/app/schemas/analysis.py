@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.core.domain import ExamType, ProcessingStage
+from app.core.domain import ExamType, ProcessingStage, QuestionPreparationMode
 from app.schemas.course import CourseInput, CourseResponse
 from app.schemas.uploaded_file import UploadedFileResponse
 from app.services.rules.versioning import effective_capability_version
@@ -19,6 +19,10 @@ class AnalysisCreateRequest(BaseModel):
     course: CourseInput
     exam_type: ExamType
     term: str = Field(min_length=1, max_length=50)
+
+
+class AnalysisRunRequest(BaseModel):
+    question_preparation_mode: QuestionPreparationMode = QuestionPreparationMode.ASSISTED_PDF
 
 
 class AnalysisResponse(BaseModel):

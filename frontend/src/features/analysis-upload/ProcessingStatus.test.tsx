@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as analysesApi from '../../api/analyses'
 import { ApiError } from '../../api/client'
@@ -59,7 +59,7 @@ describe('ProcessingStatus', () => {
     expect(analysesApi.getAnalysisProgress).not.toHaveBeenCalled()
   })
 
-  it('starts after the explicit action and preserves the exact backend stage label', async () => {
+  it('starts after the explicit action and shows a faculty-facing stage label', async () => {
     vi.mocked(analysesApi.runAnalysis).mockResolvedValue(analysisResponse('validating'))
     vi.mocked(analysesApi.getAnalysisProgress).mockImplementation(
       () => new Promise(() => undefined),
@@ -68,8 +68,62 @@ describe('ProcessingStatus', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /start analysis/i }))
 
-    expect(await screen.findByText('validating', { selector: 'strong' })).toBeInTheDocument()
-    expect(analysesApi.runAnalysis).toHaveBeenCalledWith('analysis-1')
+    expect(await screen.findByText('Validating files', { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.queryByText('validating')).not.toBeInTheDocument()
+    const progress = screen.getByRole('list', { name: /analysis processing progress/i })
+    expect(within(progress).getAllByRole('listitem')).toHaveLength(7)
+    expect(within(progress).getByText('Reviewing extraction')).toBeInTheDocument()
+    expect(screen.getByText(/elapsed time/i)).toBeInTheDocument()
+    expect(analysesApi.runAnalysis).toHaveBeenCalledWith('analysis-1', 'assisted_pdf')
+  })
+
+  it('keeps the seven stages readable at 320px and 200% zoom without horizontal scrolling', () => {
+    const originalWidth = window.innerWidth
+    const originalFontSize = document.documentElement.style.fontSize
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 320 })
+    document.documentElement.style.fontSize = '200%'
+    vi.mocked(analysesApi.getAnalysisProgress).mockImplementation(
+      () => new Promise(() => undefined),
+    )
+
+    try {
+      render(<ProcessingStatus analysisId="analysis-1" initialState="validating" />)
+
+      const progress = screen.getByRole('list', { name: /analysis processing progress/i })
+      expect(within(progress).getAllByRole('listitem')).toHaveLength(7)
+      expect(within(progress).getByText('Retrieving evaluation knowledge')).toBeInTheDocument()
+      expect(progress.parentElement).toHaveClass('processing-progress')
+      expect(progress.parentElement).not.toHaveStyle({ overflowX: 'auto' })
+    } finally {
+      Object.defineProperty(window, 'innerWidth', {
+        configurable: true,
+        value: originalWidth,
+      })
+      document.documentElement.style.fontSize = originalFontSize
+    }
+  })
+
+
+  it('passes the selected structured preparation mode to the run API', async () => {
+    vi.mocked(analysesApi.runAnalysis).mockResolvedValue(analysisResponse('validating'))
+    vi.mocked(analysesApi.getAnalysisProgress).mockImplementation(
+      () => new Promise(() => undefined),
+    )
+    render(
+      <ProcessingStatus
+        analysisId="analysis-1"
+        initialState="queued"
+        questionPreparationMode="structured_template"
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /start analysis/i }))
+
+    await screen.findByText('Validating files', { selector: 'strong' })
+    expect(analysesApi.runAnalysis).toHaveBeenCalledWith(
+      'analysis-1',
+      'structured_template',
+    )
   })
 
   it('polls immediately and stops once a terminal stage is reached', async () => {
@@ -85,8 +139,8 @@ describe('ProcessingStatus', () => {
       />,
     )
 
-    await screen.findByText('extracting_exam', { selector: 'strong' })
-    await screen.findByText('completed', { selector: 'strong' })
+    await screen.findByText('Extracting questions', { selector: 'strong' })
+    await screen.findByText('Generating results', { selector: 'strong' })
     const callsAtCompletion = vi.mocked(analysesApi.getAnalysisProgress).mock.calls.length
     await new Promise((resolve) => setTimeout(resolve, 40))
     expect(analysesApi.getAnalysisProgress).toHaveBeenCalledTimes(callsAtCompletion)
@@ -105,7 +159,7 @@ describe('ProcessingStatus', () => {
       />,
     )
 
-    expect(await screen.findByText('review_ready', { selector: 'strong' }))
+    expect(await screen.findByText('Extracting questions', { selector: 'strong' }))
       .toBeInTheDocument()
     expect(
       screen.getByText('Extraction ready for review', {
@@ -147,7 +201,7 @@ describe('ProcessingStatus', () => {
     )
 
     expect(await screen.findByText(/polling will retry automatically/i)).toBeInTheDocument()
-    await screen.findByText('applying_rules', { selector: 'strong' })
+    await screen.findByText('Applying evaluation criteria', { selector: 'strong' })
     await waitFor(() =>
       expect(screen.queryByText(/polling will retry automatically/i)).not.toBeInTheDocument(),
     )
@@ -171,7 +225,7 @@ describe('ProcessingStatus', () => {
 
     expect(await screen.findByText(/examination could not be extracted/i))
       .toBeInTheDocument()
-    expect(screen.getByText('failed', { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.getByText('Extracting questions', { selector: 'strong' })).toBeInTheDocument()
     expect(screen.queryByRole('list', { name: /analysis processing progress/i }))
       .not.toBeInTheDocument()
   })
@@ -213,7 +267,7 @@ describe('ProcessingStatus', () => {
     fireEvent.click(retryButton)
 
     expect(analysesApi.retryAnalysis).toHaveBeenCalledWith('analysis-1')
-    expect(await screen.findByText('completed', { selector: 'strong' })).toBeInTheDocument()
+    expect(await screen.findByText('Generating results', { selector: 'strong' })).toBeInTheDocument()
   })
 
   it('keeps the explicit start action available after a start error', async () => {
@@ -243,7 +297,7 @@ describe('ProcessingStatus', () => {
       />,
     )
 
-    await screen.findByText('generating_report', { selector: 'strong' })
+    await screen.findByText('Generating results', { selector: 'strong' })
     expect(onStateChange).toHaveBeenCalledWith('generating_report')
   })
 })

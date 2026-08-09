@@ -50,7 +50,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!initialAccessToken) return
 
     let cancelled = false
-    getCurrentFaculty()
+    let timeoutId = 0
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutId = window.setTimeout(
+        () => reject(new Error('Session verification timed out.')),
+        12_000,
+      )
+    })
+    void Promise.race([getCurrentFaculty(), timeout])
       .then((currentUser) => {
         if (cancelled) return
         setUser(currentUser)
@@ -63,10 +70,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null)
         setStatus('anonymous')
       })
+      .finally(() => window.clearTimeout(timeoutId))
     return () => {
       cancelled = true
+      window.clearTimeout(timeoutId)
     }
   }, [initialAccessToken, setLocale])
+
+  useEffect(() => {
+    function handleExpiredSession(): void {
+      setUser(null)
+      setStatus('anonymous')
+    }
+    window.addEventListener('exam-quality:auth-expired', handleExpiredSession)
+    return () => {
+      window.removeEventListener('exam-quality:auth-expired', handleExpiredSession)
+    }
+  }, [])
 
   const login = useCallback(async (payload: LoginRequest): Promise<void> => {
     const session = await loginFaculty(payload)

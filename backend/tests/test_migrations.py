@@ -33,6 +33,10 @@ EXPECTED_TABLES = {
     "supporting_material_annotations",
     "document_references",
     "reference_associations",
+    "question_options",
+    "question_blanks",
+    "question_source_spans",
+    "extraction_warnings",
 }
 
 
@@ -76,11 +80,71 @@ def test_migration_upgrade_creates_expected_tables(tmp_path: Path) -> None:
     assert "question_type_review_revisions" not in tables
 
 
-def test_final_migration_head_is_0012_and_no_0013_file_exists(tmp_path: Path) -> None:
+def test_final_migration_head_is_0013(tmp_path: Path) -> None:
     cfg = _alembic_config(f"sqlite:///{tmp_path / 'migration_head.db'}")
 
-    assert ScriptDirectory.from_config(cfg).get_current_head() == "0012"
-    assert list((BACKEND_ROOT / "alembic" / "versions").glob("0013*")) == []
+    assert ScriptDirectory.from_config(cfg).get_current_head() == "0013"
+
+
+def test_question_structure_and_provenance_migration_preserves_legacy_questions(
+    tmp_path: Path,
+) -> None:
+    sqlite_url = f"sqlite:///{tmp_path / 'question_structure.db'}"
+    cfg = _alembic_config(sqlite_url)
+    command.upgrade(cfg, "0012")
+    engine = create_engine(sqlite_url)
+    legacy_id = uuid.uuid4().hex
+    analysis_id = uuid.uuid4().hex
+    with engine.begin() as connection:
+        user_id = uuid.uuid4().hex
+        course_id = uuid.uuid4().hex
+        now = datetime.now(UTC)
+        connection.execute(
+            text(
+                "INSERT INTO users (id,email,password_hash,display_name,institution,department,"
+                "user_type,is_active,preferred_language,email_verified,token_version,"
+                "last_login_at,created_at,updated_at) VALUES "
+                "(:id,:email,NULL,:name,NULL,NULL,'Faculty Member',1,'en',1,0,NULL,:now,:now)"
+            ),
+            {"id": user_id, "email": "migration@example.edu", "name": "M", "now": now},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO courses (id,code,name,department,program,created_at,updated_at) "
+                "VALUES (:id,'MIG-1','Migration',NULL,NULL,:now,:now)"
+            ),
+            {"id": course_id, "now": now},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO analyses (id,user_id,course_id,exam_type,term,state,"
+                "confirmed_review_id,predecessor_analysis_id,capability_version,"
+                "created_at,updated_at) "
+                "VALUES (:id,:user,:course,'Final','2026','queued',NULL,NULL,NULL,:now,:now)"
+            ),
+            {"id": analysis_id, "user": user_id, "course": course_id, "now": now},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO questions (id,analysis_id,parent_question_id,number_label,"
+                "question_text,page_number,marks,sequence,confidence,geometry,created_at) "
+                "VALUES (:id,:analysis,NULL,'1','Legacy question',1,1,1,1.0,NULL,:now)"
+            ),
+            {"id": legacy_id, "analysis": analysis_id, "now": now},
+        )
+    engine.dispose()
+
+    command.upgrade(cfg, "head")
+    engine = create_engine(sqlite_url)
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT question_type, extraction_method, review_status FROM questions WHERE id=:id"
+            ),
+            {"id": legacy_id},
+        ).one()
+    assert tuple(row) == ("unknown", "legacy", "reviewed")
+    engine.dispose()
 
 
 def test_semantic_provenance_columns_and_duplicate_guard_are_migrated(

@@ -25,16 +25,16 @@ function renderPanel(coverage = COVERAGE, onRetry = vi.fn()) {
 }
 
 describe('RuleCoveragePanel', () => {
-  it('shows only analysis-specific completion information and links to platform scope', () => {
+  it('keeps a limited-check notice compact and non-alarming', () => {
     renderPanel()
 
-    expect(screen.getByText(/analysis completed with a limited check/i)).toBeInTheDocument()
+    expect(screen.queryByText(/analysis completed with a limited check/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/some supported checks could not be fully evaluated/i)).toBeInTheDocument()
     expect(screen.getByText(/does not count as an exam failure/i)).toBeInTheDocument()
     expect(screen.queryByText('14')).not.toBeInTheDocument()
     expect(screen.queryByText('6')).not.toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /see what the platform evaluates/i }))
-      .toHaveAttribute('href', '/evaluation-scope')
+    expect(screen.queryByRole('link', { name: /see what the platform evaluates/i })).not.toBeInTheDocument()
   })
 
   it('surfaces an actual runtime failure as a system issue rather than an academic result', () => {

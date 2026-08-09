@@ -17,6 +17,7 @@ from app.services.knowledge_base.reference_data import (
     _TRIGGER_STATUS_MATCHES,
     UnknownRequirementError,
     _trigger_matches,
+    get_controlled_recommendations,
     get_recommendations_for,
     get_requirement_display,
 )
@@ -165,6 +166,18 @@ def test_combined_trigger_does_not_match_not_applicable() -> None:
     # trigger a corrective recommendation - falls out of the KB data itself
     # (neither is a recognized Trigger_Status key), not a special case here.
     assert get_recommendations_for(KB_SOURCE, "RULE001", AcademicStatus.NOT_APPLICABLE) == ()
+
+
+
+
+def test_stale_stored_recommendation_falls_back_to_final_status() -> None:
+    results = get_controlled_recommendations(
+        KB_SOURCE,
+        "RULE001",
+        AcademicStatus.NOT_VERIFIED,
+        "REC001",
+    )
+    assert [item.recommendation_id for item in results] == ["REC031"]
 
 
 def test_single_status_trigger_not_verified_still_matches_correctly() -> None:

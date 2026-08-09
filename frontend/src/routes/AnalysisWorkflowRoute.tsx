@@ -199,7 +199,6 @@ export function AnalysisStartRoute() {
   const { t } = useI18n()
   const { analysis, replaceAnalysis } = useAnalysisRoute()
   const navigate = useNavigate()
-
   if (analysis.state !== 'queued' || !analysis.ready_for_analysis) {
     return <Navigate to={routeForAnalysis(analysis)} replace />
   }
@@ -229,6 +228,7 @@ export function AnalysisStartRoute() {
           analysisId={analysis.id}
           initialState={analysis.state}
           onAnalysisStarted={handleStarted}
+          questionPreparationMode="assisted_pdf"
         />
       </div>
     </div>

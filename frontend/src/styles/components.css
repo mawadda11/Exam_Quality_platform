@@ -401,7 +401,7 @@
 
 .ui-responsive-table {
   max-width: 100%;
-  overflow-x: auto;
+  overflow: hidden;
   background: var(--color-surface);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -409,6 +409,29 @@
 
 .ui-responsive-table:focus-visible {
   box-shadow: var(--focus-ring);
+}
+
+.ui-responsive-table__top-scroll,
+.ui-responsive-table__scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.ui-responsive-table__top-scroll {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 3;
+  height: 0.95rem;
+  background: var(--color-surface);
+  border-block-end: var(--border-width) solid var(--color-border);
+}
+
+.ui-responsive-table__top-scroll[hidden] {
+  display: none;
+}
+
+.ui-responsive-table__top-spacer {
+  height: 1px;
 }
 
 .ui-responsive-table table {
@@ -521,4 +544,14 @@
   color: var(--color-brand-navy);
   font-weight: 700;
   text-underline-offset: 0.2em;
+}
+.ui-button--danger {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: var(--color-text-inverse);
+}
+
+.ui-button--danger:hover:not(:disabled) {
+  background: #9f1239;
+  border-color: #9f1239;
 }

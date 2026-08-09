@@ -8,29 +8,42 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.domain import UploadedFileType
+from app.models.analysis import Analysis
 from app.models.assessment_record import AssessmentRecord
 from app.models.clo import Clo
 from app.models.document_reference import DocumentReference
 from app.models.evidence import Evidence
 from app.models.extraction_review_revision import ExtractionReviewRevision
+from app.models.extraction_warning import ExtractionWarning
 from app.models.question import Question
+from app.models.question_blank import QuestionBlank
+from app.models.question_option import QuestionOption
+from app.models.question_source_span import QuestionSourceSpan
 from app.models.reference_association import ReferenceAssociation
 from app.models.supporting_material import SupportingMaterial
 from app.models.supporting_material_annotation import SupportingMaterialAnnotation
 from app.models.topic import Topic
+from app.models.uploaded_file import UploadedFile
 from app.schemas.extraction_review import (
     ExtractionReviewAssessmentRecord,
     ExtractionReviewClo,
     ExtractionReviewDocumentReference,
     ExtractionReviewEvidence,
+    ExtractionReviewExtractionWarning,
     ExtractionReviewGeometry,
     ExtractionReviewQuestion,
+    ExtractionReviewQuestionBlank,
+    ExtractionReviewQuestionOption,
+    ExtractionReviewQuestionSourceSpan,
     ExtractionReviewReferenceAssociation,
     ExtractionReviewSnapshot,
     ExtractionReviewSupportingAnnotation,
     ExtractionReviewSupportingMaterial,
     ExtractionReviewTopic,
 )
+from app.services.extraction.preparation_mode import decode_question_preparation_mode
+from app.services.rules.assessment_applicability import resolve_applicable_clo_codes
 
 INITIAL_REVIEW_REVISION = 1
 
@@ -47,11 +60,68 @@ def _validate_stored_snapshot(value: dict[str, Any]) -> ExtractionReviewSnapshot
 
 
 def _build_snapshot(session: Session, analysis_id: UUID) -> ExtractionReviewSnapshot:
+    analysis = session.get(Analysis, analysis_id)
+    if analysis is None:
+        raise LookupError(f"Analysis not found: {analysis_id}")
+    exam_file = session.execute(
+        select(UploadedFile).where(
+            UploadedFile.analysis_id == analysis_id,
+            UploadedFile.file_type == UploadedFileType.EXAM,
+        )
+    ).scalar_one_or_none()
+    preparation_mode = decode_question_preparation_mode(
+        exam_file.parser_layout if exam_file is not None else None
+    )
     questions = list(
         session.execute(
             select(Question)
             .where(Question.analysis_id == analysis_id)
             .order_by(Question.sequence, Question.page_number, Question.id)
+        ).scalars()
+    )
+    question_ids = [item.id for item in questions]
+    question_options = (
+        list(
+            session.execute(
+                select(QuestionOption)
+                .where(QuestionOption.question_id.in_(question_ids))
+                .order_by(QuestionOption.question_id, QuestionOption.sequence, QuestionOption.id)
+            ).scalars()
+        )
+        if question_ids
+        else []
+    )
+    question_blanks = (
+        list(
+            session.execute(
+                select(QuestionBlank)
+                .where(QuestionBlank.question_id.in_(question_ids))
+                .order_by(QuestionBlank.question_id, QuestionBlank.blank_index, QuestionBlank.id)
+            ).scalars()
+        )
+        if question_ids
+        else []
+    )
+    question_source_spans = (
+        list(
+            session.execute(
+                select(QuestionSourceSpan)
+                .where(QuestionSourceSpan.question_id.in_(question_ids))
+                .order_by(
+                    QuestionSourceSpan.page_number,
+                    QuestionSourceSpan.source_line_id,
+                    QuestionSourceSpan.id,
+                )
+            ).scalars()
+        )
+        if question_ids
+        else []
+    )
+    extraction_warnings = list(
+        session.execute(
+            select(ExtractionWarning)
+            .where(ExtractionWarning.analysis_id == analysis_id)
+            .order_by(ExtractionWarning.page_number, ExtractionWarning.code, ExtractionWarning.id)
         ).scalars()
     )
     evidence = list(
@@ -90,6 +160,11 @@ def _build_snapshot(session: Session, analysis_id: UUID) -> ExtractionReviewSnap
                 AssessmentRecord.id,
             )
         ).scalars()
+    )
+    applicable_clo_codes = resolve_applicable_clo_codes(
+        analysis.exam_type,
+        assessment_records,
+        [clo.code for clo in clos],
     )
     supporting_materials = list(
         session.execute(
@@ -132,7 +207,8 @@ def _build_snapshot(session: Session, analysis_id: UUID) -> ExtractionReviewSnap
     )
 
     return ExtractionReviewSnapshot(
-        schema_version=1,
+        schema_version=2,
+        preparation_mode=preparation_mode,
         questions=[
             ExtractionReviewQuestion(
                 source_record_id=question.id,
@@ -145,8 +221,67 @@ def _build_snapshot(session: Session, analysis_id: UUID) -> ExtractionReviewSnap
                 sequence=question.sequence,
                 extraction_confidence=question.confidence,
                 geometry=_geometry(question.geometry),
+                question_type=question.question_type,
+                instructions=question.instructions,
+                extraction_method=question.extraction_method,
+                review_status=question.review_status,
             )
             for question in questions
+        ],
+        question_options=[
+            ExtractionReviewQuestionOption(
+                source_record_id=item.id,
+                included=True,
+                question_source_record_id=item.question_id,
+                option_label=item.option_label,
+                option_text=item.option_text,
+                sequence=item.sequence,
+                page_number=item.page_number,
+                extraction_confidence=item.confidence,
+                geometry=_geometry(item.geometry),
+            )
+            for item in question_options
+        ],
+        question_blanks=[
+            ExtractionReviewQuestionBlank(
+                source_record_id=item.id,
+                included=True,
+                question_source_record_id=item.question_id,
+                blank_index=item.blank_index,
+                source_text=item.source_text,
+                page_number=item.page_number,
+                geometry=_geometry(item.geometry),
+            )
+            for item in question_blanks
+        ],
+        question_source_spans=[
+            ExtractionReviewQuestionSourceSpan(
+                source_record_id=item.id,
+                question_source_record_id=item.question_id,
+                option_source_record_id=item.option_id,
+                provider=item.provider,
+                provider_version=item.provider_version,
+                source_line_id=item.source_line_id,
+                original_text=item.original_text,
+                page_number=item.page_number,
+                geometry=_geometry(item.geometry),
+                extraction_confidence=item.confidence,
+                extraction_method=item.extraction_method,
+            )
+            for item in question_source_spans
+        ],
+        extraction_warnings=[
+            ExtractionReviewExtractionWarning(
+                source_record_id=item.id,
+                code=item.code,
+                severity=item.severity,
+                page_number=item.page_number,
+                source_line_ids=item.source_line_ids,
+                message=item.message,
+                geometry=_geometry(item.geometry),
+                resolved=item.resolved,
+            )
+            for item in extraction_warnings
         ],
         evidence=[
             ExtractionReviewEvidence(
@@ -166,7 +301,10 @@ def _build_snapshot(session: Session, analysis_id: UUID) -> ExtractionReviewSnap
         clos=[
             ExtractionReviewClo(
                 source_record_id=clo.id,
-                included=True,
+                included=(
+                    applicable_clo_codes is None
+                    or clo.code.strip().upper() in applicable_clo_codes
+                ),
                 code=clo.code,
                 text=clo.text,
                 program_outcome_reference=clo.program_outcome_reference,
@@ -196,6 +334,7 @@ def _build_snapshot(session: Session, analysis_id: UUID) -> ExtractionReviewSnap
                 method=record.method,
                 activity=record.activity,
                 percentage=record.percentage,
+                related_clo_codes=list(record.related_clo_codes or []),
                 page_number=record.page_number,
                 extraction_confidence=record.confidence,
                 geometry=_geometry(record.geometry),

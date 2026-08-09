@@ -1,6 +1,10 @@
 import { Alert } from '../../components/ui/Alert'
 import { useI18n } from '../../i18n/I18nProvider'
-import type { AnalysisResponse, UploadedFileResponse, UploadedFileType } from '../../types/api'
+import type {
+  AnalysisResponse,
+  UploadedFileResponse,
+  UploadedFileType,
+} from '../../types/api'
 
 interface ReviewStartSummaryProps {
   analysis: AnalysisResponse
@@ -84,6 +88,7 @@ export function ReviewStartSummary({ analysis }: ReviewStartSummaryProps) {
         <FileSummary label={t('Examination PDF')} file={exam} />
         <FileSummary label={t('Course Specification file')} file={tp153} />
       </dl>
+
 
       <Alert variant="info" title={t('Scope reminder')}>
         {t('The analysis applies only to this uploaded examination and its corresponding Course Specification. Starting the analysis does not issue an accreditation or institutional decision.')}

@@ -107,10 +107,10 @@ def test_record_hash_changes_when_official_id_changes() -> None:
 
 def test_real_kb_all_rows_normalize_with_nonempty_hashes() -> None:
     records = normalize_all(load_and_validate(REAL_KB_SOURCE))
-    assert len(records) == 437
+    assert len(records) == 441
     assert all(r.record_hash for r in records)
     # Every record's hash is unique - no two distinct rows collided.
-    assert len({r.record_hash for r in records}) == 437
+    assert len({r.record_hash for r in records}) == 441
 
 
 def test_normalize_all_is_deterministic_across_runs() -> None:

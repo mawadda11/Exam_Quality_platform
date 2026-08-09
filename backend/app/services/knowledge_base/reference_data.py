@@ -186,7 +186,11 @@ def get_controlled_recommendations(
         item.recommendation_id for item in get_recommendations_for(source_dir, rule_id, status)
     }
     if recommendation_id not in eligible:
-        raise RuntimeError(
-            f"Stored recommendation {recommendation_id!r} does not apply to {status.value}."
-        )
+        # A deterministic post-validation gate may legitimately change a
+        # finding status after the AI/provider recommendation reference was
+        # validated (for example, missing supporting material -> Not
+        # Verified).  Do not make the whole Recommendations endpoint fail for
+        # that stale-but-well-formed reference; resolve the controlled KB
+        # recommendation from the final persisted status instead.
+        return get_recommendations_for(source_dir, rule_id, status)
     return (recommendation,)

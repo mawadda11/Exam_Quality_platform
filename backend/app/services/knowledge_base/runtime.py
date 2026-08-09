@@ -42,6 +42,13 @@ class SemanticRuntime:
     def ensure_index(self) -> None:
         if self._indexed:
             return
+        if self.vector_store.snapshot_matches(
+            self.snapshot.embeddable_records,
+            kb_version=self.snapshot.version,
+            kb_hash=self.snapshot.aggregate_hash,
+        ):
+            self._indexed = True
+            return
         self.rebuild_index()
 
     def rebuild_index(self) -> None:
@@ -50,6 +57,17 @@ class SemanticRuntime:
             kb_version=self.snapshot.version,
         )
         self._indexed = True
+
+    def with_provider(self, provider: AiProvider) -> SemanticRuntime:
+        """Reuse the same validated KB/vector-store snapshot with another provider."""
+
+        routed = SemanticRuntime(
+            provider=provider,
+            vector_store=self.vector_store,
+            snapshot=self.snapshot,
+        )
+        routed._indexed = self._indexed
+        return routed
 
 
 def load_kb_snapshot(source_dir: Path) -> KnowledgeBaseSnapshot:

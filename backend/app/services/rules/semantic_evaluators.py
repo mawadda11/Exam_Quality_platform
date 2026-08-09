@@ -78,6 +78,7 @@ class SemanticRuleEvaluation:
     model: str | None
     prompt_template_version: str
     kb_version: str
+    explanation_ar: str | None = None
     items: tuple[SemanticItemJudgment, ...] = ()
     confidence_basis: tuple[str, ...] = ()
     retrieved_knowledge_ids: tuple[str, ...] = ()
@@ -246,23 +247,61 @@ def prepare_assessment_method_consistency(
     )
 
 
+_QUESTION_SUPPORT_CONTEXT_TYPES = frozenset(
+    {
+        "explicit_reference",
+        "label",
+        "caption",
+        "figure",
+        "table",
+        "code_block",
+    }
+)
+
+
 def _question_text_preparation(
     inputs: SemanticInputs,
     *,
-    include_instructions: bool = False,
+    context_types: frozenset[str] = frozenset(),
 ) -> PreparedSemanticEvaluation | str:
     sources = _question_evidence(inputs)
     if not sources:
         return "No readable scorable question evidence was available from the confirmed exam."
-    instructions = _evidence_of_type(inputs, "instructions") if include_instructions else []
-    evidence = tuple(dict.fromkeys([*sources, *instructions]))
+    context = [item for item in inputs.evidence if item.evidence_type in context_types]
+    evidence = tuple(dict.fromkeys([*sources, *context]))
     return PreparedSemanticEvaluation(
         evidence=evidence,
         query_text=" ".join(item.extracted_text for item in evidence),
-        allowed_evidence_types=frozenset(
-            {"question_text", "instructions"} if include_instructions else {"question_text"}
-        ),
+        allowed_evidence_types=frozenset({"question_text", *context_types}),
         required_source_evidence_ids=frozenset(item.id for item in sources),
+        allowed_target_evidence_ids=frozenset(item.id for item in context),
+        relationship_required=False,
+    )
+
+
+def _exam_instruction_preparation(
+    inputs: SemanticInputs,
+) -> PreparedSemanticEvaluation | str:
+    metadata = _evidence_of_type(inputs, "exam_metadata")
+    if not metadata:
+        return "The uploaded exam type could not be assembled as confirmed exam metadata evidence."
+
+    # RULE021 is intentionally isolated from question text.  Mixing every question
+    # into this prompt previously caused the model to infer that instructions were
+    # missing even when a clear exam-level Instructions block had been extracted.
+    # Question-specific instruction rows are also excluded; this rule evaluates
+    # only general exam directions.
+    instructions = [
+        item
+        for item in _evidence_of_type(inputs, "instructions")
+        if item.question_id is None and item.item_reference == "instructions"
+    ]
+    evidence = tuple(dict.fromkeys([*metadata, *instructions]))
+    return PreparedSemanticEvaluation(
+        evidence=evidence,
+        query_text="exam-level instructions " + " ".join(item.extracted_text for item in evidence),
+        allowed_evidence_types=frozenset({"exam_metadata", "instructions"}),
+        required_source_evidence_ids=frozenset(item.id for item in metadata),
         allowed_target_evidence_ids=frozenset(item.id for item in instructions),
         relationship_required=False,
     )
@@ -279,11 +318,15 @@ def prepare_unambiguous_wording(inputs: SemanticInputs) -> PreparedSemanticEvalu
 def prepare_complete_question_information(
     inputs: SemanticInputs,
 ) -> PreparedSemanticEvaluation | str:
-    return _question_text_preparation(inputs, include_instructions=True)
+    # Supporting-material presence/uniqueness is governed separately by the
+    # material-reference rule. Keep this rule focused on information intrinsic
+    # to the readable question text so one missing/duplicate figure is not
+    # penalized again as a second completeness defect.
+    return _question_text_preparation(inputs)
 
 
 def prepare_complete_instructions(inputs: SemanticInputs) -> PreparedSemanticEvaluation | str:
-    return _question_text_preparation(inputs, include_instructions=True)
+    return _exam_instruction_preparation(inputs)
 
 
 def _precondition_evidence(identifier: RuleIdentifier, inputs: SemanticInputs) -> list[Evidence]:
@@ -366,7 +409,9 @@ def _prompt_envelope(
         "relationship_required": prepared.relationship_required,
         "item_contract": (
             "Return exactly one item per required source evidence ID. Cite only allowed target "
-            "evidence IDs. Keep reasoning concise and evidence-to-rule focused."
+            "evidence IDs. Keep reasoning concise, specific, and evidence-to-rule focused. "
+            "Return reasoning in English only; presentation translation is handled locally after "
+            "the academic judgment is validated."
         ),
         "evidence": [
             {
@@ -421,6 +466,24 @@ def _rule_schema(
         "type": "string",
         "const": runtime.snapshot.version,
     }
+
+    # Arabic is presentation-only and must never consume Gemini output tokens.
+    # Keep the Pydantic fields optional for backwards compatibility with stored
+    # analyses, but remove them from the provider contract entirely.
+    properties.pop("explanation_ar", None)
+    required = schema.get("required")
+    if isinstance(required, list) and "explanation_ar" in required:
+        required.remove("explanation_ar")
+    defs = schema.get("$defs")
+    if isinstance(defs, dict):
+        item_def = defs.get("SemanticItemJudgment")
+        if isinstance(item_def, dict):
+            item_properties = item_def.get("properties")
+            if isinstance(item_properties, dict):
+                item_properties.pop("reasoning_ar", None)
+            item_required = item_def.get("required")
+            if isinstance(item_required, list) and "reasoning_ar" in item_required:
+                item_required.remove("reasoning_ar")
     return schema
 
 
@@ -508,6 +571,7 @@ def _evaluate(
                 if runtime.provider.provider_name == "local"
                 else "semantic_ai"
             )
+
             return SemanticRuleEvaluation(
                 identifier=identifier,
                 status=result.status,

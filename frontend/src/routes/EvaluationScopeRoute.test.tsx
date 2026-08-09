@@ -108,7 +108,7 @@ describe('EvaluationScopeRoute', () => {
       .not.toBeInTheDocument()
   })
 
-  it('keeps governed scope counts derived and presents planned checks as non-scoring', () => {
+  it('keeps governed scope counts derived and hides planned checks from methodology', () => {
     renderRoute()
 
     const checksSection = screen.getByRole('region', {
@@ -119,7 +119,6 @@ describe('EvaluationScopeRoute', () => {
     )
     expect(within(summary).getByText('17')).toBeInTheDocument()
     expect(within(summary).getByText('1')).toBeInTheDocument()
-    expect(within(summary).getByText('3')).toBeInTheDocument()
     expect(
       within(checksSection).getByText('CLO and topic relationships'),
     ).toBeInTheDocument()
@@ -127,8 +126,11 @@ describe('EvaluationScopeRoute', () => {
       within(checksSection).getByText('Materials and references'),
     ).toBeInTheDocument()
     expect(
-      within(checksSection).getAllByText('Planned, not scored'),
-    ).toHaveLength(3)
+      within(checksSection).queryByText('Planned checks'),
+    ).not.toBeInTheDocument()
+    expect(
+      within(checksSection).queryByText('Planned, not scored'),
+    ).not.toBeInTheDocument()
     expect(within(checksSection).queryByText(/RULE\d{3}/))
       .not.toBeInTheDocument()
     expect(within(checksSection).queryByText(/failed|failure/i))
@@ -163,15 +165,20 @@ describe('EvaluationScopeRoute', () => {
       screen.getByText('Analyses are private to the authenticated owner.'),
     ).toBeInTheDocument()
     expect(
+      screen.queryByText(
+        'Technical logs must not expose document contents or secrets.',
+      ),
+    ).not.toBeInTheDocument()
+    expect(
       screen.getByText(
         'To evaluate a revised exam, create a New Analysis. Each analysis and its reports are evaluated and stored independently.',
       ),
     ).toBeInTheDocument()
     expect(
-      screen.getByText(
+      screen.queryByText(
         'Planned capabilities are not counted as exam failures.',
       ),
-    ).toBeInTheDocument()
+    ).not.toBeInTheDocument()
     expect(screen.getByText(/Use View mapping details/i)).toBeInTheDocument()
     expect(screen.queryByText(/View Comparison/i)).not.toBeInTheDocument()
   })

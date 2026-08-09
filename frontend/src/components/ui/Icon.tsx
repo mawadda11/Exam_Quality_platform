@@ -22,6 +22,8 @@ export type IconName =
   | 'plus'
   | 'arrow-right'
   | 'grid'
+  | 'eye'
+  | 'trash'
 
 interface IconProps {
   name: IconName
@@ -93,6 +95,20 @@ export function Icon({ name, className = '' }: IconProps) {
       )}
       {name === 'plus' && <path d="M12 5v14M5 12h14" />}
       {name === 'arrow-right' && <path d="M5 12h14M13 6l6 6-6 6" />}
+      {name === 'eye' && (
+        <>
+          <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+          <circle cx="12" cy="12" r="2.5" />
+        </>
+      )}
+      {name === 'trash' && (
+        <>
+          <path d="M4.5 7h15" />
+          <path d="M9 7V4.5h6V7" />
+          <path d="M7 7l.75 12h8.5L17 7" />
+          <path d="M10 10.5v5M14 10.5v5" />
+        </>
+      )}
       {name === 'grid' && (
         <>
           <rect x="4" y="4" width="7" height="7" rx="1" />

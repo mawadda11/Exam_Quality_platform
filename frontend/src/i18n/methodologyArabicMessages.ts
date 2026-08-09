@@ -20,8 +20,8 @@ export const METHODOLOGY_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
     'المتطلب مستوفى جزئيًا، مع وجود جانب مثبت بالأدلة ما زال يحتاج إلى معالجة.',
   'Reliable evidence shows that the requirement is not met.':
     'تُظهر الأدلة الموثوقة أن المتطلب غير مستوفى.',
-  'The evidence is missing, unreadable, conflicting, or insufficient for a judgment.':
-    'الأدلة مفقودة أو غير مقروءة أو متعارضة أو غير كافية لإصدار حكم.',
+  'Available evidence is missing, unreadable, or insufficient to support a reliable judgment.':
+    'الأدلة المتاحة مفقودة أو غير مقروءة أو غير كافية لدعم حكم موثوق.',
   'The requirement does not apply to the context of this analysis.':
     'لا ينطبق المتطلب على سياق هذا التحليل.',
   'Scoring Policy': 'سياسة احتساب الدرجة',
@@ -120,14 +120,14 @@ export const METHODOLOGY_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
     'تصحح مراجعة الاستخراج السجل المعروض لعضو هيئة التدريس من دون تغيير أدلة التدقيق الأصلية المستخرجة آليًا.',
   'Evidence Reliability and Excluded Statuses':
     'موثوقية الأدلة والحالات المستبعدة',
-  'Evidence is missing, unreadable, conflicting, or insufficient for a reliable judgment.':
-    'الأدلة مفقودة أو غير مقروءة أو متعارضة أو غير كافية لإصدار حكم موثوق.',
+  'Evidence is missing, unreadable, or insufficient for a reliable judgment.':
+    'الأدلة مفقودة أو غير مقروءة أو غير كافية لإصدار حكم موثوق.',
   'The requirement does not apply to the context of the uploaded exam.':
     'لا ينطبق المتطلب على سياق الاختبار المرفوع.',
   'Both statuses are excluded from the score denominator and are not treated as exam failures.':
     'تُستبعد الحالتان من مقام الدرجة ولا تُعاملان بوصفهما إخفاقًا في الاختبار.',
-  'Low-confidence semantic evidence must not produce a positive or negative academic judgment.':
-    'يجب ألا ينتج عن الدليل الدلالي منخفض الثقة حكم أكاديمي إيجابي أو سلبي.',
+  'When available evidence cannot support a reliable semantic judgment, the result is Not Verified.':
+    'عندما لا تتمكن الأدلة المتاحة من دعم حكم دلالي موثوق، تكون النتيجة «غير متحقق».',
   'A system or processing failure is not an academic exam result.':
     'لا يمثل فشل النظام أو المعالجة نتيجة أكاديمية للاختبار.',
   'Suggested Relationships': 'العلاقات المقترحة',
@@ -143,8 +143,6 @@ export const METHODOLOGY_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
   "Users cannot access another owner's analysis.":
     'لا يمكن للمستخدم الوصول إلى تحليل يملكه مستخدم آخر.',
   'Original evidence is preserved.': 'تُحفظ الأدلة الأصلية.',
-  'Technical logs must not expose document contents or secrets.':
-    'يجب ألا تكشف السجلات التقنية محتوى المستندات أو المعلومات السرية.',
   'Reports and New Analysis': 'التقارير والتحليل الجديد',
   'Reports preserve the selected language, score summary, findings, recommendations, evidence context, and analysis version available when the report is generated.':
     'تحفظ التقارير اللغة المحددة وملخص الدرجة والنتائج والتوصيات وسياق الأدلة وإصدار التحليل المتاح وقت إنشاء التقرير.',
@@ -161,8 +159,6 @@ export const METHODOLOGY_ARABIC_MESSAGES: Readonly<Record<string, string>> = {
     'تتطلب العلاقات المقترحة مراجعة عضو هيئة التدريس.',
   'The analyzer does not approve, certify, or reject an exam.':
     'لا يعتمد المحلل الاختبار ولا يصدّقه ولا يرفضه.',
-  'Planned capabilities are not counted as exam failures.':
-    'لا تُحتسب القدرات المخطط لها بوصفها إخفاقات في الاختبار.',
   'Results apply only to the uploaded exam and Course Specification.':
     'تنطبق النتائج فقط على الاختبار وتوصيف المقرر المرفوعين.',
   'Frequently Asked Questions': 'الأسئلة الشائعة',

@@ -15,8 +15,15 @@ CMD ["npm", "run", "dev"]
 
 # Builder stage: production only needs the compiled static output, not the
 # Node toolchain that produced it. npm ci (not install) for a reproducible,
-# lockfile-exact build.
+# lockfile-exact build. Vite inlines VITE_* variables into the compiled
+# bundle at build time (not read at container runtime), so the API base URL
+# has to be supplied as a build ARG rather than a docker-compose
+# `environment:` entry. The default is a same-origin relative path so the
+# built bundle never depends on any particular hostname/port - the reverse
+# proxy is expected to route /api/* to the backend on the same origin.
 FROM base AS build
+ARG VITE_API_BASE_URL=/api/v1
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 RUN npm ci
 COPY . .
 RUN npm run build

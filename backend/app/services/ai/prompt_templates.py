@@ -25,13 +25,19 @@ accreditation, faculty-performance, Bloom-level, difficulty, or student-performa
 
 PROMPT_TEMPLATES: dict[str, PromptTemplate] = {
     "RULE001": PromptTemplate(
-        version="semantic-rule001-v2",
+        version="semantic-rule001-v5",
         system=_COMMON_SYSTEM,
         rule_instruction=(
             "Map each scorable question to one or more supplied CLO evidence rows when the "
-            "question "
-            "meaningfully supports that CLO. A code citation is supporting evidence but is not "
-            "required and is not sufficient by itself."
+            "question meaningfully supports that CLO. A code citation is supporting evidence but "
+            "is not required and is not sufficient by itself. For each individual question-to-CLO "
+            "relationship, use Satisfied when a meaningful relationship exists, Not Satisfied "
+            "when the readable confirmed question does not meaningfully support any supplied CLO, "
+            "and Not Verified only when the available evidence is insufficient to judge. Do not "
+            "use Partially Satisfied for an individual mapping. Never force a mapping to the "
+            "nearest or broadly related CLO when the assessed concept is not actually supported "
+            "by its supplied statement. Empty target_evidence_ids with Not Satisfied is valid "
+            "when the readable question is outside every supplied CLO."
         ),
     ),
     "RULE002": PromptTemplate(
@@ -62,12 +68,20 @@ PROMPT_TEMPLATES: dict[str, PromptTemplate] = {
         ),
     ),
     "RULE007": PromptTemplate(
-        version="semantic-rule007-v1",
+        version="semantic-rule007-v4",
         system=_COMMON_SYSTEM,
         rule_instruction=(
             "Map each substantive question to one or more supplied documented course topics. "
-            "Do not "
-            "require explicit topic codes and do not create topics absent from TP-153."
+            "Do not require explicit topic codes and do not create topics absent from TP-153. "
+            "For each individual question-to-topic relationship, use Satisfied when a meaningful "
+            "relationship exists, Not Satisfied when the readable confirmed question does not "
+            "meaningfully support any supplied topic, and Not Verified only when the available "
+            "evidence is insufficient to judge. Do not use Partially Satisfied for an individual "
+            "mapping. Do not force the nearest topic. Respect scope qualifiers and sibling "
+            "concepts in the documented topic text (for example IPv4 is not the same topic as "
+            "IPv6 merely because both are addressing). When the question is readable but none "
+            "of the supplied topics actually covers the assessed concept, return Not Satisfied "
+            "with no target evidence IDs."
         ),
     ),
     "RULE008": PromptTemplate(
@@ -82,38 +96,57 @@ PROMPT_TEMPLATES: dict[str, PromptTemplate] = {
         ),
     ),
     "RULE011": PromptTemplate(
-        version="semantic-rule011-v1",
+        version="semantic-rule011-v3",
         system=_COMMON_SYSTEM,
         rule_instruction=(
-            "Evaluate whether each question states a recognizable action and expected response. "
-            "Ignore stylistic preferences that do not affect task clarity."
+            "Evaluate only whether each question states a recognizable action and expected "
+            "response. Do not treat missing supporting material, absent references, or exam-level "
+            "instructions as task-clarity defects; those belong to separate controlled rules. "
+            "Ignore stylistic preferences that do not affect task clarity. Missing mark values, "
+            "mark labels, or administrative mark-status annotations are evaluated by marks rules "
+            "and must not reduce task clarity when the required student action remains clear."
         ),
     ),
     "RULE012": PromptTemplate(
-        version="semantic-rule012-v1",
+        version="semantic-rule012-v3",
         system=_COMMON_SYSTEM,
         rule_instruction=(
-            "Evaluate only material ambiguity, contradiction, or missing conditions that affect "
-            "consistent interpretation. Do not penalize harmless wording preferences."
+            "Evaluate only linguistic ambiguity, contradiction, unclear terminology, or wording "
+            "that permits materially different interpretations. Do not classify an unavailable "
+            "table, figure, code block, or other supporting item as wording ambiguity when the "
+            "reference itself is clear; material availability and information completeness are "
+            "handled by separate controlled rules. Missing mark values or administrative mark-status "
+            "annotations are not wording ambiguity. Do not penalize harmless wording preferences."
         ),
     ),
     "RULE013": PromptTemplate(
-        version="semantic-rule013-v1",
+        version="semantic-rule013-v4",
         system=_COMMON_SYSTEM,
         rule_instruction=(
-            "Evaluate whether each question and its supplied context contain the information "
-            "needed "
-            "to produce the expected response. Do not assess answer-key correctness."
+            "Evaluate only whether the readable question text itself contains the intrinsic data, "
+            "conditions, assumptions, and task-specific information needed to formulate an answer. "
+            "Do not infer that a figure, table, code block, diagram, or other supporting item is "
+            "missing merely because the question refers to one; supporting-material availability "
+            "and reference uniqueness are evaluated by a separate controlled rule. Do not duplicate "
+            "that material defect under this rule. General exam instructions are not a substitute "
+            "for missing intrinsic question data. A missing mark value does not make a question "
+            "informationally incomplete when the task itself contains the data needed to answer it; "
+            "marks are evaluated separately. Do not assess answer-key correctness."
         ),
     ),
     "RULE021": PromptTemplate(
-        version="semantic-rule021-v1",
+        version="semantic-rule021-v3",
         system=_COMMON_SYSTEM,
         rule_instruction=(
-            "Evaluate whether necessary general and question-specific instructions are present. "
-            "Use "
-            "Not Applicable only when no special instruction is needed; do not invent local exam "
-            "policies."
+            "Evaluate the exam-level general instructions only, such as answer requirements, "
+            "allowed resources or tools, general constraints, and submission or formatting "
+            "directions when applicable. Do not judge the completeness of an individual question "
+            "or the availability of a referenced table, figure, or code block under this rule. "
+            "Use the supplied instruction evidence as the authoritative exam-level directions and "
+            "do not infer their absence from question text. If substantive general instructions "
+            "are supplied, evaluate their actual completeness rather than claiming the exam lacks "
+            "instructions. Use Not Applicable only when no additional exam-level instruction is "
+            "needed; do not invent local exam policies."
         ),
     ),
 }

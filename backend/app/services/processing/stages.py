@@ -12,22 +12,35 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.core.domain import ProcessingStage, UploadedFileType
+from app.core.domain import AcademicStatus, ProcessingStage, QuestionPreparationMode, UploadedFileType
 from app.models.analysis import Analysis
 from app.models.clo import Clo
 from app.models.evidence import Evidence
 from app.models.question import Question
 from app.models.uploaded_file import UploadedFile
 from app.schemas.extraction_review import ExtractionReviewSnapshot
+from app.services.ai.analysis_routing import (
+    analysis_ai_route,
+    build_analysis_semantic_provider,
+    record_analysis_ai_route,
+)
 from app.services.extraction.digital_pdf_extractor import PdfPlumberExamExtractor
 from app.services.extraction.digital_tp153_extractor import PdfPlumberTp153Extractor
+from app.services.extraction.document_ocr import create_document_ocr_provider
+from app.services.extraction.exam_structure import (
+    apply_exam_structure_parser,
+    create_exam_structure_parser,
+)
 from app.services.extraction.persistence import persist_extraction_result
+from app.services.extraction.preparation_mode import encode_question_preparation_mode
+from app.services.extraction.reference_adjudication import adjudicate_nonexplicit_references
 from app.services.extraction.review_snapshot import materialize_initial_review_revision
 from app.services.extraction.tp153_persistence import persist_tp153_extraction_result
 from app.services.extraction.types import ExtractionError, PageExtractionDiagnostic
@@ -150,7 +163,13 @@ def run_validating(analysis: Analysis, session: Session, settings: Settings) -> 
             raise ExtractionError(f"The stored {file_type.value} file is unavailable.")
 
 
-def run_extracting_exam(analysis: Analysis, session: Session, settings: Settings) -> None:
+def run_extracting_exam(
+    analysis: Analysis,
+    session: Session,
+    settings: Settings,
+    *,
+    preparation_mode: QuestionPreparationMode = QuestionPreparationMode.ASSISTED_PDF,
+) -> None:
     exam_file = next((f for f in analysis.files if f.file_type == UploadedFileType.EXAM), None)
     if exam_file is None:
         # POST /run already requires ready_for_analysis, so this should not
@@ -159,12 +178,55 @@ def run_extracting_exam(analysis: Analysis, session: Session, settings: Settings
         raise ExtractionError("No exam file is associated with this analysis.")
 
     pdf_path = resolve_storage_path(settings.upload_root, exam_file.storage_key)
-    result = PdfPlumberExamExtractor().extract(pdf_path)
+    ocr_provider = create_document_ocr_provider(settings)
+    result = PdfPlumberExamExtractor(document_ocr_provider=ocr_provider).extract(pdf_path)
+    if preparation_mode is QuestionPreparationMode.ASSISTED_PDF:
+        result = apply_exam_structure_parser(
+            result,
+            create_exam_structure_parser(
+                settings,
+                initial_tier=analysis_ai_route(session, analysis.id),
+                on_route_changed=lambda tier: record_analysis_ai_route(
+                    session,
+                    analysis_id=analysis.id,
+                    stage=ProcessingStage.EXTRACTING_EXAM,
+                    tier=tier,
+                ),
+            ),
+            pdf_path=pdf_path,
+        )
+    else:
+        # Manual and structured-template modes keep the immutable PDF, page
+        # diagnostics, and visible materials but deliberately create no
+        # automatic question facts. Questions are added in Extraction Review.
+        result = replace(
+            result,
+            questions=[],
+            evidence=[
+                item
+                for item in result.evidence
+                if item.question_number_label is None
+                and item.evidence_type not in {
+                    "question_text",
+                    "question_source_spans",
+                    "marks",
+                }
+            ],
+            supporting_materials=[
+                replace(item, question_number_label=None, question_local_key=None)
+                for item in result.supporting_materials
+            ],
+            document_references=[],
+            reconciliation_warnings=[],
+            structure_candidates=[],
+        )
     persist_extraction_result(session, analysis.id, result)
+    adjudicate_nonexplicit_references(session, analysis.id, settings)
     _record_extraction_metadata(
         exam_file,
         document_language=result.document_language.value,
         diagnostics=result.page_diagnostics,
+        parser_layout=encode_question_preparation_mode(preparation_mode),
     )
 
 
@@ -314,6 +376,14 @@ def run_applying_rules(analysis: Analysis, session: Session, settings: Settings)
             persist_finding(session, analysis.id, identifier, structured_result)
 
     runtime = get_semantic_runtime(settings)
+    routed_provider = build_analysis_semantic_provider(
+        settings,
+        session,
+        analysis_id=analysis.id,
+        stage=ProcessingStage.APPLYING_RULES,
+    )
+    if routed_provider is not None:
+        runtime = runtime.with_provider(routed_provider)
     runtime.ensure_index()
     kb_source_dir = Path(settings.kb_source_dir).resolve()
 
@@ -324,6 +394,11 @@ def run_applying_rules(analysis: Analysis, session: Session, settings: Settings)
         kb_source_dir,
         validation_retries=settings.ai_validation_retries,
     )
+    # Final pilot philosophy: material-reference quality is reported in its own
+    # governed dimension. It must not automatically downgrade or suppress a
+    # semantic CLO/topic judgment when the readable question text itself can
+    # still be evaluated. The semantic evaluator keeps responsibility for its
+    # own confidence/status; reference defects remain visible separately.
     persist_semantic_finding(session, analysis.id, clo_mapping)
     persist_semantic_finding(session, analysis.id, topic_mapping)
 
@@ -353,6 +428,24 @@ def run_applying_rules(analysis: Analysis, session: Session, settings: Settings)
         validation_retries=settings.ai_validation_retries,
     )
     for semantic_result in semantic_results:
+        if semantic_result.identifier == OUT_OF_SCOPE_CONTENT:
+            # Pilot scope decision: "no supported topic relationship" does not
+            # prove that content is outside the course. Keep the question-to-
+            # topic suggestions for faculty review, but exclude an automated
+            # out-of-scope judgment from scoring unless a future governed
+            # positive-evidence method is added.
+            semantic_result = replace(
+                semantic_result,
+                status=AcademicStatus.NOT_APPLICABLE,
+                explanation=(
+                    "Automated out-of-scope scoring is outside the current pilot scope. "
+                    "Review the question-to-topic suggestions in Alignment & Coverage."
+                ),
+                recommendation_id=None,
+            )
+        # Complete Information is judged from the question itself. Missing or
+        # duplicate supporting material is scored once by RULE014 rather than
+        # being propagated into a second penalty here.
         persist_semantic_finding(session, analysis.id, semantic_result)
 
 

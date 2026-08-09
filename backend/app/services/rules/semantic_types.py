@@ -23,6 +23,7 @@ class SemanticItemJudgment(BaseModel):
     target_evidence_ids: list[uuid.UUID] = Field(default_factory=list)
     status: AcademicStatus
     reasoning: str = Field(min_length=1, max_length=2000)
+    reasoning_ar: str | None = Field(default=None, min_length=1, max_length=2000)
 
     @field_validator("target_evidence_ids")
     @classmethod
@@ -36,6 +37,15 @@ class SemanticItemJudgment(BaseModel):
     def reasoning_is_not_blank(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("reasoning must not be blank.")
+        return value.strip()
+
+    @field_validator("reasoning_ar")
+    @classmethod
+    def reasoning_ar_is_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not value.strip():
+            raise ValueError("reasoning_ar must not be blank when provided.")
         return value.strip()
 
 
@@ -54,6 +64,7 @@ class SemanticAiOutput(BaseModel):
     status: AcademicStatus
     evidence_ids: list[uuid.UUID]
     explanation: str = Field(min_length=1, max_length=4000)
+    explanation_ar: str | None = Field(default=None, min_length=1, max_length=4000)
     recommendation_id: str | None
     items: list[SemanticItemJudgment] = Field(min_length=1)
     provider: str
@@ -83,6 +94,15 @@ class SemanticAiOutput(BaseModel):
             raise ValueError("Value must not be blank.")
         return value.strip()
 
+    @field_validator("explanation_ar")
+    @classmethod
+    def explanation_ar_is_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not value.strip():
+            raise ValueError("explanation_ar must not be blank when provided.")
+        return value.strip()
+
 
 @dataclass(frozen=True)
 class SemanticValidationContext:
@@ -104,6 +124,7 @@ class ValidatedSemanticResult:
     legacy_confidence: float
     evidence_ids: list[uuid.UUID]
     explanation: str
+    explanation_ar: str | None
     recommendation_id: str | None
     provider: str
     model: str

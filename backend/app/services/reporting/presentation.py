@@ -105,10 +105,13 @@ RECOMMENDATIONS_AR = {
         "أضف المستند المصدر والصفحة والسؤال أو السؤال الفرعي والعنصر الأكاديمي المرتبط.",
     ),
     "REC011": ("وضّح المهمة المطلوبة", "حدّد بدقة ما يجب على الطالب فعله أو إنتاجه."),
-    "REC012": ("أزل الالتباس المؤثر", "وضّح المصطلحات والشروط والإحالات ونطاق الإجابة المتوقعة."),
+    "REC012": (
+        "وضّح الصياغة الملتبسة",
+        "وضّح المصطلحات أو الصياغة المتناقضة أو نطاق الإجابة الذي يسمح بتفسيرات مختلفة.",
+    ),
     "REC013": (
         "أكمل معلومات السؤال",
-        "أضف البيانات أو الشروط أو الافتراضات أو السياق اللازم للإجابة.",
+        "أضف البيانات أو الشروط أو الافتراضات أو السياق المشار إليه واللازم للإجابة.",
     ),
     "REC014": (
         "وفّر المادة المساندة المطلوبة",
@@ -133,8 +136,11 @@ RECOMMENDATIONS_AR = {
     "REC019": ("أصلح ترقيم الأسئلة", "صحّح الترقيم المكرر أو المفقود أو غير المتسق."),
     "REC020": ("أكمل بيانات تعريف الاختبار", "أضف حقول تعريف الاختبار المطلوبة مؤسسيًا."),
     "REC021": (
-        "أكمل التعليمات",
-        "أضف التعليمات اللازمة بشأن الإجابات أو المصادر أو الأدوات أو القيود.",
+        "أكمل تعليمات الاختبار العامة",
+        (
+            "أضف تعليمات الاختبار العامة اللازمة بشأن متطلبات الإجابة أو المصادر "
+            "أو الأدوات أو القيود أو طريقة التسليم والتنسيق."
+        ),
     ),
     "REC022": ("حدّد الإحالة المرجعية", "استبدل الإحالات المبهمة بمعرّف محدد."),
     "REC023": (
@@ -172,8 +178,93 @@ RECOMMENDATIONS_AR = {
         "اطلب دليل درجات مقروءًا",
         "اطلب نسخة أوضح من الاختبار عندما يتعذر استخراج الدرجات بموثوقية.",
     ),
-    "REC034": ("اطلب تعليمات مقروءة", "اطلب نسخة أوضح من الاختبار عندما يتعذر قراءة التعليمات."),
+    "REC034": (
+        "اطلب تعليمات اختبار عامة مقروءة",
+        "اطلب نسخة أوضح عندما يتعذر قراءة تعليمات الاختبار العامة.",
+    ),
     "REC035": ("اطلب دليل التقييم", "اطلب قسم التقييم المطلوب والمكتمل في TP-153."),
+}
+
+BALANCED_RECOMMENDATIONS_EN = {
+    "REC001": (
+        "Review the question-to-CLO relationship",
+        "Review the question against the cited CLO. Keep or clarify the relationship only when "
+        "the confirmed evidence supports it; otherwise leave it unassigned.",
+    ),
+    "REC005": (
+        "Review intended CLO representation",
+        "First confirm that this CLO was intended to be represented in this exam. If so, "
+        "consider adjusting an affected question or documenting where it is assessed; a new "
+        "question is not automatically required.",
+    ),
+    "REC007": (
+        "Verify the approved course specification",
+        "Verify the approved course specification. If the topic is officially included but "
+        "missing from the uploaded specification, update the specification. Otherwise, review "
+        "or replace the question.",
+    ),
+    "REC008": (
+        "Verify the approved course specification",
+        "Verify the approved course specification. If the topic is officially included but "
+        "missing from the uploaded specification, update the specification. Otherwise, review "
+        "or replace the question.",
+    ),
+    "REC009": (
+        "Review intended topic representation",
+        "First confirm which topics were intended for this exam. If a documented topic should "
+        "be represented, consider the smallest appropriate adjustment to an affected question; "
+        "do not add content solely to satisfy the analyzer.",
+    ),
+    "REC031": (
+        "Request readable CLO evidence",
+        "If the official populated CLO section exists but is unreadable or incomplete in the "
+        "upload, provide a readable official copy. Do not create missing course information "
+        "solely for this analysis.",
+    ),
+    "REC032": (
+        "Request readable topic evidence",
+        "If the official populated topic section exists but is unreadable or incomplete in the "
+        "upload, provide a readable official copy. Do not create missing course information "
+        "solely for this analysis.",
+    ),
+}
+
+BALANCED_RECOMMENDATIONS_AR = {
+    "REC001": (
+        "راجع علاقة السؤال بناتج التعلم",
+        "راجع السؤال مقابل ناتج التعلم المشار إليه، وأبقِ العلاقة أو وضّحها فقط عندما "
+        "تدعمها الأدلة المؤكدة، وإلا فاترك السؤال دون ربط.",
+    ),
+    "REC005": (
+        "راجع تمثيل ناتج التعلم المقصود",
+        "تحقق أولًا من أن ناتج التعلم كان مقصودًا لهذا الاختبار. إذا كان كذلك، ففكّر "
+        "في تعديل سؤال متأثر أو توثيق موضع تقييمه؛ ولا يلزم إضافة سؤال جديد تلقائيًا.",
+    ),
+    "REC007": (
+        "تحقّق من توصيف المقرر المعتمد",
+        "تحقّق من توصيف المقرر المعتمد. إذا كان الموضوع معتمدًا لكنه غير مدرج في الملف "
+        "المرفوع، فحدّث التوصيف؛ وإلا فراجع السؤال أو استبدله.",
+    ),
+    "REC008": (
+        "تحقّق من توصيف المقرر المعتمد",
+        "تحقّق من توصيف المقرر المعتمد. إذا كان الموضوع معتمدًا لكنه غير مدرج في الملف "
+        "المرفوع، فحدّث التوصيف؛ وإلا فراجع السؤال أو استبدله.",
+    ),
+    "REC009": (
+        "راجع تمثيل الموضوعات المقصودة",
+        "تحقق أولًا من الموضوعات المقصودة لهذا الاختبار. إذا كان ينبغي تمثيل موضوع "
+        "موثق، ففكّر في أصغر تعديل مناسب لسؤال متأثر، ولا تضف محتوى لمجرد إرضاء المحلل.",
+    ),
+    "REC031": (
+        "اطلب دليلًا مقروءًا لنواتج التعلم",
+        "إذا كان القسم الرسمي المعبأ لنواتج التعلم موجودًا لكنه غير مقروء أو ناقصًا في "
+        "الملف المرفوع، فقدّم نسخة رسمية مقروءة. لا تنشئ معلومات مقرر مفقودة لمجرد هذا التحليل.",
+    ),
+    "REC032": (
+        "اطلب دليلًا مقروءًا للموضوعات",
+        "إذا كان القسم الرسمي المعبأ للموضوعات موجودًا لكنه غير مقروء أو ناقصًا في الملف "
+        "المرفوع، فقدّم نسخة رسمية مقروءة. لا تنشئ معلومات مقرر مفقودة لمجرد هذا التحليل.",
+    ),
 }
 
 STATUS_EXPLANATIONS_AR = {
@@ -214,8 +305,8 @@ def recommendation_text(
     language: ReportLanguage,
 ) -> tuple[str, str]:
     if language is ReportLanguage.ARABIC:
-        return RECOMMENDATIONS_AR.get(
+        return BALANCED_RECOMMENDATIONS_AR.get(identifier) or RECOMMENDATIONS_AR.get(
             identifier,
             ("راجع التوصية المرتبطة", "راجع نتيجة التقييم والأدلة واتخذ الإجراء المناسب."),
         )
-    return title, text
+    return BALANCED_RECOMMENDATIONS_EN.get(identifier, (title, text))

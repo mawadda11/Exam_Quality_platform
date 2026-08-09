@@ -24,8 +24,29 @@ TOTAL_MARKS_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+_ENGLISH_HIERARCHICAL_DECIMAL = re.compile(
+    r"^(?:Q|Question(?:\s+No\.?)?)\s*(\d+)\.(\d+)\s*(.*)$",
+    re.I,
+)
+# Mixed RTL/LTR PDF reading order can place the Latin ``Q`` after the numeric
+# label even though the visual line is rendered as ``Q 1.2 ...``.  Treat the
+# two forms as the same structural marker; this is reading-order tolerance, not
+# a language-specific rewrite of the question text.
+_RTL_HIERARCHICAL_DECIMAL = re.compile(
+    r"^(\d+)\.(\d+)\s*(?:Q|Question(?:\s+No\.?)?|س)\b\s*(.*)$",
+    re.I,
+)
+_ENGLISH_HIERARCHICAL_LETTER = re.compile(
+    r"^(?:Q|Question(?:\s+No\.?)?)\s*(\d+)\s*\(\s*([a-z])\s*\)\s*(.*)$",
+    re.I,
+)
+
 _ENGLISH_QUESTION = re.compile(
-    r"^Q\s*(\d+)(?:\.\s*|\s+\(\d+(?:\.\d+)?\)\s*:\s*|\s*:\s*)(.*)$",
+    r"^(?:Q|Question(?:\s+No\.?)?)\s*(\d+)\s*(?:"
+    r"[\.\:\-–—]\s*"
+    r"|[\(\[]\s*\d+(?:\.\d+)?\s*(?:marks?)?\s*[\)\]]\s*"
+    r"(?:[\.\:\-–—]\s*)?"
+    r")?(.*)$",
     re.I,
 )
 _ARABIC_Q_QUESTION = re.compile(r"^س\s*(\d+)\s*(?:[\.:\-]\s*)?(.*)$")
@@ -34,7 +55,27 @@ _ARABIC_WORD_QUESTION = re.compile(r"^السؤال\s+(\d+|[\u0621-\u064a]+)\s*(?
 _ENGLISH_SUBQUESTION = re.compile(r"^\(?([a-z])\)?\s*[\).:\-]\s*(.*)$", re.I)
 _ARABIC_SUBQUESTION = re.compile(r"^\(?([اأإآبجدهـوزحطيكلم نسعفصقرشتثخذضظغ])\)?\s*[\).:\-]\s*(.*)$")
 
-_INSTRUCTIONS = re.compile(r"^(?:Instructions?|تعليمات|التعليمات)\s*:\s*", re.IGNORECASE)
+_INSTRUCTIONS = re.compile(
+    r"^(?:(?:Instructions?|تعليمات|التعليمات)"
+    r"(?:\s*/\s*(?:Instructions?|تعليمات|التعليمات))?)\s*:?\s*",
+    re.IGNORECASE,
+)
+_MARK_STATUS_PHRASE = re.compile(
+    r"(?:"
+    r"(?:mark|marks|score|points?)\s+(?:not\s+(?:stated|shown|specified|provided)|"
+    r"omitted|missing|unknown)"
+    r"|(?:الدرجة|الدرجات|العلامة|العلامات)\s+(?:غير\s+(?:مذكور(?:ة)?|موضح(?:ة)?|"
+    r"محدد(?:ة)?|متوفر(?:ة)?)|مفقود(?:ة)?|مجهول(?:ة)?)"
+    r")",
+    re.IGNORECASE,
+)
+_MARK_STATUS_ANNOTATION = re.compile(
+    rf"^\s*(?:{_MARK_STATUS_PHRASE.pattern}|"
+    r"no\s+individual\s+mark\s+is\s+(?:printed|stated|shown|specified|provided)"
+    r"(?:\s+for\s+[^.]+)?"
+    r")\s*[.:]?\s*$",
+    re.IGNORECASE,
+)
 _DECLARED_TOTAL_LABEL = re.compile(
     r"(?:"
     r"\b(?:Total\s+Marks?|Total\s+Score|Exam\s+Total|Maximum\s+Marks?)\b"
@@ -53,17 +94,20 @@ _TOTAL_VALUE_AFTER_LABEL = re.compile(
     re.IGNORECASE,
 )
 
-_ENGLISH_MARKS = re.compile(r"[\[\(]\s*(\d+(?:\.\d+)?)\s*marks?\s*[\]\)]", re.IGNORECASE)
+_ENGLISH_MARKS = re.compile(
+    r"(?P<matched>[\[\(]\s*(?P<value>\d+(?:\.\d+)?)\s*(?:marks?|points?|pts?)\s*[\]\)])",
+    re.IGNORECASE,
+)
 _ENGLISH_PREFIX_MARKS = re.compile(
     r"^Q\s*\d+\s+(?P<matched>\((?P<value>\d+(?:\.\d+)?)\))\s*:", re.IGNORECASE
 )
 _ARABIC_MARKS_BRACKET = re.compile(
-    r"(?P<matched>[\[\(]\s*(?P<value>\d+(?:\.\d+)?)\s*(?:درجة|درجات|علامة|علامات)\s*[\]\)])"
+    r"(?P<matched>[\[\(]\s*(?P<value>\d+(?:\.\d+)?)\s*(?:درجة|درجات|درجتان|علامة|علامات|علامتان)\s*[\]\)])"
 )
 _ARABIC_MARKS_PLAIN = re.compile(
-    r"(?P<matched>(?P<value>\d+(?:\.\d+)?)\s*(?:درجة|درجات|علامة|علامات))\s*$"
+    r"(?P<matched>(?P<value>\d+(?:\.\d+)?)\s*(?:درجة|درجات|درجتان|علامة|علامات|علامتان))\s*$"
 )
-_BARE_BRACKETED_MARKS = re.compile(r"(?P<matched>[\[\(]\s*(?P<value>\d+(?:\.\d+)?)\s*[\]\)])")
+_BARE_BRACKETED_MARKS = re.compile(r"(?P<matched>\[\s*(?P<value>\d+(?:\.\d+)?)\s*\])")
 
 _ARABIC_ORDINALS: dict[str, int] = {
     "الاول": 1,
@@ -146,7 +190,10 @@ def parse_marks(line: str) -> Marks | None:
 
     match = _ENGLISH_MARKS.search(normalized)
     if match is not None:
-        return Marks(value=parse_localized_number(match.group(1)), matched_text=match.group())
+        return Marks(
+            value=parse_localized_number(match.group("value")),
+            matched_text=match.group("matched"),
+        )
 
     prefix_match = _ENGLISH_PREFIX_MARKS.match(normalized)
     if prefix_match is not None:
@@ -177,6 +224,81 @@ def parse_marks(line: str) -> Marks | None:
         )
     return None
 
+
+
+def strip_marks_annotations(text: str) -> str:
+    """Remove explicit mark labels from editable question text.
+
+    PDF generators often place a marks badge at the far right of the same visual
+    line.  Reading-order reconstruction can therefore insert ``[3 marks]`` in
+    the middle of the sentence even though it is not part of the question stem.
+    Marks remain available through :func:`parse_marks` and marks evidence; this
+    helper only cleans the reviewer-facing question transcription.
+
+    Technical numbers such as ``GF (19)``, ``AES-256`` and ``Figure (3)`` are
+    intentionally untouched because they do not contain an approved marks label.
+    """
+
+    cleaned = text
+    cleaned = _ENGLISH_MARKS.sub(" ", cleaned)
+    cleaned = _ARABIC_MARKS_BRACKET.sub(" ", cleaned)
+    cleaned = _ARABIC_MARKS_PLAIN.sub(" ", cleaned)
+    # Standalone/inline administrative notes such as ``Mark not stated`` are
+    # assessment metadata, not part of the student's task.  PDF layout can place
+    # such a note in the middle of a reconstructed line, so remove the phrase
+    # wherever it appears while preserving the surrounding question text.
+    cleaned = strip_mark_status_phrases(cleaned)
+
+    # Bare bracketed marks are a legacy supported format.  Restrict removal to
+    # the end of the stem so array/index notation inside code is preserved.
+    cleaned = re.sub(r"\s*\[\s*\d+(?:\.\d+)?\s*\]\s*$", "", cleaned)
+
+    # ``Q1 (10):`` is an approved heading form.  Remove the mark value while
+    # retaining the question label and separator.
+    cleaned = re.sub(
+        r"^(Q\s*\d+)\s*\(\s*\d+(?:\.\d+)?\s*\)\s*:\s*",
+        r"\1: ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r"\s+([,.;:?!])", r"\1", cleaned)
+    return cleaned.strip()
+
+
+
+def is_mark_status_annotation(line: str) -> bool:
+    """Return True for standalone administrative notes about a missing mark.
+
+    These notes describe assessment metadata, not the task the student must answer.
+    They stay available in source/PDF provenance but must not be merged into the
+    canonical question stem or semantic wording judgments.
+    """
+
+    normalized = normalize_arabic_for_matching(line)
+    return _MARK_STATUS_ANNOTATION.fullmatch(normalized) is not None
+
+
+def strip_mark_status_phrases(text: str) -> str:
+    """Remove administrative missing-mark phrases without stripping real mark labels."""
+
+    original = text
+    cleaned = re.sub(
+        r"\bno\s+individual\s+mark\s+is\s+(?:printed|stated|shown|specified|provided)"
+        r"(?:\s+for\s+[^.]+)?\.?",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+    cleaned = _MARK_STATUS_PHRASE.sub(" ", cleaned)
+    if cleaned != original:
+        # Wrapped fixture/admin notes can leave a standalone continuation token
+        # (for example ``marks.``) after the actual status sentence is removed.
+        cleaned = re.sub(r"\s+marks?\.\s*$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r"\s+([,.;:?!])", r"\1", cleaned)
+    return cleaned.strip()
 
 def parse_declared_total(line: str) -> float | None:
     normalized = normalize_arabic_for_matching(line)
@@ -212,6 +334,30 @@ def classify_line(line: str, current_parent_label: str | None) -> ClassifiedLine
 
     normalized = normalize_arabic_for_matching(line)
     marks = parse_marks(line)
+
+    hierarchical_decimal = _ENGLISH_HIERARCHICAL_DECIMAL.match(normalized)
+    if hierarchical_decimal is None:
+        hierarchical_decimal = _RTL_HIERARCHICAL_DECIMAL.match(normalized)
+    if hierarchical_decimal is not None:
+        major = int(hierarchical_decimal.group(1))
+        minor = int(hierarchical_decimal.group(2))
+        return ClassifiedLine(
+            kind=LineKind.SUBQUESTION,
+            text=line,
+            number_label=f"Q{major}.{minor}",
+            marks=marks,
+        )
+
+    hierarchical_letter = _ENGLISH_HIERARCHICAL_LETTER.match(normalized)
+    if hierarchical_letter is not None:
+        major = int(hierarchical_letter.group(1))
+        letter = hierarchical_letter.group(2).lower()
+        return ClassifiedLine(
+            kind=LineKind.SUBQUESTION,
+            text=line,
+            number_label=f"Q{major}({letter})",
+            marks=marks,
+        )
 
     question_match = _ENGLISH_QUESTION.match(normalized) or _ARABIC_Q_QUESTION.match(normalized)
     if question_match is not None:

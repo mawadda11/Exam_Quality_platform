@@ -48,6 +48,23 @@ def build_synthetic_exam_pdf() -> bytes:
     return bytes(pdf.output())
 
 
+
+
+def build_split_instruction_exam_pdf() -> bytes:
+    """Instruction heading and bullets are separate layout lines."""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=12)
+    _line(pdf, "Final Examination")
+    _line(pdf, "Instructions / General Directions")
+    _line(pdf, "- Answer all questions in the spaces provided.")
+    _line(pdf, "- Show calculation steps when required.")
+    _line(pdf, "- Unauthorized materials are not permitted.")
+    _line(pdf, "Administrative fixture note that is not a bullet instruction.")
+    _line(pdf, "Question 1 - Short Answer")
+    _line(pdf, "Q1. Explain packet switching. [5 marks]")
+    return bytes(pdf.output())
+
 def build_official_sample_format_exam_pdf() -> bytes:
     """Matches the bundled CS101 sample's explicit question/marks grammar."""
     pdf = FPDF()
@@ -126,4 +143,75 @@ def build_scanned_looking_exam_pdf() -> bytes:
     pdf = FPDF(unit="pt", format=(width, height))
     pdf.add_page()
     pdf.image(image_buffer, x=0, y=0, w=width, h=height)
+    return bytes(pdf.output())
+
+
+def build_multiline_question_with_table_pdf() -> bytes:
+    """Digital exam where Q3 wraps before a clearly labelled table."""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=11)
+    _line(pdf, "CS101 Midterm Examination - Supporting Material Test")
+    _line(pdf, "Course: Introduction to Programming")
+    _line(pdf, "Total Marks: 30")
+    _line(
+        pdf,
+        "Instructions: Answer all questions. Show clear reasoning. "
+        "No external resources are permitted.",
+    )
+    _line(pdf, "Q1 (10): Define an algorithm and explain two characteristics.")
+    _line(pdf, "Q2 (10): Write a Python function to calculate the factorial of n.")
+    _line(
+        pdf,
+        "Q3 (10): Refer to Table 1. Identify which Python data structure is mutable "
+        "and explain one suitable use for each structure.",
+    )
+    _line(pdf, "Table 1: Comparison of Python Data Structures")
+
+    widths = (50, 55, 55)
+    for row in (
+        ("Feature", "List", "Tuple"),
+        ("Syntax", "[1, 2, 3]", "(1, 2, 3)"),
+        ("Mutable", "Yes", "No"),
+        ("Typical use", "Data that may change", "Fixed records"),
+    ):
+        for width, value in zip(widths, row, strict=True):
+            pdf.cell(width, 8, value, border=1)
+        pdf.ln(8)
+
+    return bytes(pdf.output())
+
+
+def build_multiline_question_with_interposed_diagram_pdf() -> bytes:
+    """A wrapped question whose final sentence appears below a small diagram.
+
+    The extractor must keep the source-faithful question text until Q6 while
+    excluding labels drawn inside the supporting visual.
+    """
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=11)
+    _line(
+        pdf,
+        "Q5. Ali and Naif share a secret value S. They use it with a hash function H "
+        "as in the diagram to provide authentication of a message M.",
+    )
+
+    _line(pdf, "Figure 1: Authentication flow")
+    diagram_top = pdf.get_y() + 4
+    pdf.rect(35, diagram_top, 28, 16)
+    pdf.rect(120, diagram_top, 28, 16)
+    pdf.line(63, diagram_top + 8, 120, diagram_top + 8)
+    pdf.set_xy(42, diagram_top + 4)
+    pdf.cell(14, 6, "M")
+    pdf.set_xy(127, diagram_top + 4)
+    pdf.cell(14, 6, "H(M||S)")
+    pdf.set_y(diagram_top + 24)
+
+    _line(pdf, "Could an attacker modify the message after it is intercepted?")
+    _line(
+        pdf,
+        "Q6. Explain why collisions are undesirable in cryptographic hash functions "
+        "used for data integrity.",
+    )
     return bytes(pdf.output())

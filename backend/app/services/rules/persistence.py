@@ -103,6 +103,7 @@ def persist_semantic_finding(
         decision=evaluation.status,
         evidence_used=evidence_ids,
         reasoning=evaluation.explanation,
+        reasoning_ar=evaluation.explanation_ar,
         recommendation=evaluation.recommendation_id,
         confidence_basis=list(evaluation.confidence_basis),
         item_judgments=[
@@ -111,6 +112,7 @@ def persist_semantic_finding(
                 target_evidence_ids=item.target_evidence_ids,
                 status=item.status,
                 reasoning=item.reasoning,
+                reasoning_ar=item.reasoning_ar,
             )
             for item in evaluation.items
         ],

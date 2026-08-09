@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { Alert } from '../../components/ui/Alert'
 import { Button } from '../../components/ui/Button'
+import { Icon } from '../../components/ui/Icon'
 import { ResponsiveTable } from '../../components/ui/ResponsiveTable'
 import { useI18n } from '../../i18n/I18nProvider'
 import type {
@@ -69,17 +70,19 @@ export function facultyReason(
   locale: 'ar' | 'en',
   t: (key: string) => string,
 ): string {
-  if (status === 'Partially Satisfied') {
-    return t(
-      'The question shares a relevant concept with the suggested item, but the relationship is limited.',
-    )
-  }
   const containsInternalWording =
     /normalized|controlled target|local evidence|controlled identifier|semantic|token/u.test(
       sourceReason.toLocaleLowerCase(),
     )
-  if (locale === 'en' && sourceReason.trim() && !containsInternalWording) {
+  // Dynamic relationship reasoning stays in its validated source language.
+  // Arabic localization is limited to static UI labels and governed text.
+  if (sourceReason.trim() && !containsInternalWording) {
     return sourceReason
+  }
+  if (status === 'Partially Satisfied') {
+    return t(
+      'The question shares a relevant concept with the suggested item, but the relationship is limited.',
+    )
   }
   switch (status) {
     case 'Satisfied':
@@ -356,40 +359,20 @@ function RelationshipStates({
   )
 }
 
-function RelationshipReasons({
-  row,
-}: {
-  row: QuestionRelationshipRow
-}) {
-  const { locale, t } = useI18n()
-  const groups: Array<[string, RelationshipJudgment[]]> = [
-    ['CLO', row.cloJudgments],
-    ['Course Topic', row.topicJudgments],
-  ]
+function QuestionReferenceChips({ references }: { references: string[] }) {
+  const { t } = useI18n()
+  if (references.length === 0) return <>{t('None')}</>
   return (
-    <ul className="relationship-reason-list">
-      {groups.map(([label, judgments]) => (
-        <li key={label}>
-          <strong>{t(label)}:</strong>{' '}
-          <span dir="auto">
-            {judgments.length === 0
-              ? t('No supported relationship found')
-              : judgments
-                  .map((judgment) =>
-                    facultyReason(
-                      judgment.status,
-                      judgment.reasoning,
-                      locale,
-                      t,
-                    ),
-                  )
-                  .join(' ')}
-          </span>
-        </li>
+    <span className="question-reference-chips">
+      {references.map((reference) => (
+        <bdi key={reference} className="question-reference-chip">
+          {reference}
+        </bdi>
       ))}
-    </ul>
+    </span>
   )
 }
+
 
 
 export function AlignmentCoverageSection({
@@ -406,7 +389,7 @@ export function AlignmentCoverageSection({
   const activeMappingTriggerRef = useRef<HTMLButtonElement | null>(null)
   const loadedQuestions =
     questions.status === 'ready'
-      ? sortQuestionsForFaculty(independentlyScorableQuestions(questions.data))
+      ? independentlyScorableQuestions(sortQuestionsForFaculty(questions.data))
       : []
   const loadedClos = clos.status === 'ready' ? clos.data : []
   const loadedTopics = topics.status === 'ready' ? topics.data : []
@@ -476,11 +459,11 @@ export function AlignmentCoverageSection({
               title: 'Coverage',
               metrics: [
                 {
-                  label: 'CLO Coverage',
+                  label: 'CLOs represented',
                   value: `${coveredRecordCount(loadedClos, rows, 'clo')}/${loadedClos.length}`,
                 },
                 {
-                  label: 'Topic Coverage',
+                  label: 'Topics represented',
                   value: `${coveredRecordCount(loadedTopics, rows, 'topic')}/${loadedTopics.length}`,
                 },
               ],
@@ -542,7 +525,6 @@ export function AlignmentCoverageSection({
                       <th scope="col">{t('Suggested CLO')}</th>
                       <th scope="col">{t('Suggested Course Topic')}</th>
                       <th scope="col">{t('Alignment status')}</th>
-                      <th scope="col">{t('Short reason')}</th>
                       <th scope="col">{t('Details')}</th>
                     </tr>
                   </thead>
@@ -561,9 +543,6 @@ export function AlignmentCoverageSection({
                         <td data-label={t('Alignment status')}>
                           <RelationshipStates row={row} />
                         </td>
-                        <td data-label={t('Short reason')}>
-                          <RelationshipReasons row={row} />
-                        </td>
                         <td data-label={t('Details')}>
                           <button
                             ref={(element) => {
@@ -572,12 +551,14 @@ export function AlignmentCoverageSection({
                               else mappingTriggerRefs.current.delete(triggerKey)
                             }}
                             type="button"
-                            className="inline-evidence-action"
+                            className="details-icon-action"
+                            aria-label={t('View mapping details')}
+                            title={t('View mapping details')}
                             onClick={() =>
                               openComparison(row, `question-${row.questionReference}`)
                             }
                           >
-                            {t('View mapping details')}
+                            <Icon name="eye" />
                           </button>
                         </td>
                       </tr>
@@ -626,14 +607,7 @@ export function AlignmentCoverageSection({
                             <span dir="auto">{clo.text}</span>
                           </td>
                           <td data-label={t('Linked questions')}>
-                            {orderedReferences.length === 0
-                              ? t('None')
-                              : orderedReferences.map((reference, index) => (
-                                  <span key={reference}>
-                                    {index > 0 && ', '}
-                                    <bdi>{reference}</bdi>
-                                  </span>
-                                ))}
+                            <QuestionReferenceChips references={orderedReferences} />
                           </td>
                           <td data-label={t('Coverage status')}>
                             <StatusBadge status={coverageStatus(judgments)} />
@@ -648,12 +622,14 @@ export function AlignmentCoverageSection({
                                 else mappingTriggerRefs.current.delete(triggerKey)
                               }}
                               type="button"
-                              className="inline-evidence-action"
+                              className="details-icon-action"
+                              aria-label={t('View mapping details')}
+                              title={t('View mapping details')}
                               onClick={() =>
                                 openMapping({ kind: 'clo', record: clo }, triggerKey)
                               }
                             >
-                              {t('View mapping details')}
+                              <Icon name="eye" />
                             </button>
                           </td>
                         </tr>
@@ -702,14 +678,7 @@ export function AlignmentCoverageSection({
                             <span dir="auto">{topic.text}</span>
                           </th>
                           <td data-label={t('Linked questions')}>
-                            {orderedReferences.length === 0
-                              ? t('None')
-                              : orderedReferences.map((reference, index) => (
-                                  <span key={reference}>
-                                    {index > 0 && ', '}
-                                    <bdi>{reference}</bdi>
-                                  </span>
-                                ))}
+                            <QuestionReferenceChips references={orderedReferences} />
                           </td>
                           <td data-label={t('Total marks')}>
                             {totalMarksForRecord(rows, topic, 'topic')}
@@ -728,12 +697,14 @@ export function AlignmentCoverageSection({
                                   else mappingTriggerRefs.current.delete(triggerKey)
                                 }}
                                 type="button"
-                                className="inline-evidence-action"
+                                className="details-icon-action"
+                                aria-label={t('View mapping details')}
+                                title={t('View mapping details')}
                                 onClick={() =>
                                   openMapping({ kind: 'topic', record: topic }, triggerKey)
                                 }
                               >
-                                {t('View mapping details')}
+                                <Icon name="eye" />
                               </button>
                             )}
                           </td>

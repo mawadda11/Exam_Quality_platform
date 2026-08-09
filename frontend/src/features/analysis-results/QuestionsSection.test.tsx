@@ -182,14 +182,15 @@ beforeEach(() => {
 })
 
 describe('QuestionsSection', () => {
-  it('keeps the compact legacy four-column table and omits structural parents', () => {
+  it('shows question type in the compact table and omits structural parents', () => {
     renderSection()
 
     const table = screen.getByRole('table', { name: 'Extracted questions' })
     expect(within(table).getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
       'Question',
-      'Page',
+      'Question Type',
       'Marks',
+      'Page',
       'Text',
     ])
     expect(within(table).queryByText('Q1')).not.toBeInTheDocument()

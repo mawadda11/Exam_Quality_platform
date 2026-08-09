@@ -2,7 +2,7 @@
 
 ## Current release context
 
-- Product release target: `v1.0.0`.
+- Product release target: `v2.0.0-rc1`.
 - Read `docs/RELEASE_V1.md` for the Version 1 release boundary.
 - Read `docs/V2_ROADMAP.md` before planning authentication, public deployment, localization,
   Arabic-document analysis, or additional rule support.
@@ -149,7 +149,7 @@ marks arithmetic, numbering outcomes, and score aggregation remain deterministic
   only as a dormant, nullable database/API field for backward compatibility with historical
   records; no current workflow sets it. New Analysis is the only supported way to evaluate a
   revised exam.
-- Alembic head is `0012`; the repository and its tests are the source of truth, not prior chat
+- Alembic head is `0013`; the repository and its tests are the source of truth, not prior chat
   context.
 - Do not reset, clean, stash, or overwrite working-tree changes without confirming their intent
   first.

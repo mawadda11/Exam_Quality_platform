@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from app.core.domain import AcademicStatus
-from app.services.rules.scoring import calculate_overall_score, count_statuses
+from app.services.rules.scoring import calculate_overall_score, count_statuses, scoreable_statuses
 
 if TYPE_CHECKING:
     from app.models.finding import Finding
@@ -32,12 +32,15 @@ class AnalysisScoreResponse(BaseModel):
     not_satisfied_count: int
     not_verified_count: int
     not_applicable_count: int
+    score_mode: str = "governed"
+    excluded_local_semantic_count: int = 0
 
     @classmethod
     def from_findings(cls, analysis_id: UUID, findings: Sequence[Finding]) -> AnalysisScoreResponse:
-        statuses = [finding.status for finding in findings]
-        result = calculate_overall_score(statuses)
-        counts = count_statuses(statuses)
+        all_statuses = [finding.status for finding in findings]
+        scored_statuses, local_only, excluded_count = scoreable_statuses(findings)
+        result = calculate_overall_score(scored_statuses)
+        counts = count_statuses(scored_statuses if local_only else all_statuses)
         return cls(
             analysis_id=analysis_id,
             score=result.score,
@@ -48,4 +51,6 @@ class AnalysisScoreResponse(BaseModel):
             not_satisfied_count=counts[AcademicStatus.NOT_SATISFIED],
             not_verified_count=counts[AcademicStatus.NOT_VERIFIED],
             not_applicable_count=counts[AcademicStatus.NOT_APPLICABLE],
+            score_mode="local_preliminary" if local_only else "governed",
+            excluded_local_semantic_count=excluded_count,
         )

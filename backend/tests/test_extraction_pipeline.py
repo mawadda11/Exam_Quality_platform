@@ -175,7 +175,19 @@ def test_pipeline_persists_evidence_with_traceable_fields(
             .scalars()
             .all()
         )
-        assert len(evidence_rows) == 15  # 1 instructions + 8 question_text + 6 marks
+        canonical_rows = [
+            row
+            for row in evidence_rows
+            if not row.evidence_type.startswith("extraction_candidate_")
+        ]
+        candidate_rows = [
+            row for row in evidence_rows if row.evidence_type.startswith("extraction_candidate_")
+        ]
+        assert len(canonical_rows) == 15  # 1 instructions + 8 question_text + 6 marks
+        assert candidate_rows
+        assert all(
+            row.evidence_type.startswith("extraction_candidate_local_") for row in candidate_rows
+        )
 
         marks_row = next(
             e for e in evidence_rows if e.evidence_type == "marks" and e.item_reference == "Q1"
