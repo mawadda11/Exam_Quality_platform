@@ -93,3 +93,6 @@ CURRENT_REFERENCE_FIX_INPUT_20260809.zip
 # Keep deployment env templates
 !.env.example
 !.env.production.example
+
+# Curated demo test PDFs
+!demo_files/**/*.pdf
